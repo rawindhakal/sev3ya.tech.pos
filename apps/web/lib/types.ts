@@ -52,7 +52,15 @@ export type OrderStatus =
   | 'PAID'
   | 'CANCELLED';
 export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING';
-export type PaymentMethod = 'CASH' | 'CARD' | 'UPI' | 'WALLET' | 'OTHER';
+export type PaymentMethod =
+  | 'OFFLINE'
+  | 'CASH'
+  | 'FONEPAY'
+  | 'BANK'
+  | 'ESEWA'
+  | 'KHALTI'
+  | 'CARD'
+  | 'CREDIT';
 
 export interface Waiter {
   id: string;

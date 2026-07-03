@@ -15,6 +15,8 @@ import type {
 } from '@/lib/types';
 import Modal from '@/components/Modal';
 import Receipt from '@/components/Receipt';
+import { PAYMENT_METHODS } from '@/lib/constants';
+import type { PaymentMethod } from '@/lib/types';
 
 type Step = 'type' | 'table' | 'order';
 
@@ -49,6 +51,7 @@ export default function PosPage() {
 
   // cart + menu ui
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [discount, setDiscount] = useState(''); // order-level discount in rupees
   const [activeCat, setActiveCat] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -58,7 +61,7 @@ export default function PosPage() {
 
   // payment
   const [payOpen, setPayOpen] = useState(false);
-  const [payMethod, setPayMethod] = useState<'CASH' | 'CARD' | 'UPI' | 'WALLET'>('CASH');
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('CASH');
   const [tendered, setTendered] = useState('');
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -87,9 +90,12 @@ export default function PosPage() {
       subtotal += (l.unitPriceCents + mod) * l.quantity;
       count += l.quantity;
     }
-    const tax = Math.round(subtotal * vatRate);
-    return { count, subtotal, tax, total: subtotal + tax };
-  }, [cart, vatRate]);
+    // Discount applies before VAT — mirrors the server (common/settings.ts).
+    const discountCents = Math.min(subtotal, Math.round((parseFloat(discount) || 0) * 100));
+    const taxable = subtotal - discountCents;
+    const tax = Math.round(taxable * vatRate);
+    return { count, subtotal, discountCents, tax, total: taxable + tax };
+  }, [cart, vatRate, discount]);
 
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => i.isAvailable);
@@ -193,6 +199,7 @@ export default function PosPage() {
         quantity: l.quantity,
         modifiers: l.modifiers,
       })),
+      discountCents: totals.discountCents,
       waiterId: waiterId || undefined,
       guestCount,
     });
@@ -290,6 +297,7 @@ export default function PosPage() {
     setOrder(null);
     setTable(null);
     setCart([]);
+    setDiscount('');
     setTendered('');
     setActiveCat('all');
     setSearch('');
@@ -543,6 +551,23 @@ export default function PosPage() {
                   <span>Sub Total</span>
                   <span>{formatMoney(totals.subtotal)}</span>
                 </div>
+                <div className="flex items-center justify-between text-slate-500">
+                  <span>Discount (Rs)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    placeholder="0"
+                    className="w-24 rounded-md border border-slate-200 px-2 py-1 text-right text-sm"
+                  />
+                </div>
+                {totals.discountCents > 0 && (
+                  <div className="flex justify-between text-emerald-600">
+                    <span>Discount applied</span>
+                    <span>−{formatMoney(totals.discountCents)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-500">
                   <span>VAT ({Math.round(vatRate * 100)}%)</span>
                   <span>{formatMoney(totals.tax)}</span>
@@ -651,22 +676,22 @@ export default function PosPage() {
             <div>
               <label className="label">Payment method</label>
               <div className="grid grid-cols-4 gap-2">
-                {(['CASH', 'CARD', 'UPI', 'WALLET'] as const).map((m) => (
+                {PAYMENT_METHODS.map((m) => (
                   <button
-                    key={m}
-                    onClick={() => setPayMethod(m)}
+                    key={m.value}
+                    onClick={() => setPayMethod(m.value)}
                     className={`rounded-lg border-2 px-2 py-3 text-xs font-semibold ${
-                      payMethod === m ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'
+                      payMethod === m.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'
                     }`}
                   >
-                    {m}
+                    {m.label}
                   </button>
                 ))}
               </div>
             </div>
             {payMethod === 'CASH' && (
               <div>
-                <label className="label">Cash tendered ($)</label>
+                <label className="label">Cash tendered (Rs)</label>
                 <input
                   className="input"
                   type="number"

@@ -21,7 +21,7 @@ async function main() {
   await prisma.restaurantTable.deleteMany();
   await prisma.waiter.deleteMany();
 
-  // Modifier groups
+  // Modifier groups (prices in paisa: 1 NPR = 100 paisa)
   const sizeGroup = await prisma.modifierGroup.create({
     data: {
       name: 'Size',
@@ -31,7 +31,23 @@ async function main() {
       modifiers: {
         create: [
           { name: 'Regular', priceCents: 0, sortOrder: 0 },
-          { name: 'Large', priceCents: 150, sortOrder: 1 },
+          { name: 'Large', priceCents: 5000, sortOrder: 1 },
+        ],
+      },
+    },
+  });
+
+  const milkGroup = await prisma.modifierGroup.create({
+    data: {
+      name: 'Milk',
+      minSelect: 0,
+      maxSelect: 1,
+      sortOrder: 1,
+      modifiers: {
+        create: [
+          { name: 'Full cream', priceCents: 0, sortOrder: 0 },
+          { name: 'Oat milk', priceCents: 6000, sortOrder: 1 },
+          { name: 'Soy milk', priceCents: 5000, sortOrder: 2 },
         ],
       },
     },
@@ -42,87 +58,90 @@ async function main() {
       name: 'Add-ons',
       minSelect: 0,
       maxSelect: 3,
-      sortOrder: 1,
+      sortOrder: 2,
       modifiers: {
         create: [
-          { name: 'Extra cheese', priceCents: 100, sortOrder: 0 },
-          { name: 'Extra sauce', priceCents: 50, sortOrder: 1 },
-          { name: 'Bacon', priceCents: 200, sortOrder: 2 },
+          { name: 'Extra shot', priceCents: 8000, sortOrder: 0 },
+          { name: 'Vanilla syrup', priceCents: 4000, sortOrder: 1 },
+          { name: 'Whipped cream', priceCents: 5000, sortOrder: 2 },
         ],
       },
     },
   });
 
-  // Categories with items
-  const starters = await prisma.category.create({
+  // Categories with items (prices in paisa — e.g. 18000 = Rs 180)
+  await prisma.category.create({
     data: {
-      name: 'Starters',
+      name: 'Hot Coffee',
       sortOrder: 0,
       items: {
         create: [
-          { name: 'Garlic Bread', description: 'Toasted with herb butter', priceCents: 550 },
-          { name: 'Chicken Wings', description: '6 pcs, spicy glaze', priceCents: 899 },
-          { name: 'Loaded Fries', description: 'Cheese & jalapeños', priceCents: 699 },
+          { name: 'Espresso', description: 'Single shot', priceCents: 12000 },
+          { name: 'Cappuccino', description: 'Espresso with steamed milk foam', priceCents: 18000 },
+          { name: 'Cafe Latte', description: 'Smooth espresso with milk', priceCents: 19000 },
+          { name: 'Americano', description: 'Espresso with hot water', priceCents: 15000 },
         ],
       },
     },
   });
 
-  const mains = await prisma.category.create({
+  await prisma.category.create({
     data: {
-      name: 'Mains',
+      name: 'Cold Drinks',
       sortOrder: 1,
       items: {
         create: [
-          { name: 'Margherita Pizza', description: 'Classic tomato & mozzarella', priceCents: 1299 },
-          { name: 'Beef Burger', description: 'Angus patty, brioche bun', priceCents: 1450 },
-          { name: 'Grilled Salmon', description: 'With seasonal veg', priceCents: 1899 },
+          { name: 'Iced Latte', description: 'Chilled espresso & milk', priceCents: 22000 },
+          { name: 'Cold Brew', description: '18-hour steeped', priceCents: 24000 },
+          { name: 'Lemon Iced Tea', priceCents: 16000 },
+          { name: 'Fresh Lemonade', priceCents: 14000 },
         ],
       },
     },
   });
 
-  const drinks = await prisma.category.create({
+  await prisma.category.create({
     data: {
-      name: 'Drinks',
+      name: 'Bakery',
       sortOrder: 2,
       items: {
         create: [
-          { name: 'Fresh Lemonade', priceCents: 399 },
-          { name: 'Iced Coffee', priceCents: 450 },
-          { name: 'Sparkling Water', priceCents: 250 },
+          { name: 'Butter Croissant', description: 'Flaky, baked fresh', priceCents: 15000 },
+          { name: 'Chocolate Muffin', priceCents: 16000 },
+          { name: 'Cheesecake Slice', description: 'New York style', priceCents: 28000 },
+          { name: 'Chocolate Brownie', priceCents: 18000 },
         ],
       },
     },
   });
 
-  const desserts = await prisma.category.create({
+  await prisma.category.create({
     data: {
-      name: 'Desserts',
+      name: 'Food',
       sortOrder: 3,
       items: {
         create: [
-          { name: 'Chocolate Cake', description: 'Warm, with ganache', priceCents: 650 },
-          { name: 'Cheesecake', description: 'New York style', priceCents: 700 },
+          { name: 'Veg Sandwich', description: 'Grilled, with fries', priceCents: 32000 },
+          { name: 'Chicken Burger', description: 'Crispy chicken, brioche bun', priceCents: 45000 },
+          { name: 'Margherita Pizza', description: 'Classic tomato & mozzarella', priceCents: 52000 },
         ],
       },
     },
   });
 
-  // Attach modifier groups to a couple of items so the relation is exercised.
-  const burger = await prisma.menuItem.findFirst({ where: { name: 'Beef Burger' } });
-  if (burger) {
-    await prisma.menuItem.update({
-      where: { id: burger.id },
-      data: { modifierGroups: { connect: [{ id: sizeGroup.id }, { id: addonsGroup.id }] } },
-    });
-  }
-  const pizza = await prisma.menuItem.findFirst({ where: { name: 'Margherita Pizza' } });
-  if (pizza) {
-    await prisma.menuItem.update({
-      where: { id: pizza.id },
-      data: { modifierGroups: { connect: [{ id: sizeGroup.id }] } },
-    });
+  // Attach modifier groups to coffee/food items so the relation is exercised.
+  for (const [name, groups] of [
+    ['Cappuccino', [sizeGroup.id, milkGroup.id, addonsGroup.id]],
+    ['Cafe Latte', [sizeGroup.id, milkGroup.id, addonsGroup.id]],
+    ['Iced Latte', [sizeGroup.id, milkGroup.id]],
+    ['Chicken Burger', [addonsGroup.id]],
+  ] as [string, string[]][]) {
+    const mi = await prisma.menuItem.findFirst({ where: { name } });
+    if (mi)
+      await prisma.menuItem.update({
+        where: { id: mi.id },
+        data: { modifierGroups: { connect: groups.map((id) => ({ id })) } },
+      });
   }
 
   // Tables
@@ -151,7 +170,9 @@ async function main() {
   const allItems = await prisma.menuItem.findMany();
   const allTables = await prisma.restaurantTable.findMany();
   const allWaiters = await prisma.waiter.findMany();
-  const methods: PaymentMethod[] = ['CASH', 'CARD', 'UPI', 'WALLET'];
+  const methods: PaymentMethod[] = [
+    'CASH', 'CASH', 'FONEPAY', 'ESEWA', 'KHALTI', 'CARD', 'BANK', 'CREDIT',
+  ];
   const types: OrderType[] = ['DINE_IN', 'DINE_IN', 'DINE_IN', 'TAKEAWAY', 'DELIVERY'];
 
   let orderCount = 0;

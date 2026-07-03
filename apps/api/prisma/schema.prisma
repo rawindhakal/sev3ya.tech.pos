@@ -211,11 +211,14 @@ model OrderItem {
 }
 
 enum PaymentMethod {
+  OFFLINE
   CASH
+  FONEPAY
+  BANK
+  ESEWA
+  KHALTI
   CARD
-  UPI
-  WALLET
-  OTHER
+  CREDIT
 }
 
 model Payment {

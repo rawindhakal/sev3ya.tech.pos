@@ -33,10 +33,15 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
 
-// Money helpers — API stores integer cents.
-export const formatMoney = (cents: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-    cents / 100,
-  );
+// Money helpers — API stores integer minor units (paisa for NPR).
+const CURRENCY_SYMBOL = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL ?? 'Rs';
+const CURRENCY_LOCALE = process.env.NEXT_PUBLIC_CURRENCY_LOCALE ?? 'en-IN';
 
-export const dollarsToCents = (dollars: number) => Math.round(dollars * 100);
+export const formatMoney = (cents: number) =>
+  `${CURRENCY_SYMBOL} ${(cents / 100).toLocaleString(CURRENCY_LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+// Convert a major-unit amount (rupees) typed by staff into minor units (paisa).
+export const dollarsToCents = (major: number) => Math.round(major * 100);

@@ -278,7 +278,7 @@ export default function MenuPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Price ($)</label>
+              <label className="label">Price (Rs)</label>
               <input
                 className="input"
                 type="number"

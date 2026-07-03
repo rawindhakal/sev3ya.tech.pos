@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, formatMoney } from '@/lib/api';
-import type { Order, OrderStatus, PaymentMethod } from '@/lib/types';
+import type { Order, PaymentMethod } from '@/lib/types';
+import { PAYMENT_METHODS } from '@/lib/constants';
 import Modal from '@/components/Modal';
 
 const STATUS_BADGE: Record<string, string> = {
@@ -140,13 +141,13 @@ export default function OrdersPage() {
               <div className="text-3xl font-bold text-slate-900">{formatMoney(payFor.totalCents)}</div>
             </div>
             <div className="grid grid-cols-4 gap-2">
-              {(['CASH', 'CARD', 'UPI', 'WALLET'] as const).map((m) => (
+              {PAYMENT_METHODS.map((m) => (
                 <button
-                  key={m}
-                  onClick={() => setPayMethod(m)}
-                  className={`rounded-lg border-2 px-2 py-3 text-xs font-semibold ${payMethod === m ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}
+                  key={m.value}
+                  onClick={() => setPayMethod(m.value)}
+                  className={`rounded-lg border-2 px-2 py-3 text-xs font-semibold ${payMethod === m.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}
                 >
-                  {m}
+                  {m.label}
                 </button>
               ))}
             </div>

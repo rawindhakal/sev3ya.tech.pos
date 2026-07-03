@@ -5,14 +5,7 @@ import Link from 'next/link';
 import { api, formatMoney } from '@/lib/api';
 import type { DashboardData } from '@/lib/types';
 import LineChart from '@/components/LineChart';
-
-const METHOD_COLORS: Record<string, string> = {
-  CASH: 'bg-emerald-500',
-  CARD: 'bg-indigo-500',
-  UPI: 'bg-amber-500',
-  WALLET: 'bg-sky-500',
-  OTHER: 'bg-slate-400',
-};
+import { PAYMENT_METHOD_COLOR, PAYMENT_METHOD_LABEL } from '@/lib/constants';
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -115,12 +108,12 @@ export default function DashboardPage() {
               {data.paymentsByMethod.map((p) => (
                 <div key={p.method}>
                   <div className="mb-1 flex justify-between text-sm">
-                    <span className="font-medium text-slate-600">{p.method}</span>
+                    <span className="font-medium text-slate-600">{PAYMENT_METHOD_LABEL[p.method] ?? p.method}</span>
                     <span className="font-semibold text-slate-900">{formatMoney(p.amountCents)}</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                     <div
-                      className={`h-full rounded-full ${METHOD_COLORS[p.method] ?? 'bg-slate-400'}`}
+                      className={`h-full rounded-full ${PAYMENT_METHOD_COLOR[p.method] ?? 'bg-slate-400'}`}
                       style={{ width: `${paymentsTotal ? (p.amountCents / paymentsTotal) * 100 : 0}%` }}
                     />
                   </div>

@@ -230,7 +230,7 @@ export default function ModifiersPage() {
             />
           </div>
           <div>
-            <label className="label">Extra price ($)</label>
+            <label className="label">Extra price (Rs)</label>
             <input
               className="input"
               type="number"
