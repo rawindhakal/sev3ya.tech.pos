@@ -26,7 +26,13 @@ export default function Receipt({
             <div style={{ fontSize: 18, fontWeight: 700 }}>
               {settings?.restaurantName ?? 'CakeZake'}
             </div>
-            <div style={{ fontSize: 11 }}>Tax Invoice</div>
+            {settings?.address && <div style={{ fontSize: 11 }}>{settings.address}</div>}
+            {settings?.phone && <div style={{ fontSize: 11 }}>Tel: {settings.phone}</div>}
+            {settings?.taxId && <div style={{ fontSize: 11 }}>{settings.taxId}</div>}
+            <div style={{ fontSize: 11, marginTop: 2 }}>Tax Invoice</div>
+            {settings?.receiptHeader && (
+              <div style={{ fontSize: 11, marginTop: 4 }}>{settings.receiptHeader}</div>
+            )}
           </>
         ) : (
           <div style={{ fontSize: 18, fontWeight: 700 }}>*** KITCHEN ORDER (KOT) ***</div>
@@ -85,8 +91,15 @@ export default function Receipt({
       )}
 
       <div style={{ textAlign: 'center', fontSize: 11, marginTop: 10 }}>
-        {mode === 'BILL' ? 'Thank you! Please visit again.' : '— send to kitchen —'}
+        {mode === 'BILL'
+          ? settings?.receiptFooter || 'Thank you! Please visit again.'
+          : '— send to kitchen —'}
       </div>
+      {mode === 'BILL' && settings?.wifiPassword && (
+        <div style={{ textAlign: 'center', fontSize: 10, marginTop: 4 }}>
+          WiFi: {settings.wifiPassword}
+        </div>
+      )}
     </div>
   );
 }

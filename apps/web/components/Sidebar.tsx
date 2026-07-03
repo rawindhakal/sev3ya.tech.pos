@@ -12,6 +12,8 @@ const NAV = [
   { href: '/orders', label: 'Orders / KOT', icon: '🧾', enabled: true },
   { href: '/menu', label: 'Menu & Items', icon: '🍽️', enabled: true },
   { href: '/modifiers', label: 'Modifiers', icon: '➕', enabled: true },
+  { href: '/cash-drawer', label: 'Cash Drawer', icon: '💵', enabled: true },
+  { href: '/settings', label: 'Settings', icon: '⚙️', enabled: true },
   { href: '/forecast', label: 'Sales & Forecast', icon: '📈', enabled: false },
 ];
 

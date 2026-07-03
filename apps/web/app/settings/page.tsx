@@ -1,0 +1,104 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
+import type { Settings } from '@/lib/types';
+
+export default function SettingsPage() {
+  const [form, setForm] = useState<Settings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get<Settings>('/settings').then(setForm).catch((e) => setError((e as Error).message));
+  }, []);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form) return;
+    setSaving(true);
+    try {
+      const updated = await api.patch<Settings>('/settings', {
+        restaurantName: form.restaurantName,
+        address: form.address,
+        phone: form.phone,
+        taxId: form.taxId,
+        receiptHeader: form.receiptHeader,
+        receiptFooter: form.receiptFooter,
+        wifiPassword: form.wifiPassword,
+      });
+      setForm(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (error) return <div className="p-8"><div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div></div>;
+  if (!form) return <div className="p-8 text-sm text-slate-400">Loading…</div>;
+
+  const set = (k: keyof Settings, v: string) => setForm({ ...form, [k]: v });
+
+  return (
+    <div className="mx-auto max-w-2xl p-8">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
+        <p className="text-sm text-slate-500">Receipt branding &amp; outlet details</p>
+      </header>
+
+      <form onSubmit={save} className="card space-y-5 p-6">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="label">Restaurant name</label>
+            <input className="input" value={form.restaurantName ?? ''} onChange={(e) => set('restaurantName', e.target.value)} required />
+          </div>
+          <div>
+            <label className="label">Phone</label>
+            <input className="input" value={form.phone ?? ''} onChange={(e) => set('phone', e.target.value)} placeholder="01-4XXXXXX" />
+          </div>
+          <div>
+            <label className="label">Tax ID (PAN/VAT)</label>
+            <input className="input" value={form.taxId ?? ''} onChange={(e) => set('taxId', e.target.value)} placeholder="PAN 601234567" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Address</label>
+            <input className="input" value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} placeholder="Thamel, Kathmandu" />
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 pt-5">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Receipt template</h2>
+          <div className="space-y-4">
+            <div>
+              <label className="label">Header line (above items)</label>
+              <input className="input" value={form.receiptHeader ?? ''} onChange={(e) => set('receiptHeader', e.target.value)} placeholder="Welcome to CakeZake!" />
+            </div>
+            <div>
+              <label className="label">Footer line (bottom of bill)</label>
+              <input className="input" value={form.receiptFooter ?? ''} onChange={(e) => set('receiptFooter', e.target.value)} placeholder="Dhanyabad! Visit again 🙏" />
+            </div>
+            <div>
+              <label className="label">WiFi password (printed on bill)</label>
+              <input className="input" value={form.wifiPassword ?? ''} onChange={(e) => set('wifiPassword', e.target.value)} placeholder="cakezake123" />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+          VAT rate <strong>{Math.round(form.vatRate * 100)}%</strong> and currency <strong>{form.currency}</strong> are set via server config (<code>apps/api/.env</code>).
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button type="submit" className="btn-primary" disabled={saving}>
+            {saving ? 'Saving…' : 'Save settings'}
+          </button>
+          {saved && <span className="text-sm text-emerald-600">✓ Saved</span>}
+        </div>
+      </form>
+    </div>
+  );
+}

@@ -9,6 +9,7 @@ import { WaitersModule } from './waiters/waiters.module';
 import { OrdersModule } from './orders/orders.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SettingsModule } from './settings/settings.module';
+import { CashDrawerModule } from './cash-drawer/cash-drawer.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SettingsModule } from './settings/settings.module';
     OrdersModule,
     AnalyticsModule,
     SettingsModule,
+    CashDrawerModule,
   ],
   controllers: [HealthController],
 })

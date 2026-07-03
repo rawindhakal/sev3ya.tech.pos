@@ -26,9 +26,9 @@ High value, extends what exists. Backend already supports multi-tender + discoun
 - [x] Refund & void auditing with mandatory remarks (#10)
 - [x] Open-item billing (custom name/price) (#16)
 - [x] Price tiers by order type — dine-in/takeaway/delivery (#15)
+- [x] Cash drawer open/close + petty cash log (#17)
+- [x] Editable receipt header/footer branding + tax IDs (#11)
 - [ ] Split bill by seat / item / equal parts (#3)
-- [ ] Cash drawer open/close + petty cash log (#17)
-- [ ] Editable receipt header/footer branding + tax IDs (#11)
 - [ ] Dynamic tax/service-charge configurator UI (#7)
 - [ ] Token generation, combo autosuggest, e-receipt via SMS/WhatsApp (#9, #22, #23)
 

@@ -243,5 +243,64 @@ model Payment {
   createdAt  DateTime      @default(now())
 
   @@index([orderId])
+  @@index([method, createdAt])
   @@map("payments")
+}
+
+// ─────────────────────────────────────────────────────────────
+// SETTINGS (editable receipt branding — matrix #11)
+// ─────────────────────────────────────────────────────────────
+
+model CafeSetting {
+  // Single-row table; always addressed by id = "singleton".
+  id             String   @id @default("singleton")
+  restaurantName String   @default("CakeZake")
+  address        String?
+  phone          String?
+  taxId          String?  // PAN / VAT registration number
+  receiptHeader  String?
+  receiptFooter  String?
+  wifiPassword   String?
+  updatedAt      DateTime @updatedAt
+
+  @@map("cafe_settings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CASH DRAWER (petty-cash flow — matrix #17)
+// ─────────────────────────────────────────────────────────────
+
+enum CashMovementType {
+  OPENING
+  PAY_IN
+  PAY_OUT
+}
+
+model CashDrawerSession {
+  id                String    @id @default(cuid())
+  openedAt          DateTime  @default(now())
+  openingFloatCents Int       @default(0)
+  openedBy          String?
+  closedAt          DateTime?
+  closedBy          String?
+  countedCents      Int? // physically counted cash at close
+  expectedCents     Int? // system-expected cash at close
+  varianceCents     Int? // counted - expected
+  notes             String?
+  movements         CashMovement[]
+
+  @@map("cash_drawer_sessions")
+}
+
+model CashMovement {
+  id          String            @id @default(cuid())
+  sessionId   String
+  session     CashDrawerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type        CashMovementType
+  amountCents Int
+  reason      String?
+  createdAt   DateTime          @default(now())
+
+  @@index([sessionId])
+  @@map("cash_movements")
 }

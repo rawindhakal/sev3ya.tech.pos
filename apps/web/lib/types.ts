@@ -149,6 +149,43 @@ export interface Settings {
   vatRate: number;
   currency: string;
   restaurantName: string;
+  address?: string | null;
+  phone?: string | null;
+  taxId?: string | null;
+  receiptHeader?: string | null;
+  receiptFooter?: string | null;
+  wifiPassword?: string | null;
+}
+
+export interface CashMovement {
+  id: string;
+  type: 'OPENING' | 'PAY_IN' | 'PAY_OUT';
+  amountCents: number;
+  reason?: string | null;
+  createdAt: string;
+}
+
+export interface CashDrawerSession {
+  id: string;
+  openedAt: string;
+  openingFloatCents: number;
+  openedBy?: string | null;
+  closedAt?: string | null;
+  closedBy?: string | null;
+  countedCents?: number | null;
+  expectedCents?: number | null;
+  varianceCents?: number | null;
+  notes?: string | null;
+  movements?: CashMovement[];
+}
+
+export interface CashDrawerState {
+  open: boolean;
+  session: CashDrawerSession | null;
+  cashSalesCents?: number;
+  payIn?: number;
+  payOut?: number;
+  expectedCents?: number;
 }
 
 export interface DashboardData {
