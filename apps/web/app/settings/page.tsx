@@ -24,6 +24,8 @@ export default function SettingsPage() {
         address: form.address,
         phone: form.phone,
         taxId: form.taxId,
+        vatRate: form.vatRate,
+        serviceChargeRate: form.serviceChargeRate,
         receiptHeader: form.receiptHeader,
         receiptFooter: form.receiptFooter,
         wifiPassword: form.wifiPassword,
@@ -88,8 +90,37 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-          VAT rate <strong>{Math.round(form.vatRate * 100)}%</strong> and currency <strong>{form.currency}</strong> are set via server config (<code>apps/api/.env</code>).
+        <div className="border-t border-slate-100 pt-5">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Taxes &amp; charges</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">VAT rate (%)</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={Math.round(form.vatRate * 1000) / 10}
+                onChange={(e) => setForm({ ...form, vatRate: (parseFloat(e.target.value) || 0) / 100 })}
+              />
+            </div>
+            <div>
+              <label className="label">Service charge (%)</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={Math.round(form.serviceChargeRate * 1000) / 10}
+                onChange={(e) => setForm({ ...form, serviceChargeRate: (parseFloat(e.target.value) || 0) / 100 })}
+              />
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Applied to every new order: service charge on the discounted subtotal, then VAT on top. Currency (<strong>{form.currency}</strong>) is set in <code>apps/api/.env</code>.
+          </p>
         </div>
 
         <div className="flex items-center gap-3">

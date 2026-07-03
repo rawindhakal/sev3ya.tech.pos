@@ -85,6 +85,7 @@ export default function PosPage() {
   }
 
   const vatRate = settings?.vatRate ?? 0.13;
+  const serviceChargeRate = settings?.serviceChargeRate ?? 0;
   const totals = useMemo(() => {
     let subtotal = 0;
     let count = 0;
@@ -93,12 +94,14 @@ export default function PosPage() {
       subtotal += (l.unitPriceCents + mod) * l.quantity;
       count += l.quantity;
     }
-    // Discount applies before VAT — mirrors the server (common/settings.ts).
+    // Mirrors the server (common/settings.ts): subtotal − discount →
+    // + service charge → + VAT.
     const discountCents = Math.min(subtotal, Math.round((parseFloat(discount) || 0) * 100));
     const taxable = subtotal - discountCents;
-    const tax = Math.round(taxable * vatRate);
-    return { count, subtotal, discountCents, tax, total: taxable + tax };
-  }, [cart, vatRate, discount]);
+    const serviceCharge = Math.round(taxable * serviceChargeRate);
+    const tax = Math.round((taxable + serviceCharge) * vatRate);
+    return { count, subtotal, discountCents, serviceCharge, tax, total: taxable + serviceCharge + tax };
+  }, [cart, vatRate, serviceChargeRate, discount]);
 
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => i.isAvailable);
@@ -667,6 +670,12 @@ export default function PosPage() {
                   <div className="flex justify-between text-emerald-600">
                     <span>Discount applied</span>
                     <span>−{formatMoney(totals.discountCents)}</span>
+                  </div>
+                )}
+                {serviceChargeRate > 0 && (
+                  <div className="flex justify-between text-slate-500">
+                    <span>Service charge ({Math.round(serviceChargeRate * 100)}%)</span>
+                    <span>{formatMoney(totals.serviceCharge)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-slate-500">

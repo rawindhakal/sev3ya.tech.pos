@@ -27,6 +27,17 @@ export default function PaymentPanel({
   const [lines, setLines] = useState<TenderLine[]>([
     { method: 'CASH', amount: (totalCents / 100).toFixed(2) },
   ]);
+  const [ways, setWays] = useState('2');
+
+  // Split the bill into N equal parts (matrix #3), remainder on the last part.
+  function splitEqually() {
+    const n = Math.max(2, Math.min(20, parseInt(ways) || 2));
+    const base = Math.floor(totalCents / n);
+    const parts = Array.from({ length: n }, (_, i) =>
+      i === n - 1 ? totalCents - base * (n - 1) : base,
+    );
+    setLines(parts.map((c) => ({ method: 'CASH', amount: (c / 100).toFixed(2) })));
+  }
 
   const toCents = (s: string) => Math.round((parseFloat(s) || 0) * 100);
   const allocated = lines.reduce((s, l) => s + toCents(l.amount), 0);
@@ -114,9 +125,25 @@ export default function PaymentPanel({
         ))}
       </div>
 
-      <button onClick={addTender} className="w-full rounded-lg border border-dashed border-slate-300 py-2 text-sm text-slate-500 hover:bg-slate-50">
-        + Split across another method
-      </button>
+      <div className="flex items-center gap-2">
+        <button onClick={addTender} className="flex-1 rounded-lg border border-dashed border-slate-300 py-2 text-sm text-slate-500 hover:bg-slate-50">
+          + Add tender
+        </button>
+        <div className="flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2 py-1.5">
+          <span className="text-xs text-slate-500">Split equally</span>
+          <input
+            type="number"
+            min={2}
+            max={20}
+            value={ways}
+            onChange={(e) => setWays(e.target.value)}
+            className="w-12 rounded-md border border-slate-200 px-1.5 py-1 text-center text-sm"
+          />
+          <button onClick={splitEqually} className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200">
+            ways
+          </button>
+        </div>
+      </div>
 
       <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
         <div className="flex justify-between text-slate-500">

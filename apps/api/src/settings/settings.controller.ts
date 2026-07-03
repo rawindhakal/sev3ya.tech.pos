@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
-import { IsOptional, IsString } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { SettingsService } from './settings.service';
 
 class UpdateSettingsDto {
@@ -7,6 +7,9 @@ class UpdateSettingsDto {
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() taxId?: string;
+  // Rates as fractions: 0.13 = 13%. Capped at 100%.
+  @IsOptional() @IsNumber() @Min(0) @Max(1) vatRate?: number;
+  @IsOptional() @IsNumber() @Min(0) @Max(1) serviceChargeRate?: number;
   @IsOptional() @IsString() receiptHeader?: string;
   @IsOptional() @IsString() receiptFooter?: string;
   @IsOptional() @IsString() wifiPassword?: string;

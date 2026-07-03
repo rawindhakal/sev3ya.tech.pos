@@ -28,9 +28,10 @@ High value, extends what exists. Backend already supports multi-tender + discoun
 - [x] Price tiers by order type — dine-in/takeaway/delivery (#15)
 - [x] Cash drawer open/close + petty cash log (#17)
 - [x] Editable receipt header/footer branding + tax IDs (#11)
-- [ ] Split bill by seat / item / equal parts (#3)
-- [ ] Dynamic tax/service-charge configurator UI (#7)
+- [x] Dynamic tax/service-charge configurator UI (#7)
+- [~] Split bill — equal parts done; by-seat / by-item still to do (#3)
 - [ ] Token generation, combo autosuggest, e-receipt via SMS/WhatsApp (#9, #22, #23)
+- [ ] Hardware-tied: barcode scanner, customer display, weighted scale, pre-auth
 
 ## Phase 2 — Table & Floor Management (matrix #26–40, all must-have)
 - Visual drag-drop floor plan, table status timers, merge/join, transfer,

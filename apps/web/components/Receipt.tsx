@@ -80,6 +80,12 @@ export default function Receipt({
         <div style={{ fontSize: 12, borderTop: '1px dashed #000', marginTop: 6, paddingTop: 4 }}>
           <Row label="Subtotal" value={formatMoney(order.subtotalCents)} />
           {order.discountCents > 0 && <Row label="Discount" value={`-${formatMoney(order.discountCents)}`} />}
+          {order.serviceChargeCents > 0 && (
+            <Row
+              label={`Service charge (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`}
+              value={formatMoney(order.serviceChargeCents)}
+            />
+          )}
           <Row
             label={`VAT (${Math.round((settings?.vatRate ?? 0.13) * 100)}%)`}
             value={formatMoney(order.taxCents)}

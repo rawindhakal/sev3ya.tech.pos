@@ -12,25 +12,36 @@ export class SettingsService {
   private ensure() {
     return this.prisma.cafeSetting.upsert({
       where: { id: SINGLETON },
-      create: { id: SINGLETON, restaurantName: envSettings.restaurantName },
+      create: {
+        id: SINGLETON,
+        restaurantName: envSettings.restaurantName,
+        vatRate: envSettings.vatRate,
+      },
       update: {},
     });
   }
 
-  // Money config still comes from env (stable); branding comes from the DB.
+  // Currency stays env-driven; tax rates + branding are DB-configurable.
   async get() {
-    const branding = await this.ensure();
+    const s = await this.ensure();
     return {
-      vatRate: envSettings.vatRate,
       currency: envSettings.currency,
-      restaurantName: branding.restaurantName,
-      address: branding.address,
-      phone: branding.phone,
-      taxId: branding.taxId,
-      receiptHeader: branding.receiptHeader,
-      receiptFooter: branding.receiptFooter,
-      wifiPassword: branding.wifiPassword,
+      vatRate: s.vatRate,
+      serviceChargeRate: s.serviceChargeRate,
+      restaurantName: s.restaurantName,
+      address: s.address,
+      phone: s.phone,
+      taxId: s.taxId,
+      receiptHeader: s.receiptHeader,
+      receiptFooter: s.receiptFooter,
+      wifiPassword: s.wifiPassword,
     };
+  }
+
+  // Rates used by the order money math (single source of truth).
+  async getRates() {
+    const s = await this.ensure();
+    return { vatRate: s.vatRate, serviceChargeRate: s.serviceChargeRate };
   }
 
   async update(data: {
@@ -38,6 +49,8 @@ export class SettingsService {
     address?: string;
     phone?: string;
     taxId?: string;
+    vatRate?: number;
+    serviceChargeRate?: number;
     receiptHeader?: string;
     receiptFooter?: string;
     wifiPassword?: string;

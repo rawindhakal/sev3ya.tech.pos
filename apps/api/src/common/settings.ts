@@ -8,16 +8,28 @@ export const settings = {
 export interface OrderTotals {
   itemCount: number;
   subtotalCents: number;
-  taxCents: number;
   discountCents: number;
+  serviceChargeCents: number;
+  taxCents: number;
   totalCents: number;
 }
 
+export interface TotalsOptions {
+  discountCents?: number;
+  vatRate?: number;
+  serviceChargeRate?: number;
+}
+
 // Single source of truth for money math. All values in integer cents.
+// Order of operations: subtotal − discount → + service charge → + VAT.
 export function computeTotals(
   lines: { unitPriceCents: number; quantity: number; modifiers?: any }[],
-  discountCents = 0,
+  opts: TotalsOptions = {},
 ): OrderTotals {
+  const discountCents = opts.discountCents ?? 0;
+  const vatRate = opts.vatRate ?? settings.vatRate;
+  const serviceChargeRate = opts.serviceChargeRate ?? 0;
+
   let subtotalCents = 0;
   let itemCount = 0;
   for (const line of lines) {
@@ -30,7 +42,15 @@ export function computeTotals(
     itemCount += line.quantity;
   }
   const taxable = Math.max(0, subtotalCents - discountCents);
-  const taxCents = Math.round(taxable * settings.vatRate);
-  const totalCents = taxable + taxCents;
-  return { itemCount, subtotalCents, taxCents, discountCents, totalCents };
+  const serviceChargeCents = Math.round(taxable * serviceChargeRate);
+  const taxCents = Math.round((taxable + serviceChargeCents) * vatRate);
+  const totalCents = taxable + serviceChargeCents + taxCents;
+  return {
+    itemCount,
+    subtotalCents,
+    discountCents,
+    serviceChargeCents,
+    taxCents,
+    totalCents,
+  };
 }

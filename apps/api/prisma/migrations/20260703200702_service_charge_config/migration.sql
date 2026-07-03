@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "cafe_settings" ADD COLUMN     "serviceChargeRate" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "vatRate" DOUBLE PRECISION NOT NULL DEFAULT 0.13;
+
+-- AlterTable
+ALTER TABLE "orders" ADD COLUMN     "serviceChargeCents" INTEGER NOT NULL DEFAULT 0;

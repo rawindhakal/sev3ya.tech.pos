@@ -132,6 +132,7 @@ export interface Order {
   subtotalCents: number;
   taxCents: number;
   discountCents: number;
+  serviceChargeCents: number;
   totalCents: number;
   notes?: string | null;
   voidReason?: string | null;
@@ -147,6 +148,7 @@ export interface Order {
 
 export interface Settings {
   vatRate: number;
+  serviceChargeRate: number;
   currency: string;
   restaurantName: string;
   address?: string | null;

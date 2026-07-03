@@ -159,10 +159,11 @@ model Order {
   payments  Payment[]
 
   // Denormalised money snapshots (minor units).
-  subtotalCents Int @default(0)
-  taxCents      Int @default(0)
-  discountCents Int @default(0)
-  totalCents    Int @default(0)
+  subtotalCents      Int @default(0)
+  discountCents      Int @default(0)
+  serviceChargeCents Int @default(0)
+  taxCents           Int @default(0)
+  totalCents         Int @default(0)
 
   notes     String?
 
@@ -253,15 +254,18 @@ model Payment {
 
 model CafeSetting {
   // Single-row table; always addressed by id = "singleton".
-  id             String   @id @default("singleton")
-  restaurantName String   @default("CakeZake")
-  address        String?
-  phone          String?
-  taxId          String?  // PAN / VAT registration number
-  receiptHeader  String?
-  receiptFooter  String?
-  wifiPassword   String?
-  updatedAt      DateTime @updatedAt
+  id                String   @id @default("singleton")
+  restaurantName    String   @default("CakeZake")
+  address           String?
+  phone             String?
+  taxId             String?  // PAN / VAT registration number
+  // Configurable tax rates (matrix #7), stored as fractions (0.13 = 13%).
+  vatRate           Float    @default(0.13)
+  serviceChargeRate Float    @default(0)
+  receiptHeader     String?
+  receiptFooter     String?
+  wifiPassword      String?
+  updatedAt         DateTime @updatedAt
 
   @@map("cafe_settings")
 }

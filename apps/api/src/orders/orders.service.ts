@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeTotals } from '../common/settings';
+import { SettingsService } from '../settings/settings.service';
 import { OrderType } from '@prisma/client';
 import {
   CartLineDto,
@@ -26,7 +27,10 @@ const orderInclude = {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
 
   // Pick the price for a menu item based on the order type (matrix #15).
   private tierPrice(
@@ -76,7 +80,8 @@ export class OrdersService {
 
   async create(dto: CreateOrderDto) {
     const resolved = await this.resolveLines(dto.items ?? [], dto.type);
-    const totals = computeTotals(resolved);
+    const rates = await this.settings.getRates();
+    const totals = computeTotals(resolved, rates);
     const isDineIn = dto.type === 'DINE_IN' && dto.tableId;
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -88,6 +93,7 @@ export class OrdersService {
           guestCount: dto.guestCount ?? 1,
           seatedAt: isDineIn ? new Date() : null,
           subtotalCents: totals.subtotalCents,
+          serviceChargeCents: totals.serviceChargeCents,
           taxCents: totals.taxCents,
           totalCents: totals.totalCents,
           items: { create: resolved },
@@ -133,7 +139,11 @@ export class OrdersService {
   async saveCart(id: string, dto: SaveCartDto) {
     const existing = await this.findOne(id);
     const resolved = await this.resolveLines(dto.items, existing.type);
-    const totals = computeTotals(resolved, dto.discountCents ?? 0);
+    const rates = await this.settings.getRates();
+    const totals = computeTotals(resolved, {
+      ...rates,
+      discountCents: dto.discountCents ?? 0,
+    });
     return this.prisma.$transaction(async (tx) => {
       await tx.orderItem.deleteMany({ where: { orderId: id } });
       return tx.order.update({
@@ -144,6 +154,7 @@ export class OrdersService {
           guestCount: dto.guestCount,
           discountCents: dto.discountCents ?? 0,
           subtotalCents: totals.subtotalCents,
+          serviceChargeCents: totals.serviceChargeCents,
           taxCents: totals.taxCents,
           totalCents: totals.totalCents,
           items: { create: resolved },
