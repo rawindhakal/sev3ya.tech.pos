@@ -1,0 +1,206 @@
+// CakeZake POS — database schema
+// Provider: PostgreSQL. ORM: Prisma.
+// This schema models the full POS domain. In this first pass the API + UI
+// fully implement Categories, MenuItems and Modifiers; the remaining models
+// (Tables, Orders, KOT, Payments) are defined here so features can be added
+// incrementally without breaking migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// MENU
+// ─────────────────────────────────────────────────────────────
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  sortOrder Int        @default(0)
+  isActive  Boolean    @default(true)
+  items     MenuItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("categories")
+}
+
+model MenuItem {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  // Price stored in minor units (cents) to avoid floating point errors.
+  priceCents  Int
+  isAvailable Boolean  @default(true)
+  imageUrl    String?
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  // Modifier groups attached to this item (e.g. "Size", "Add-ons").
+  modifierGroups ModifierGroup[] @relation("MenuItemModifierGroups")
+
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+  @@map("menu_items")
+}
+
+model ModifierGroup {
+  id          String     @id @default(cuid())
+  name        String     // e.g. "Size", "Extra toppings"
+  // Selection rules: how many options a customer may pick.
+  minSelect   Int        @default(0)
+  maxSelect   Int        @default(1)
+  sortOrder   Int        @default(0)
+  modifiers   Modifier[]
+  menuItems   MenuItem[] @relation("MenuItemModifierGroups")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id            String        @id @default(cuid())
+  name          String        // e.g. "Large", "Extra cheese"
+  priceCents    Int           @default(0) // price delta this modifier adds
+  sortOrder     Int           @default(0)
+  groupId       String
+  group         ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([groupId])
+  @@map("modifiers")
+}
+
+// ─────────────────────────────────────────────────────────────
+// FLOOR / TABLES
+// ─────────────────────────────────────────────────────────────
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+}
+
+model RestaurantTable {
+  id        String      @id @default(cuid())
+  name      String      // e.g. "T1", "Patio 3"
+  seats     Int         @default(4)
+  area      String?     // e.g. "Ground floor", "Patio"
+  status    TableStatus @default(AVAILABLE)
+  orders    Order[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@map("restaurant_tables")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ORDERS / KOT / BILLING
+// ─────────────────────────────────────────────────────────────
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+}
+
+enum OrderStatus {
+  OPEN
+  SENT_TO_KITCHEN
+  READY
+  SERVED
+  BILLED
+  PAID
+  CANCELLED
+}
+
+enum KotStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  // Human-friendly running order number.
+  number     Int         @default(autoincrement())
+  type       OrderType   @default(DINE_IN)
+  status     OrderStatus @default(OPEN)
+
+  tableId String?
+  table   RestaurantTable? @relation(fields: [tableId], references: [id])
+
+  items     OrderItem[]
+  payments  Payment[]
+
+  // Denormalised money snapshots (minor units).
+  subtotalCents Int @default(0)
+  taxCents      Int @default(0)
+  totalCents    Int @default(0)
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String    @id @default(cuid())
+  orderId    String
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  menuItemId String
+  menuItem   MenuItem  @relation(fields: [menuItemId], references: [id])
+
+  // Snapshot of name/price at time of ordering.
+  nameSnapshot String
+  unitPriceCents Int
+  quantity     Int      @default(1)
+
+  // Selected modifiers stored as JSON snapshot: [{name, priceCents}]
+  modifiers  Json?
+  kotStatus  KotStatus @default(PENDING)
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  WALLET
+  OTHER
+}
+
+model Payment {
+  id         String        @id @default(cuid())
+  orderId    String
+  order      Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amountCents Int
+  method     PaymentMethod @default(CASH)
+  createdAt  DateTime      @default(now())
+
+  @@index([orderId])
+  @@map("payments")
+}

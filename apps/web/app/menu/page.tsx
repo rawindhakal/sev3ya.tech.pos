@@ -1,0 +1,353 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { api, formatMoney, dollarsToCents } from '@/lib/api';
+import type { Category, MenuItem } from '@/lib/types';
+import Modal from '@/components/Modal';
+
+type ItemForm = {
+  name: string;
+  description: string;
+  priceDollars: string;
+  categoryId: string;
+  isAvailable: boolean;
+};
+
+const emptyForm: ItemForm = {
+  name: '',
+  description: '',
+  priceDollars: '',
+  categoryId: '',
+  isAvailable: true,
+};
+
+export default function MenuPage() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [activeCat, setActiveCat] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [itemModal, setItemModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<ItemForm>(emptyForm);
+  const [catModal, setCatModal] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [cats, its] = await Promise.all([
+        api.get<Category[]>('/categories'),
+        api.get<MenuItem[]>('/menu-items'),
+      ]);
+      setCategories(cats);
+      setItems(its);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const filtered = useMemo(
+    () =>
+      activeCat === 'all'
+        ? items
+        : items.filter((i) => i.categoryId === activeCat),
+    [items, activeCat],
+  );
+
+  function openCreate() {
+    setEditingId(null);
+    setForm({
+      ...emptyForm,
+      categoryId: activeCat !== 'all' ? activeCat : categories[0]?.id ?? '',
+    });
+    setItemModal(true);
+  }
+
+  function openEdit(item: MenuItem) {
+    setEditingId(item.id);
+    setForm({
+      name: item.name,
+      description: item.description ?? '',
+      priceDollars: (item.priceCents / 100).toFixed(2),
+      categoryId: item.categoryId,
+      isAvailable: item.isAvailable,
+    });
+    setItemModal(true);
+  }
+
+  async function saveItem(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim() || undefined,
+        priceCents: dollarsToCents(parseFloat(form.priceDollars || '0')),
+        categoryId: form.categoryId,
+        isAvailable: form.isAvailable,
+      };
+      if (editingId) {
+        await api.patch(`/menu-items/${editingId}`, payload);
+      } else {
+        await api.post('/menu-items', payload);
+      }
+      setItemModal(false);
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleAvailable(item: MenuItem) {
+    // Optimistic update.
+    setItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, isAvailable: !i.isAvailable } : i)),
+    );
+    try {
+      await api.patch(`/menu-items/${item.id}`, { isAvailable: !item.isAvailable });
+    } catch {
+      load();
+    }
+  }
+
+  async function deleteItem(item: MenuItem) {
+    if (!confirm(`Delete "${item.name}"?`)) return;
+    try {
+      await api.delete(`/menu-items/${item.id}`);
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function createCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+    setSaving(true);
+    try {
+      await api.post('/categories', { name: newCatName.trim(), sortOrder: categories.length });
+      setNewCatName('');
+      setCatModal(false);
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-6xl p-8">
+      <header className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Menu & Items</h1>
+          <p className="text-sm text-slate-500">Manage your categories and menu items</p>
+        </div>
+        <div className="flex gap-2">
+          <button className="btn-ghost" onClick={() => setCatModal(true)}>
+            + Category
+          </button>
+          <button className="btn-primary" onClick={openCreate} disabled={categories.length === 0}>
+            + Add Item
+          </button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error} — is the API running on port 4000?
+        </div>
+      )}
+
+      {/* Category filter tabs */}
+      <div className="mb-6 flex flex-wrap gap-2">
+        <button
+          onClick={() => setActiveCat('all')}
+          className={`badge px-3 py-1.5 ${
+            activeCat === 'all' ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'
+          }`}
+        >
+          All ({items.length})
+        </button>
+        {categories.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => setActiveCat(c.id)}
+            className={`badge px-3 py-1.5 ${
+              activeCat === c.id ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'
+            }`}
+          >
+            {c.name} ({c._count?.items ?? 0})
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : filtered.length === 0 ? (
+        <div className="card p-10 text-center text-slate-400">
+          No items here yet. Click <strong>+ Add Item</strong> to create one.
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((item) => (
+            <div key={item.id} className="card flex flex-col p-4">
+              <div className="mb-1 flex items-start justify-between gap-2">
+                <h3 className="font-semibold text-slate-900">{item.name}</h3>
+                <span className="whitespace-nowrap font-bold text-brand-700">
+                  {formatMoney(item.priceCents)}
+                </span>
+              </div>
+              <p className="mb-3 line-clamp-2 min-h-[2.5rem] text-xs text-slate-500">
+                {item.description || 'No description'}
+              </p>
+              <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                <span className="badge bg-slate-100 text-slate-500">{item.category?.name}</span>
+                {(item.modifierGroups ?? []).map((g) => (
+                  <span key={g.id} className="badge bg-brand-50 text-brand-600">
+                    {g.name}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
+                <button
+                  onClick={() => toggleAvailable(item)}
+                  className={`badge ${
+                    item.isAvailable ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {item.isAvailable ? '● Available' : '○ Unavailable'}
+                </button>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => openEdit(item)}
+                    className="rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-100"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => deleteItem(item)}
+                    className="rounded-md px-2 py-1 text-xs text-red-500 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Item modal */}
+      <Modal
+        open={itemModal}
+        title={editingId ? 'Edit item' : 'New item'}
+        onClose={() => setItemModal(false)}
+      >
+        <form onSubmit={saveItem} className="space-y-4">
+          <div>
+            <label className="label">Name</label>
+            <input
+              className="input"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <textarea
+              className="input"
+              rows={2}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Price ($)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.priceDollars}
+                onChange={(e) => setForm({ ...form, priceDollars: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="label">Category</label>
+              <select
+                className="input"
+                value={form.categoryId}
+                onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                required
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={form.isAvailable}
+              onChange={(e) => setForm({ ...form, isAvailable: e.target.checked })}
+            />
+            Available for ordering
+          </label>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-ghost" onClick={() => setItemModal(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create item'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Category modal */}
+      <Modal open={catModal} title="New category" onClose={() => setCatModal(false)}>
+        <form onSubmit={createCategory} className="space-y-4">
+          <div>
+            <label className="label">Category name</label>
+            <input
+              className="input"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              placeholder="e.g. Beverages"
+              required
+              autoFocus
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={() => setCatModal(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Create'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}
