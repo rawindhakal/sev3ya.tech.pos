@@ -4,6 +4,11 @@ import { HealthController } from './health/health.controller';
 import { CategoriesModule } from './categories/categories.module';
 import { MenuItemsModule } from './menu-items/menu-items.module';
 import { ModifiersModule } from './modifiers/modifiers.module';
+import { TablesModule } from './tables/tables.module';
+import { WaitersModule } from './waiters/waiters.module';
+import { OrdersModule } from './orders/orders.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -11,8 +16,11 @@ import { ModifiersModule } from './modifiers/modifiers.module';
     CategoriesModule,
     MenuItemsModule,
     ModifiersModule,
-    // Future feature modules plug in here: TablesModule, OrdersModule,
-    // KotModule, PaymentsModule, ForecastModule, AuthModule …
+    TablesModule,
+    WaitersModule,
+    OrdersModule,
+    AnalyticsModule,
+    SettingsModule,
   ],
   controllers: [HealthController],
 })

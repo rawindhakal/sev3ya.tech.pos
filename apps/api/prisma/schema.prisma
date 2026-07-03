@@ -144,20 +144,45 @@ model Order {
   tableId String?
   table   RestaurantTable? @relation(fields: [tableId], references: [id])
 
+  waiterId String?
+  waiter   Waiter? @relation(fields: [waiterId], references: [id])
+
+  // Dine-in guest count (covers) — used for guest-time / per-cover analytics.
+  guestCount Int @default(1)
+
   items     OrderItem[]
   payments  Payment[]
 
   // Denormalised money snapshots (minor units).
   subtotalCents Int @default(0)
   taxCents      Int @default(0)
+  discountCents Int @default(0)
   totalCents    Int @default(0)
 
   notes     String?
+
+  // Lifecycle timestamps drive turnaround / guest-time metrics.
+  seatedAt  DateTime?  // when the table became occupied for this order
+  billedAt  DateTime?
+  paidAt    DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([status])
+  @@index([createdAt])
+  @@index([tableId])
   @@map("orders")
+}
+
+model Waiter {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("waiters")
 }
 
 model OrderItem {

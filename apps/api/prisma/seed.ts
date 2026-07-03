@@ -1,6 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, OrderType, PaymentMethod } from '@prisma/client';
 
 const prisma = new PrismaClient();
+
+const VAT_RATE = parseFloat(process.env.VAT_RATE ?? '0.13');
+const rand = (min: number, max: number) =>
+  Math.floor(Math.random() * (max - min + 1)) + min;
+const pick = <T>(arr: T[]): T => arr[rand(0, arr.length - 1)];
 
 async function main() {
   console.log('🌱 Seeding CakeZake POS…');
@@ -14,6 +19,7 @@ async function main() {
   await prisma.menuItem.deleteMany();
   await prisma.category.deleteMany();
   await prisma.restaurantTable.deleteMany();
+  await prisma.waiter.deleteMany();
 
   // Modifier groups
   const sizeGroup = await prisma.modifierGroup.create({
@@ -131,11 +137,92 @@ async function main() {
     ],
   });
 
+  // Waiters
+  await prisma.waiter.createMany({
+    data: [
+      { name: 'Ava' },
+      { name: 'Noah' },
+      { name: 'Mia' },
+      { name: 'Liam' },
+    ],
+  });
+
+  // ── Generate ~30 days of order history so analytics has real data ──
+  const allItems = await prisma.menuItem.findMany();
+  const allTables = await prisma.restaurantTable.findMany();
+  const allWaiters = await prisma.waiter.findMany();
+  const methods: PaymentMethod[] = ['CASH', 'CARD', 'UPI', 'WALLET'];
+  const types: OrderType[] = ['DINE_IN', 'DINE_IN', 'DINE_IN', 'TAKEAWAY', 'DELIVERY'];
+
+  let orderCount = 0;
+  for (let d = 29; d >= 0; d--) {
+    // More orders on recent days + weekends → organic-looking trend.
+    const ordersToday = rand(6, 16);
+    for (let o = 0; o < ordersToday; o++) {
+      const day = new Date();
+      day.setDate(day.getDate() - d);
+      day.setHours(rand(11, 22), rand(0, 59), 0, 0);
+
+      const type = pick(types);
+      const isDineIn = type === 'DINE_IN';
+      const table = isDineIn ? pick(allTables) : null;
+      const waiter = pick(allWaiters);
+      const guestCount = isDineIn ? rand(1, 6) : 1;
+
+      // Build 1–5 line items.
+      const lineCount = rand(1, 5);
+      const lines = Array.from({ length: lineCount }).map(() => {
+        const item = pick(allItems);
+        return {
+          menuItemId: item.id,
+          nameSnapshot: item.name,
+          unitPriceCents: item.priceCents,
+          quantity: rand(1, 3),
+          modifiers: [] as any,
+        };
+      });
+      const subtotal = lines.reduce(
+        (s, l) => s + l.unitPriceCents * l.quantity,
+        0,
+      );
+      const tax = Math.round(subtotal * VAT_RATE);
+      const total = subtotal + tax;
+
+      // Seated → paid within 30–110 minutes for dine-in.
+      const seatedAt = isDineIn ? day : null;
+      const paidAt = new Date(day.getTime() + rand(15, 110) * 60_000);
+
+      await prisma.order.create({
+        data: {
+          type,
+          status: 'PAID',
+          tableId: table?.id ?? null,
+          waiterId: waiter.id,
+          guestCount,
+          subtotalCents: subtotal,
+          taxCents: tax,
+          totalCents: total,
+          seatedAt,
+          billedAt: paidAt,
+          paidAt,
+          createdAt: day,
+          items: { create: lines },
+          payments: {
+            create: [{ method: pick(methods), amountCents: total, createdAt: paidAt }],
+          },
+        },
+      });
+      orderCount++;
+    }
+  }
+
   const counts = {
     categories: await prisma.category.count(),
     items: await prisma.menuItem.count(),
     modifierGroups: await prisma.modifierGroup.count(),
     tables: await prisma.restaurantTable.count(),
+    waiters: await prisma.waiter.count(),
+    orders: orderCount,
   };
   console.log('✅ Seed complete:', counts);
 }

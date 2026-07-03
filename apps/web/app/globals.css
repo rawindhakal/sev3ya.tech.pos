@@ -37,3 +37,28 @@ body {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
 }
+
+/* Thermal-receipt printing: hide the app, show only #print-area on print. */
+@media screen {
+  #print-area {
+    display: none;
+  }
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-area,
+  #print-area * {
+    visibility: visible;
+  }
+  #print-area {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    padding: 8px;
+    font-family: ui-monospace, monospace;
+    color: #000;
+  }
+}

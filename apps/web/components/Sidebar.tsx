@@ -7,11 +7,11 @@ import { usePathname } from 'next/navigation';
 // and point href at the new route — the shell already handles the rest.
 const NAV = [
   { href: '/', label: 'Dashboard', icon: '📊', enabled: true },
+  { href: '/pos', label: 'New Order (POS)', icon: '🛒', enabled: true },
+  { href: '/tables', label: 'Tables', icon: '🪑', enabled: true },
+  { href: '/orders', label: 'Orders / KOT', icon: '🧾', enabled: true },
   { href: '/menu', label: 'Menu & Items', icon: '🍽️', enabled: true },
   { href: '/modifiers', label: 'Modifiers', icon: '➕', enabled: true },
-  { href: '/tables', label: 'Tables', icon: '🪑', enabled: false },
-  { href: '/orders', label: 'Orders / KOT', icon: '🧾', enabled: false },
-  { href: '/billing', label: 'Billing', icon: '💳', enabled: false },
   { href: '/forecast', label: 'Sales & Forecast', icon: '📈', enabled: false },
 ];
 
