@@ -35,7 +35,11 @@ model MenuItem {
   name        String
   description String?
   // Price stored in minor units (cents) to avoid floating point errors.
-  priceCents  Int
+  // priceCents is the base (dine-in) price; the tier prices below are
+  // optional overrides used for takeaway / delivery (matrix #15).
+  priceCents          Int
+  takeawayPriceCents  Int?
+  deliveryPriceCents  Int?
   isAvailable Boolean  @default(true)
   imageUrl    String?
 
@@ -124,6 +128,7 @@ enum OrderStatus {
   SERVED
   BILLED
   PAID
+  REFUNDED
   CANCELLED
 }
 
@@ -161,6 +166,12 @@ model Order {
 
   notes     String?
 
+  // Void / refund audit trail (matrix #10).
+  voidReason   String?
+  refundReason String?
+  refundCents  Int       @default(0)
+  refundedAt   DateTime?
+
   // Lifecycle timestamps drive turnaround / guest-time metrics.
   seatedAt  DateTime?  // when the table became occupied for this order
   billedAt  DateTime?
@@ -190,8 +201,10 @@ model OrderItem {
   orderId    String
   order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  menuItemId String
-  menuItem   MenuItem  @relation(fields: [menuItemId], references: [id])
+  // Nullable so "open items" (custom name/price, not on the menu) are
+  // supported (matrix #16).
+  menuItemId String?
+  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id])
 
   // Snapshot of name/price at time of ordering.
   nameSnapshot String

@@ -35,11 +35,20 @@ export interface MenuItem {
   name: string;
   description?: string | null;
   priceCents: number;
+  takeawayPriceCents?: number | null;
+  deliveryPriceCents?: number | null;
   isAvailable: boolean;
   imageUrl?: string | null;
   categoryId: string;
   category?: { id: string; name: string };
   modifierGroups?: ModifierGroupRef[];
+}
+
+// Returns the effective price for a menu item given the order type (#15).
+export function priceForType(item: MenuItem, type: OrderType): number {
+  if (type === 'TAKEAWAY') return item.takeawayPriceCents ?? item.priceCents;
+  if (type === 'DELIVERY') return item.deliveryPriceCents ?? item.priceCents;
+  return item.priceCents;
 }
 
 export type OrderType = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY';
@@ -50,6 +59,7 @@ export type OrderStatus =
   | 'SERVED'
   | 'BILLED'
   | 'PAID'
+  | 'REFUNDED'
   | 'CANCELLED';
 export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING';
 export type PaymentMethod =
@@ -96,7 +106,7 @@ export interface CartModifier {
 
 export interface OrderItem {
   id: string;
-  menuItemId: string;
+  menuItemId?: string | null;
   nameSnapshot: string;
   unitPriceCents: number;
   quantity: number;
@@ -124,6 +134,10 @@ export interface Order {
   discountCents: number;
   totalCents: number;
   notes?: string | null;
+  voidReason?: string | null;
+  refundReason?: string | null;
+  refundCents: number;
+  refundedAt?: string | null;
   items: OrderItem[];
   payments: Payment[];
   table?: { id: string; name: string; area?: string | null } | null;

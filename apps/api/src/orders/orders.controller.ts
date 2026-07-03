@@ -13,8 +13,10 @@ import { OrdersService } from './orders.service';
 import {
   CreateOrderDto,
   PayDto,
+  RefundDto,
   SaveCartDto,
   UpdateOrderDto,
+  VoidDto,
 } from './dto/order.dto';
 
 @Controller('orders')
@@ -61,8 +63,15 @@ export class OrdersController {
     return this.orders.pay(id, dto);
   }
 
+  @Post(':id/refund')
+  refund(@Param('id') id: string, @Body() dto: RefundDto) {
+    return this.orders.refund(id, dto);
+  }
+
+  // Void with a mandatory reason. Reason can also be supplied via query for
+  // simple DELETE calls.
   @Delete(':id')
-  cancel(@Param('id') id: string) {
-    return this.orders.cancel(id);
+  cancel(@Param('id') id: string, @Body() body: VoidDto) {
+    return this.orders.cancel(id, body);
   }
 }

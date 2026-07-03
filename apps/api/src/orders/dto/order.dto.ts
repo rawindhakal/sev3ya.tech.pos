@@ -17,7 +17,10 @@ export class CartModifierDto {
 }
 
 export class CartLineDto {
-  @IsString() @IsNotEmpty() menuItemId: string;
+  // Either menuItemId (menu item) OR name+unitPriceCents (open item, #16).
+  @IsOptional() @IsString() @IsNotEmpty() menuItemId?: string;
+  @IsOptional() @IsString() @IsNotEmpty() name?: string;
+  @IsOptional() @IsInt() @Min(0) unitPriceCents?: number;
   @IsInt() @Min(1) quantity: number;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CartModifierDto)
   modifiers?: CartModifierDto[];
@@ -56,4 +59,16 @@ export class UpdateOrderDto {
   @IsOptional() @IsString() waiterId?: string;
   @IsOptional() @IsInt() @Min(1) guestCount?: number;
   @IsOptional() @IsString() notes?: string;
+}
+
+export class VoidDto {
+  // Mandatory once the order has items (enforced in the service); an empty
+  // brand-new draft can be discarded without a reason.
+  @IsOptional() @IsString() reason?: string;
+}
+
+export class RefundDto {
+  @IsString() @IsNotEmpty() reason: string;
+  // Optional partial refund amount; defaults to the full order total.
+  @IsOptional() @IsInt() @Min(1) amountCents?: number;
 }

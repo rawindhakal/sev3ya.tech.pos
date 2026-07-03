@@ -6,12 +6,15 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeTotals } from '../common/settings';
+import { OrderType } from '@prisma/client';
 import {
   CartLineDto,
   CreateOrderDto,
   PayDto,
+  RefundDto,
   SaveCartDto,
   UpdateOrderDto,
+  VoidDto,
 } from './dto/order.dto';
 
 const orderInclude = {
@@ -25,31 +28,54 @@ const orderInclude = {
 export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async resolveLines(lines: CartLineDto[]) {
+  // Pick the price for a menu item based on the order type (matrix #15).
+  private tierPrice(
+    mi: { priceCents: number; takeawayPriceCents: number | null; deliveryPriceCents: number | null },
+    type: OrderType,
+  ) {
+    if (type === 'TAKEAWAY') return mi.takeawayPriceCents ?? mi.priceCents;
+    if (type === 'DELIVERY') return mi.deliveryPriceCents ?? mi.priceCents;
+    return mi.priceCents;
+  }
+
+  private async resolveLines(lines: CartLineDto[], type: OrderType) {
     if (!lines.length) return [];
-    const ids = [...new Set(lines.map((l) => l.menuItemId))];
-    const menuItems = await this.prisma.menuItem.findMany({
-      where: { id: { in: ids } },
-    });
+    const ids = [...new Set(lines.filter((l) => l.menuItemId).map((l) => l.menuItemId!))];
+    const menuItems = ids.length
+      ? await this.prisma.menuItem.findMany({ where: { id: { in: ids } } })
+      : [];
     const byId = new Map(menuItems.map((m) => [m.id, m]));
     return lines.map((l) => {
-      const mi = byId.get(l.menuItemId);
-      if (!mi) throw new BadRequestException(`Menu item ${l.menuItemId} not found`);
-      // Base price comes from the DB (authoritative); modifier deltas come
-      // from the client snapshot.
-      return {
-        menuItemId: mi.id,
-        nameSnapshot: mi.name,
-        unitPriceCents: mi.priceCents,
+      const base = {
         quantity: l.quantity,
         modifiers: (l.modifiers ?? []) as unknown as Prisma.InputJsonValue,
         notes: l.notes ?? null,
+      };
+      if (l.menuItemId) {
+        const mi = byId.get(l.menuItemId);
+        if (!mi) throw new BadRequestException(`Menu item ${l.menuItemId} not found`);
+        // Price comes from the DB (authoritative) at the correct tier.
+        return {
+          ...base,
+          menuItemId: mi.id,
+          nameSnapshot: mi.name,
+          unitPriceCents: this.tierPrice(mi, type),
+        };
+      }
+      // Open item: custom name + price, not linked to the menu.
+      if (!l.name || l.unitPriceCents == null)
+        throw new BadRequestException('Open item requires a name and price');
+      return {
+        ...base,
+        menuItemId: null,
+        nameSnapshot: l.name,
+        unitPriceCents: l.unitPriceCents,
       };
     });
   }
 
   async create(dto: CreateOrderDto) {
-    const resolved = await this.resolveLines(dto.items ?? []);
+    const resolved = await this.resolveLines(dto.items ?? [], dto.type);
     const totals = computeTotals(resolved);
     const isDineIn = dto.type === 'DINE_IN' && dto.tableId;
 
@@ -105,8 +131,8 @@ export class OrdersService {
 
   // Replace the whole cart and recompute totals. Keeps the order in draft.
   async saveCart(id: string, dto: SaveCartDto) {
-    await this.findOne(id);
-    const resolved = await this.resolveLines(dto.items);
+    const existing = await this.findOne(id);
+    const resolved = await this.resolveLines(dto.items, existing.type);
     const totals = computeTotals(resolved, dto.discountCents ?? 0);
     return this.prisma.$transaction(async (tx) => {
       await tx.orderItem.deleteMany({ where: { orderId: id } });
@@ -199,12 +225,18 @@ export class OrdersService {
     });
   }
 
-  async cancel(id: string) {
+  // Void an un-paid order with a mandatory audit reason (matrix #10).
+  async cancel(id: string, dto: VoidDto) {
     const order = await this.findOne(id);
+    if (order.status === 'PAID')
+      throw new BadRequestException('Paid orders must be refunded, not voided');
+    // Audit rule: a void with items requires a documented reason.
+    if (order.items.length > 0 && !dto.reason?.trim())
+      throw new BadRequestException('A reason is required to void an order with items');
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
         where: { id },
-        data: { status: 'CANCELLED' },
+        data: { status: 'CANCELLED', voidReason: dto.reason?.trim() || 'Discarded draft' },
         include: orderInclude,
       });
       if (order.tableId) {
@@ -214,6 +246,26 @@ export class OrdersService {
         });
       }
       return updated;
+    });
+  }
+
+  // Refund a paid order (full or partial) with a mandatory reason (matrix #10).
+  async refund(id: string, dto: RefundDto) {
+    const order = await this.findOne(id);
+    if (order.status !== 'PAID')
+      throw new BadRequestException('Only paid orders can be refunded');
+    const amount = dto.amountCents ?? order.totalCents;
+    if (amount > order.totalCents)
+      throw new BadRequestException('Refund cannot exceed the order total');
+    return this.prisma.order.update({
+      where: { id },
+      data: {
+        status: 'REFUNDED',
+        refundReason: dto.reason,
+        refundCents: amount,
+        refundedAt: new Date(),
+      },
+      include: orderInclude,
     });
   }
 }

@@ -8,21 +8,22 @@ import type {
   ModifierGroup,
   Order,
   OrderType,
+  PaymentMethod,
   RestaurantTable,
   Settings,
   TableArea,
   Waiter,
 } from '@/lib/types';
+import { priceForType } from '@/lib/types';
 import Modal from '@/components/Modal';
 import Receipt from '@/components/Receipt';
 import PaymentPanel from '@/components/PaymentPanel';
-import type { PaymentMethod } from '@/lib/types';
 
 type Step = 'type' | 'table' | 'order';
 
 interface CartLine {
   key: string;
-  menuItemId: string;
+  menuItemId?: string; // absent for open (custom) items
   name: string;
   unitPriceCents: number;
   modifiers: { name: string; priceCents: number }[];
@@ -54,6 +55,10 @@ export default function PosPage() {
   const [discount, setDiscount] = useState(''); // order-level discount in rupees
   const [activeCat, setActiveCat] = useState('all');
   const [search, setSearch] = useState('');
+
+  // held tickets (resume) + open item (custom line)
+  const [held, setHeld] = useState<Order[]>([]);
+  const [openItem, setOpenItem] = useState<{ name: string; price: string } | null>(null);
 
   // modifier picker
   const [picker, setPicker] = useState<{ item: MenuItem; groups: ModifierGroup[] } | null>(null);
@@ -115,6 +120,41 @@ export default function PosPage() {
     }
   }
 
+  // Hold & resume tickets (matrix #4): open drafts are "held" — load one back
+  // into the POS to keep serving it.
+  async function loadHeld() {
+    try {
+      const all = await api.get<Order[]>('/orders');
+      setHeld(all.filter((o) => ['OPEN', 'SENT_TO_KITCHEN', 'BILLED'].includes(o.status)));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function resume(o: Order) {
+    setOrder(o);
+    setOrderType(o.type);
+    setTable(o.table ? ({ id: o.table.id, name: o.table.name } as RestaurantTable) : null);
+    setWaiterId(o.waiterId ?? '');
+    setGuestCount(o.guestCount);
+    setDiscount(o.discountCents ? (o.discountCents / 100).toFixed(2) : '');
+    setCart(
+      o.items.map((it) => ({
+        key: lineKey(it.menuItemId ?? it.nameSnapshot, it.modifiers ?? []),
+        menuItemId: it.menuItemId ?? undefined,
+        name: it.nameSnapshot,
+        unitPriceCents: it.unitPriceCents,
+        modifiers: (it.modifiers ?? []).map((m) => ({ name: m.name, priceCents: m.priceCents })),
+        quantity: it.quantity,
+      })),
+    );
+    setStep('order');
+  }
+
+  useEffect(() => {
+    if (step === 'type') loadHeld();
+  }, [step]);
+
   async function startOrder(type: OrderType, tbl: RestaurantTable | null) {
     setBusy(true);
     try {
@@ -158,12 +198,33 @@ export default function PosPage() {
           key,
           menuItemId: item.id,
           name: item.name,
-          unitPriceCents: item.priceCents,
+          unitPriceCents: priceForType(item, orderType), // tier price (#15)
           modifiers: mods,
           quantity: 1,
         },
       ];
     });
+  }
+
+  // Open item: a custom name/price line not on the menu (matrix #16).
+  function addOpenItem() {
+    if (!openItem) return;
+    const priceCents = Math.round((parseFloat(openItem.price) || 0) * 100);
+    if (!openItem.name.trim() || priceCents <= 0) {
+      flash('Enter a name and a price above zero');
+      return;
+    }
+    setCart((prev) => [
+      ...prev,
+      {
+        key: `open::${openItem.name}::${priceCents}::${Date.now()}`,
+        name: openItem.name.trim(),
+        unitPriceCents: priceCents,
+        modifiers: [],
+        quantity: 1,
+      },
+    ]);
+    setOpenItem(null);
   }
 
   function confirmPicker() {
@@ -192,11 +253,11 @@ export default function PosPage() {
   async function persistCart(): Promise<Order> {
     if (!order) throw new Error('No active order');
     const saved = await api.put<Order>(`/orders/${order.id}/cart`, {
-      items: cart.map((l) => ({
-        menuItemId: l.menuItemId,
-        quantity: l.quantity,
-        modifiers: l.modifiers,
-      })),
+      items: cart.map((l) =>
+        l.menuItemId
+          ? { menuItemId: l.menuItemId, quantity: l.quantity, modifiers: l.modifiers }
+          : { name: l.name, unitPriceCents: l.unitPriceCents, quantity: l.quantity, modifiers: l.modifiers },
+      ),
       discountCents: totals.discountCents,
       waiterId: waiterId || undefined,
       guestCount,
@@ -305,11 +366,24 @@ export default function PosPage() {
       resetToStart();
       return;
     }
-    if (!confirm('Discard this order?')) return;
+    // Voiding an order that already has items needs an audited reason (#10).
+    let reason: string | undefined;
+    if (cart.length > 0) {
+      const r = prompt('Reason for voiding this order?');
+      if (r === null) return; // cancelled the prompt
+      if (!r.trim()) {
+        flash('A reason is required to void an order with items');
+        return;
+      }
+      reason = r.trim();
+    } else if (!confirm('Discard this empty order?')) {
+      return;
+    }
     try {
-      await api.delete(`/orders/${order.id}`);
-    } catch {
-      /* ignore */
+      await api.delete(`/orders/${order.id}`, reason ? { reason } : undefined);
+    } catch (e) {
+      alert((e as Error).message);
+      return;
     }
     resetToStart();
   }
@@ -343,6 +417,32 @@ export default function PosPage() {
             </button>
           ))}
         </div>
+
+        {held.length > 0 && (
+          <div className="mt-6 border-t border-slate-100 pt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Held tickets ({held.length}) — tap to resume
+            </p>
+            <div className="max-h-48 space-y-2 overflow-y-auto">
+              {held.map((o) => (
+                <button
+                  key={o.id}
+                  onClick={() => resume(o)}
+                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                >
+                  <span>
+                    <span className="font-semibold text-slate-700">#{o.number}</span>{' '}
+                    <span className="text-slate-400">
+                      {o.type.replace('_', ' ')}
+                      {o.table ? ` · ${o.table.name}` : ''} · {o.items.length} items
+                    </span>
+                  </span>
+                  <span className="badge bg-amber-100 text-amber-700">{o.status.replace('_', ' ')}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* STEP 2: table selection */}
@@ -431,6 +531,12 @@ export default function PosPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                <button
+                  className="btn-ghost whitespace-nowrap px-3 py-1.5 text-xs"
+                  onClick={() => setOpenItem({ name: '', price: '' })}
+                >
+                  + Custom item
+                </button>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -458,7 +564,7 @@ export default function PosPage() {
                   className="card flex flex-col items-start p-3 text-left transition-shadow hover:shadow-md"
                 >
                   <span className="font-medium text-slate-800">{item.name}</span>
-                  <span className="mt-1 font-bold text-brand-700">{formatMoney(item.priceCents)}</span>
+                  <span className="mt-1 font-bold text-brand-700">{formatMoney(priceForType(item, orderType))}</span>
                   {item.modifierGroups && item.modifierGroups.length > 0 && (
                     <span className="badge mt-1 bg-slate-100 text-slate-400">options</span>
                   )}
@@ -655,6 +761,39 @@ export default function PosPage() {
             <div className="flex justify-end gap-2">
               <button className="btn-ghost" onClick={() => setPicker(null)}>Cancel</button>
               <button className="btn-primary" onClick={confirmPicker}>Add to order</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* open (custom) item modal */}
+      <Modal open={!!openItem} title="Custom item" onClose={() => setOpenItem(null)}>
+        {openItem && (
+          <div className="space-y-4">
+            <div>
+              <label className="label">Item name</label>
+              <input
+                className="input"
+                value={openItem.name}
+                onChange={(e) => setOpenItem({ ...openItem, name: e.target.value })}
+                placeholder="e.g. Special of the day"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="label">Price (Rs)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                min="0"
+                value={openItem.price}
+                onChange={(e) => setOpenItem({ ...openItem, price: e.target.value })}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost" onClick={() => setOpenItem(null)}>Cancel</button>
+              <button className="btn-primary" onClick={addOpenItem}>Add to order</button>
             </div>
           </div>
         )}

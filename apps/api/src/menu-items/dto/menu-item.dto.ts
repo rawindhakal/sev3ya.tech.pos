@@ -17,10 +17,21 @@ export class CreateMenuItemDto {
   @IsString()
   description?: string;
 
-  // Price in cents (minor units).
+  // Price in cents (minor units). Base = dine-in.
   @IsInt()
   @Min(0)
   priceCents: number;
+
+  // Optional per-order-type overrides (matrix #15).
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  takeawayPriceCents?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  deliveryPriceCents?: number;
 
   @IsString()
   @IsNotEmpty()
@@ -55,6 +66,16 @@ export class UpdateMenuItemDto {
   @IsInt()
   @Min(0)
   priceCents?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  takeawayPriceCents?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  deliveryPriceCents?: number;
 
   @IsOptional()
   @IsString()

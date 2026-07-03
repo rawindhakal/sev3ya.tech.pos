@@ -9,6 +9,8 @@ type ItemForm = {
   name: string;
   description: string;
   priceDollars: string;
+  takeawayDollars: string;
+  deliveryDollars: string;
   categoryId: string;
   isAvailable: boolean;
 };
@@ -17,6 +19,8 @@ const emptyForm: ItemForm = {
   name: '',
   description: '',
   priceDollars: '',
+  takeawayDollars: '',
+  deliveryDollars: '',
   categoryId: '',
   isAvailable: true,
 };
@@ -79,6 +83,8 @@ export default function MenuPage() {
       name: item.name,
       description: item.description ?? '',
       priceDollars: (item.priceCents / 100).toFixed(2),
+      takeawayDollars: item.takeawayPriceCents != null ? (item.takeawayPriceCents / 100).toFixed(2) : '',
+      deliveryDollars: item.deliveryPriceCents != null ? (item.deliveryPriceCents / 100).toFixed(2) : '',
       categoryId: item.categoryId,
       isAvailable: item.isAvailable,
     });
@@ -89,10 +95,14 @@ export default function MenuPage() {
     e.preventDefault();
     setSaving(true);
     try {
+      const optCents = (v: string) =>
+        v.trim() === '' ? null : dollarsToCents(parseFloat(v));
       const payload = {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
         priceCents: dollarsToCents(parseFloat(form.priceDollars || '0')),
+        takeawayPriceCents: optCents(form.takeawayDollars),
+        deliveryPriceCents: optCents(form.deliveryDollars),
         categoryId: form.categoryId,
         isAvailable: form.isAvailable,
       };
@@ -278,7 +288,7 @@ export default function MenuPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Price (Rs)</label>
+              <label className="label">Dine-in Price (Rs)</label>
               <input
                 className="input"
                 type="number"
@@ -305,6 +315,35 @@ export default function MenuPage() {
               </select>
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Takeaway Price (Rs)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Same as dine-in"
+                value={form.takeawayDollars}
+                onChange={(e) => setForm({ ...form, takeawayDollars: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">Delivery Price (Rs)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Same as dine-in"
+                value={form.deliveryDollars}
+                onChange={(e) => setForm({ ...form, deliveryDollars: e.target.value })}
+              />
+            </div>
+          </div>
+          <p className="-mt-2 text-xs text-slate-400">
+            Leave takeaway/delivery blank to use the dine-in price.
+          </p>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"

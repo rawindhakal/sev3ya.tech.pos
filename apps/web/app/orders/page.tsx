@@ -14,6 +14,7 @@ const STATUS_BADGE: Record<string, string> = {
   SERVED: 'bg-teal-100 text-teal-700',
   BILLED: 'bg-amber-100 text-amber-700',
   PAID: 'bg-green-100 text-green-700',
+  REFUNDED: 'bg-orange-100 text-orange-700',
   CANCELLED: 'bg-red-100 text-red-600',
 };
 
@@ -61,6 +62,38 @@ export default function OrdersPage() {
     try {
       await api.post(`/orders/${payFor.id}/pay`, { payments });
       setPayFor(null);
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Void an open order with a mandatory audited reason (matrix #10).
+  async function voidOrder(o: Order) {
+    const reason = prompt(`Void order #${o.number}? Enter a reason:`);
+    if (reason === null) return;
+    if (!reason.trim()) return alert('A reason is required to void.');
+    setBusy(o.id);
+    try {
+      await api.delete(`/orders/${o.id}`, { reason: reason.trim() });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Refund a paid order with a mandatory reason (matrix #10).
+  async function refundOrder(o: Order) {
+    const reason = prompt(`Refund order #${o.number}? Enter a reason:`);
+    if (reason === null) return;
+    if (!reason.trim()) return alert('A reason is required to refund.');
+    setBusy(o.id);
+    try {
+      await api.post(`/orders/${o.id}/refund`, { reason: reason.trim() });
       await load();
     } catch (e) {
       alert((e as Error).message);
@@ -117,11 +150,24 @@ export default function OrdersPage() {
                 <div className="mt-2 text-sm text-slate-500">
                   {o.items.map((it) => `${it.quantity}× ${it.nameSnapshot}`).join(', ') || 'No items'}
                 </div>
+                {(o.voidReason || o.refundReason) && (
+                  <div className="mt-2 text-xs text-slate-400">
+                    {o.status === 'REFUNDED'
+                      ? `Refunded ${formatMoney(o.refundCents)} — ${o.refundReason}`
+                      : `Voided — ${o.voidReason}`}
+                  </div>
+                )}
                 {open && (
-                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                     <button className="btn-ghost px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => act(o.id, 'kot')}>Send KOT</button>
                     <button className="btn-ghost px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => act(o.id, 'bill')}>Bill</button>
                     <button className="btn-primary px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => setPayFor(o)}>Pay</button>
+                    <button className="btn-danger px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => voidOrder(o)}>Void</button>
+                  </div>
+                )}
+                {o.status === 'PAID' && (
+                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                    <button className="btn-danger px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => refundOrder(o)}>Refund</button>
                   </div>
                 )}
               </div>
