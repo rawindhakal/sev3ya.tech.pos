@@ -15,7 +15,7 @@ import type {
 } from '@/lib/types';
 import Modal from '@/components/Modal';
 import Receipt from '@/components/Receipt';
-import { PAYMENT_METHODS } from '@/lib/constants';
+import PaymentPanel from '@/components/PaymentPanel';
 import type { PaymentMethod } from '@/lib/types';
 
 type Step = 'type' | 'table' | 'order';
@@ -61,8 +61,6 @@ export default function PosPage() {
 
   // payment
   const [payOpen, setPayOpen] = useState(false);
-  const [payMethod, setPayMethod] = useState<PaymentMethod>('CASH');
-  const [tendered, setTendered] = useState('');
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -275,13 +273,13 @@ export default function PosPage() {
     }
   }
 
-  async function confirmPayment() {
+  async function confirmPayment(
+    payments: { method: PaymentMethod; amountCents: number }[],
+  ) {
     if (!order) return;
     setBusy(true);
     try {
-      await api.post(`/orders/${order.id}/pay`, {
-        payments: [{ method: payMethod, amountCents: order.totalCents }],
-      });
+      await api.post(`/orders/${order.id}/pay`, { payments });
       setPayOpen(false);
       flash(`Order #${order.number} paid ✓`);
       resetToStart();
@@ -298,7 +296,6 @@ export default function PosPage() {
     setTable(null);
     setCart([]);
     setDiscount('');
-    setTendered('');
     setActiveCat('all');
     setSearch('');
   }
@@ -316,8 +313,6 @@ export default function PosPage() {
     }
     resetToStart();
   }
-
-  const change = tendered ? Math.max(0, Math.round(parseFloat(tendered) * 100) - (order?.totalCents ?? 0)) : 0;
 
   // ── Render ─────────────────────────────────────────
   return (
@@ -665,55 +660,15 @@ export default function PosPage() {
         )}
       </Modal>
 
-      {/* payment modal */}
+      {/* payment modal — split-tender settlement */}
       <Modal open={payOpen} title="Take payment" onClose={() => setPayOpen(false)}>
         {order && (
-          <div className="space-y-4">
-            <div className="rounded-lg bg-slate-50 p-4 text-center">
-              <div className="text-sm text-slate-500">Amount due</div>
-              <div className="text-3xl font-bold text-slate-900">{formatMoney(order.totalCents)}</div>
-            </div>
-            <div>
-              <label className="label">Payment method</label>
-              <div className="grid grid-cols-4 gap-2">
-                {PAYMENT_METHODS.map((m) => (
-                  <button
-                    key={m.value}
-                    onClick={() => setPayMethod(m.value)}
-                    className={`rounded-lg border-2 px-2 py-3 text-xs font-semibold ${
-                      payMethod === m.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {payMethod === 'CASH' && (
-              <div>
-                <label className="label">Cash tendered (Rs)</label>
-                <input
-                  className="input"
-                  type="number"
-                  step="0.01"
-                  value={tendered}
-                  onChange={(e) => setTendered(e.target.value)}
-                  placeholder={(order.totalCents / 100).toFixed(2)}
-                />
-                {tendered && (
-                  <p className="mt-1 text-sm text-slate-500">
-                    Change: <span className="font-semibold text-slate-800">{formatMoney(change)}</span>
-                  </p>
-                )}
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <button className="btn-ghost" onClick={() => setPayOpen(false)}>Cancel</button>
-              <button className="btn-primary" disabled={busy} onClick={confirmPayment}>
-                {busy ? 'Processing…' : `Pay ${formatMoney(order.totalCents)}`}
-              </button>
-            </div>
-          </div>
+          <PaymentPanel
+            totalCents={order.totalCents}
+            busy={busy}
+            onCancel={() => setPayOpen(false)}
+            onConfirm={confirmPayment}
+          />
         )}
       </Modal>
 

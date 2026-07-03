@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, formatMoney } from '@/lib/api';
 import type { Order, PaymentMethod } from '@/lib/types';
-import { PAYMENT_METHODS } from '@/lib/constants';
 import Modal from '@/components/Modal';
+import PaymentPanel from '@/components/PaymentPanel';
 
 const STATUS_BADGE: Record<string, string> = {
   OPEN: 'bg-slate-100 text-slate-600',
@@ -24,7 +24,6 @@ export default function OrdersPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const [payFor, setPayFor] = useState<Order | null>(null);
-  const [payMethod, setPayMethod] = useState<PaymentMethod>('CASH');
 
   async function load() {
     try {
@@ -56,13 +55,11 @@ export default function OrdersPage() {
     }
   }
 
-  async function pay() {
+  async function pay(payments: { method: PaymentMethod; amountCents: number }[]) {
     if (!payFor) return;
     setBusy(payFor.id);
     try {
-      await api.post(`/orders/${payFor.id}/pay`, {
-        payments: [{ method: payMethod, amountCents: payFor.totalCents }],
-      });
+      await api.post(`/orders/${payFor.id}/pay`, { payments });
       setPayFor(null);
       await load();
     } catch (e) {
@@ -124,7 +121,7 @@ export default function OrdersPage() {
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                     <button className="btn-ghost px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => act(o.id, 'kot')}>Send KOT</button>
                     <button className="btn-ghost px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => act(o.id, 'bill')}>Bill</button>
-                    <button className="btn-primary px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => { setPayFor(o); setPayMethod('CASH'); }}>Pay</button>
+                    <button className="btn-primary px-3 py-1.5 text-xs" disabled={busy === o.id} onClick={() => setPayFor(o)}>Pay</button>
                   </div>
                 )}
               </div>
@@ -135,29 +132,12 @@ export default function OrdersPage() {
 
       <Modal open={!!payFor} title={`Pay order #${payFor?.number ?? ''}`} onClose={() => setPayFor(null)}>
         {payFor && (
-          <div className="space-y-4">
-            <div className="rounded-lg bg-slate-50 p-4 text-center">
-              <div className="text-sm text-slate-500">Amount due</div>
-              <div className="text-3xl font-bold text-slate-900">{formatMoney(payFor.totalCents)}</div>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {PAYMENT_METHODS.map((m) => (
-                <button
-                  key={m.value}
-                  onClick={() => setPayMethod(m.value)}
-                  className={`rounded-lg border-2 px-2 py-3 text-xs font-semibold ${payMethod === m.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2">
-              <button className="btn-ghost" onClick={() => setPayFor(null)}>Cancel</button>
-              <button className="btn-primary" disabled={busy === payFor.id} onClick={pay}>
-                {busy === payFor.id ? 'Processing…' : 'Confirm payment'}
-              </button>
-            </div>
-          </div>
+          <PaymentPanel
+            totalCents={payFor.totalCents}
+            busy={busy === payFor.id}
+            onCancel={() => setPayFor(null)}
+            onConfirm={pay}
+          />
         )}
       </Modal>
     </div>
