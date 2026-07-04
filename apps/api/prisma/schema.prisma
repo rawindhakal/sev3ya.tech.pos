@@ -192,6 +192,10 @@ model Order {
   // Dine-in guest count (covers) — used for guest-time / per-cover analytics.
   guestCount Int @default(1)
 
+  // Customer capture for takeaway / delivery (design spec §2.1 Step 2).
+  customerName  String?
+  customerPhone String?
+
   items     OrderItem[]
   payments  Payment[]
 

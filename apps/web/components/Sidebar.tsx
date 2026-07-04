@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import ThemeToggle from './ThemeToggle';
 
 // Navigation is defined once here. As features land, flip `enabled: true`
 // and point href at the new route — the shell already handles the rest.
@@ -66,8 +67,9 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-slate-100 px-6 py-4 text-xs text-slate-400">
-        v0.1 · sev3ya.tech
+      <div className="space-y-2 border-t border-slate-100 px-4 py-4">
+        <ThemeToggle />
+        <div className="text-center text-xs text-slate-400">v0.1 · sev3ya.tech</div>
       </div>
     </aside>
   );

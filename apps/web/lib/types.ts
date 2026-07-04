@@ -132,6 +132,8 @@ export interface Order {
   tableId?: string | null;
   waiterId?: string | null;
   guestCount: number;
+  customerName?: string | null;
+  customerPhone?: string | null;
   subtotalCents: number;
   taxCents: number;
   discountCents: number;

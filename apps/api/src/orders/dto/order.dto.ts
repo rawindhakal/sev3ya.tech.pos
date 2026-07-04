@@ -32,6 +32,8 @@ export class CreateOrderDto {
   @IsOptional() @IsString() tableId?: string;
   @IsOptional() @IsString() waiterId?: string;
   @IsOptional() @IsInt() @Min(1) guestCount?: number;
+  @IsOptional() @IsString() customerName?: string;
+  @IsOptional() @IsString() customerPhone?: string;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CartLineDto)
   items?: CartLineDto[];
 }
@@ -59,6 +61,8 @@ export class UpdateOrderDto {
   @IsOptional() @IsString() waiterId?: string;
   @IsOptional() @IsInt() @Min(1) guestCount?: number;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() customerName?: string;
+  @IsOptional() @IsString() customerPhone?: string;
 }
 
 export class VoidDto {

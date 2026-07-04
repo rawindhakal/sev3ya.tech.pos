@@ -102,6 +102,8 @@ export class OrdersService {
           tableId: dto.tableId ?? null,
           waiterId: dto.waiterId ?? null,
           guestCount: dto.guestCount ?? 1,
+          customerName: dto.customerName ?? null,
+          customerPhone: dto.customerPhone ?? null,
           seatedAt: isDineIn ? new Date() : null,
           subtotalCents: totals.subtotalCents,
           serviceChargeCents: totals.serviceChargeCents,
