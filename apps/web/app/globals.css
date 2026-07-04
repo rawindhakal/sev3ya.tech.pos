@@ -81,21 +81,23 @@ body {
   color: #cbd5e1 !important;
 }
 
-/* Thermal-receipt printing: hide the app, show only #print-area on print. */
+/* Thermal-receipt printing: only when body.print-receipt is set (POS receipts)
+   hide everything except #print-area. Normal page prints (e.g. Reports) are
+   untouched except the sidebar is hidden. */
 @media screen {
   #print-area {
     display: none;
   }
 }
 @media print {
-  body * {
+  body.print-receipt * {
     visibility: hidden;
   }
-  #print-area,
-  #print-area * {
+  body.print-receipt #print-area,
+  body.print-receipt #print-area * {
     visibility: visible;
   }
-  #print-area {
+  body.print-receipt #print-area {
     position: absolute;
     inset: 0;
     display: block;
@@ -103,5 +105,9 @@ body {
     padding: 8px;
     font-family: ui-monospace, monospace;
     color: #000;
+  }
+  /* For normal page printing, drop the app chrome. */
+  body:not(.print-receipt) aside {
+    display: none !important;
   }
 }

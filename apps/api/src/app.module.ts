@@ -15,6 +15,7 @@ import { KdsModule } from './kds/kds.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { EmployeesModule } from './employees/employees.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PurchasingModule } from './purchasing/purchasing.module';
     InventoryModule,
     EmployeesModule,
     PurchasingModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
 })

@@ -18,8 +18,8 @@ const NAV = [
   { href: '/purchasing', label: 'Purchasing', icon: '🚚', enabled: true },
   { href: '/employees', label: 'Employees', icon: '👥', enabled: true },
   { href: '/cash-drawer', label: 'Cash Drawer', icon: '💵', enabled: true },
+  { href: '/reports', label: 'Reports', icon: '📈', enabled: true },
   { href: '/settings', label: 'Settings', icon: '⚙️', enabled: true },
-  { href: '/forecast', label: 'Sales & Forecast', icon: '📈', enabled: false },
 ];
 
 export default function Sidebar() {

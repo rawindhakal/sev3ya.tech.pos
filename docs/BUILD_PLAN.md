@@ -89,9 +89,18 @@ Purchasing & Supplier Management (#141–155):
       audit logs, multi-branch
   > Backend permission ENFORCEMENT (beyond UI gating) is the next auth step.
 
-## Phase 6 — Advanced Analytics & Reporting Engine (matrix #171–200, must-have)
-- Configurable report builder, exports (PDF/Excel), forecasting, X/Z reports,
-  cost/margin analysis, sales heatmaps.
+## 🔜 Phase 6 — Advanced Analytics & Reporting Engine (matrix #186–200)
+- [x] End-of-day / Z-report summary — gross, tax, discounts, avg ticket (#186)
+- [x] Hourly sales distribution bar chart (#187)
+- [x] Menu performance BCG matrix — margin from recipe cost (#188)
+- [x] Payment channel disaggregation (#192)
+- [x] Online/delivery vs dine-in split (#197)
+- [x] Table turnover velocity (#196)
+- [x] Waste & spillage cost impact (#198), stock-take variance value (#190)
+- [x] Void & cancellation audit list; date-range picker + print
+- [ ] LTV (#189), labor-cost coverage (#191), upsell metrics (#194),
+      multi-branch comparison (#195), reorder forecasting (#199),
+      scheduled PDF dispatch (#200)
 
 ## Extras (lower priority — matrix flags these "Extra Feature")
 - Specialty Coffee & Roastery add-on (#81–95)

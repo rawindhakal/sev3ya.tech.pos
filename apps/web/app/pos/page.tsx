@@ -369,7 +369,11 @@ export default function PosPage() {
 
   function doPrint(o: Order, m: 'KOT' | 'BILL') {
     setReceipt({ order: o, mode: m });
-    setTimeout(() => window.print(), 150);
+    setTimeout(() => {
+      document.body.classList.add('print-receipt');
+      window.print();
+      document.body.classList.remove('print-receipt');
+    }, 150);
   }
 
   async function runAction(kind: 'draft' | 'kot' | 'kot_print' | 'bill' | 'bill_print' | 'pay') {
