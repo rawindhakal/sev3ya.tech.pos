@@ -81,7 +81,6 @@ export default function PosPage() {
   const [picker, setPicker] = useState<{ item: MenuItem; groups: ModifierGroup[] } | null>(null);
   const [pickSel, setPickSel] = useState<Record<string, string[]>>({});
   const [openItem, setOpenItem] = useState<{ name: string; price: string } | null>(null);
-  const [held, setHeld] = useState<Order[]>([]);
   const [payOpen, setPayOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -95,10 +94,6 @@ export default function PosPage() {
     const clock = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(clock);
   }, []);
-
-  useEffect(() => {
-    if (!order) loadHeld();
-  }, [order]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -130,15 +125,6 @@ export default function PosPage() {
     if (search.trim()) list = list.filter((i) => matchesQuery(i.name, search));
     return list;
   }, [items, activeCat, search]);
-
-  async function loadHeld() {
-    try {
-      const all = await api.get<Order[]>('/orders');
-      setHeld(all.filter((o) => ['OPEN', 'SENT_TO_KITCHEN', 'BILLED'].includes(o.status)));
-    } catch {
-      /* ignore */
-    }
-  }
 
   // ── Mode selection ─────────────────────────────────
   async function selectMode(key: ModeKey) {
@@ -198,6 +184,21 @@ export default function PosPage() {
         quantity: it.quantity,
       })),
     );
+  }
+
+  // Open an occupied table's existing bill (only one billing at a time).
+  async function resumeTable(t: RestaurantTable) {
+    if (!t.activeOrder) return;
+    setBusy(true);
+    try {
+      const full = await api.get<Order>(`/orders/${t.activeOrder.id}`);
+      resume(full);
+      setTable(t);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   // ── Cart ───────────────────────────────────────────
@@ -408,22 +409,32 @@ export default function PosPage() {
               <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
                 {a.tables.map((t) => {
                   const free = t.status === 'AVAILABLE';
+                  const occupied = t.status === 'OCCUPIED' && !!t.activeOrder;
+                  const clickable = free || occupied;
                   const cls = free
                     ? 'border-[#2ECC71]/40 bg-[#2ECC71]/10 hover:border-[#2ECC71] hover:bg-[#2ECC71]/20'
-                    : t.status === 'RESERVED'
-                      ? 'border-indigo-400/40 bg-indigo-400/10 cursor-not-allowed'
-                      : 'border-[#F39C12]/40 bg-[#F39C12]/10 cursor-not-allowed';
+                    : occupied
+                      ? 'border-[#F39C12]/50 bg-[#F39C12]/15 hover:border-[#F39C12] hover:bg-[#F39C12]/25'
+                      : t.status === 'RESERVED'
+                        ? 'border-indigo-400/40 bg-indigo-400/10 cursor-not-allowed'
+                        : 'border-white/10 bg-white/5 cursor-not-allowed';
                   return (
                     <button
                       key={t.id}
-                      disabled={!free || busy}
-                      onClick={() => startOrder('DINE_IN', t)}
+                      disabled={!clickable || busy}
+                      onClick={() => (occupied ? resumeTable(t) : startOrder('DINE_IN', t))}
                       className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border-2 ${cls}`}
                     >
                       {t.isVip && <span className="absolute right-1 top-1 text-[10px]">⭐</span>}
                       <span className="text-base font-bold">{t.name}</span>
-                      <span className="text-[10px] text-white/50">{t.seats} seats</span>
-                      <span className="mt-1 text-[9px] uppercase tracking-wide text-white/40">{t.status}</span>
+                      {occupied ? (
+                        <span className="text-[10px] font-semibold text-[#F39C12]">{formatMoney(t.activeOrder!.totalCents)}</span>
+                      ) : (
+                        <span className="text-[10px] text-white/50">{t.seats} seats</span>
+                      )}
+                      <span className="mt-1 text-[9px] uppercase tracking-wide text-white/40">
+                        {occupied ? `Open #${t.activeOrder!.number}` : t.status}
+                      </span>
                     </button>
                   );
                 })}
@@ -438,19 +449,6 @@ export default function PosPage() {
             <p className="text-lg font-medium">Select an order mode to begin</p>
             <p className="text-sm text-white/30">Dine-In · Takeaway · Home Delivery · Quick-Bill</p>
           </div>
-          {held.length > 0 && (
-            <div className="w-full max-w-md rounded-xl border border-white/10 bg-white/5 p-4 text-left">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">Held tickets — tap to resume</p>
-              <div className="max-h-56 space-y-2 overflow-y-auto">
-                {held.map((o) => (
-                  <button key={o.id} onClick={() => resume(o)} className="flex w-full items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-sm hover:bg-white/10">
-                    <span>#{o.number} · {o.type.replace('_', ' ')}{o.table ? ` · ${o.table.name}` : ''} · {o.items.length} items</span>
-                    <span className="text-[#F39C12]">{o.status.replace('_', ' ')}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
