@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -23,6 +24,7 @@ class CreateTableDto {
   @IsString() @IsNotEmpty() name: string;
   @IsOptional() @IsInt() @Min(1) seats?: number;
   @IsOptional() @IsString() area?: string;
+  @IsOptional() @IsBoolean() isVip?: boolean;
 }
 
 class UpdateTableDto {
@@ -30,6 +32,7 @@ class UpdateTableDto {
   @IsOptional() @IsInt() @Min(1) seats?: number;
   @IsOptional() @IsString() area?: string;
   @IsOptional() @IsEnum(TableStatus) status?: TableStatus;
+  @IsOptional() @IsBoolean() isVip?: boolean;
 }
 
 @Controller('tables')

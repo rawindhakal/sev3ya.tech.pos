@@ -44,13 +44,13 @@ export class TablesService {
     return Object.entries(areas).map(([area, tables]) => ({ area, tables }));
   }
 
-  create(data: { name: string; seats?: number; area?: string }) {
+  create(data: { name: string; seats?: number; area?: string; isVip?: boolean }) {
     return this.prisma.restaurantTable.create({ data });
   }
 
   async update(
     id: string,
-    data: { name?: string; seats?: number; area?: string; status?: TableStatus },
+    data: { name?: string; seats?: number; area?: string; status?: TableStatus; isVip?: boolean },
   ) {
     const table = await this.prisma.restaurantTable.findUnique({ where: { id } });
     if (!table) throw new NotFoundException(`Table ${id} not found`);

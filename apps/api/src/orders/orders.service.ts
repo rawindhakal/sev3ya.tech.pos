@@ -84,6 +84,17 @@ export class OrdersService {
     const totals = computeTotals(resolved, rates);
     const isDineIn = dto.type === 'DINE_IN' && dto.tableId;
 
+    // Max-occupancy guard (matrix #36).
+    if (isDineIn) {
+      const table = await this.prisma.restaurantTable.findUnique({
+        where: { id: dto.tableId! },
+      });
+      if (table && dto.guestCount && dto.guestCount > table.seats)
+        throw new BadRequestException(
+          `Table ${table.name} seats ${table.seats}; cannot seat ${dto.guestCount} guests`,
+        );
+    }
+
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
         data: {
@@ -277,6 +288,85 @@ export class OrdersService {
         refundedAt: new Date(),
       },
       include: orderInclude,
+    });
+  }
+
+  // Recompute an order's money snapshots from its current items + rates.
+  private async recompute(tx: Prisma.TransactionClient, orderId: string) {
+    const order = await tx.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { items: true },
+    });
+    const rates = await this.settings.getRates();
+    const totals = computeTotals(order.items, {
+      ...rates,
+      discountCents: order.discountCents,
+    });
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        subtotalCents: totals.subtotalCents,
+        serviceChargeCents: totals.serviceChargeCents,
+        taxCents: totals.taxCents,
+        totalCents: totals.totalCents,
+      },
+    });
+  }
+
+  // Move an open order to another table (matrix #31).
+  async transfer(id: string, newTableId: string) {
+    const order = await this.findOne(id);
+    if (['PAID', 'CANCELLED', 'REFUNDED'].includes(order.status))
+      throw new BadRequestException('Only active orders can be transferred');
+    const newTable = await this.prisma.restaurantTable.findUnique({
+      where: { id: newTableId },
+    });
+    if (!newTable) throw new BadRequestException('Target table not found');
+    if (newTable.status === 'OCCUPIED' && order.tableId !== newTableId)
+      throw new BadRequestException(`Table ${newTable.name} is occupied`);
+    return this.prisma.$transaction(async (tx) => {
+      if (order.tableId && order.tableId !== newTableId)
+        await tx.restaurantTable.update({
+          where: { id: order.tableId },
+          data: { status: 'AVAILABLE' },
+        });
+      await tx.restaurantTable.update({
+        where: { id: newTableId },
+        data: { status: 'OCCUPIED' },
+      });
+      return tx.order.update({
+        where: { id },
+        data: { tableId: newTableId, type: 'DINE_IN' },
+        include: orderInclude,
+      });
+    });
+  }
+
+  // Merge another order's items into this one, then void the source (#28).
+  async merge(targetId: string, fromId: string) {
+    if (targetId === fromId)
+      throw new BadRequestException('Cannot merge an order into itself');
+    const target = await this.findOne(targetId);
+    const from = await this.findOne(fromId);
+    for (const o of [target, from])
+      if (['PAID', 'CANCELLED', 'REFUNDED'].includes(o.status))
+        throw new BadRequestException('Only active orders can be merged');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.orderItem.updateMany({
+        where: { orderId: fromId },
+        data: { orderId: targetId },
+      });
+      await tx.order.update({
+        where: { id: fromId },
+        data: { status: 'CANCELLED', voidReason: `Merged into #${target.number}` },
+      });
+      if (from.tableId && from.tableId !== target.tableId)
+        await tx.restaurantTable.update({
+          where: { id: from.tableId },
+          data: { status: 'AVAILABLE' },
+        });
+      await this.recompute(tx, targetId);
+      return tx.order.findUniqueOrThrow({ where: { id: targetId }, include: orderInclude });
     });
   }
 }

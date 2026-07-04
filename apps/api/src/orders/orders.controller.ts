@@ -68,6 +68,16 @@ export class OrdersController {
     return this.orders.refund(id, dto);
   }
 
+  @Post(':id/transfer')
+  transfer(@Param('id') id: string, @Body('tableId') tableId: string) {
+    return this.orders.transfer(id, tableId);
+  }
+
+  @Post(':id/merge')
+  merge(@Param('id') id: string, @Body('fromOrderId') fromOrderId: string) {
+    return this.orders.merge(id, fromOrderId);
+  }
+
   // Void with a mandatory reason. Reason can also be supplied via query for
   // simple DELETE calls.
   @Delete(':id')

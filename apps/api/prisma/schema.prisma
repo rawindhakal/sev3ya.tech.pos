@@ -104,6 +104,7 @@ model RestaurantTable {
   seats     Int         @default(4)
   area      String?     // e.g. "Ground floor", "Patio"
   status    TableStatus @default(AVAILABLE)
+  isVip     Boolean     @default(false) // VIP / regulars highlighting (#39)
   orders    Order[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt

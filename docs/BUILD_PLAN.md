@@ -33,9 +33,19 @@ High value, extends what exists. Backend already supports multi-tender + discoun
 - [ ] Token generation, combo autosuggest, e-receipt via SMS/WhatsApp (#9, #22, #23)
 - [ ] Hardware-tied: barcode scanner, customer display, weighted scale, pre-auth
 
-## Phase 2 — Table & Floor Management (matrix #26–40, all must-have)
-- Visual drag-drop floor plan, table status timers, merge/join, transfer,
-  seat-wise orders, reservations & waitlist, QR ordering per table, VIP tags.
+## 🔜 Phase 2 — Table & Floor Management (matrix #26–40, all must-have)
+- [x] Table status timers — color-coded seated time (#27)
+- [x] Table transfer engine — move order to another table (#31)
+- [x] Table merging & joining (#28)
+- [x] Max occupancy constraints (#36)
+- [x] VIP table highlighting (#39)
+- [ ] Visual drag-drop floor plan layout (#26)
+- [ ] Reservation & waitlist management (#30)
+- [ ] QR code digital ordering per table (#37)
+- [ ] Seat-wise order tracking (#29)
+- [ ] Section allocation for servers (#32)
+- [ ] Vacant/dirty alerts (#35), booking deposit (#33), pre-order (#34),
+      table sharing (#38), server-call (#40)
 
 ## Phase 3 — Kitchen Display System / KDS (matrix #41–55, all must-have)
 - Live KDS screen (websockets), color prep timers, multi-station routing,
