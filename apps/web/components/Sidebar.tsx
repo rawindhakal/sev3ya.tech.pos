@@ -20,6 +20,7 @@ const NAV = [
   { href: '/employees', label: 'Employees', icon: '👥', enabled: true },
   { href: '/cash-drawer', label: 'Cash Drawer', icon: '💵', enabled: true },
   { href: '/reports', label: 'Reports', icon: '📈', enabled: true },
+  { href: '/finance', label: 'Finance', icon: '💰', enabled: true },
   { href: '/settings', label: 'Settings', icon: '⚙️', enabled: true },
 ];
 

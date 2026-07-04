@@ -308,6 +308,32 @@ model Customer {
   @@map("customers")
 }
 
+// ─────────────────────────────────────────────────────────────
+// FINANCIAL ACCOUNTING & EXPENSES (matrix #156–170)
+// ─────────────────────────────────────────────────────────────
+
+enum ExpenseCategory {
+  RENT
+  UTILITIES
+  SALARY
+  MARKETING
+  MAINTENANCE
+  SUPPLIES
+  OTHER
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  category    ExpenseCategory @default(OTHER)
+  amountCents Int
+  description String?
+  incurredAt  DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+
+  @@index([incurredAt])
+  @@map("expenses")
+}
+
 // Immutable audit trail of sensitive actions (matrix #155/#08, spec §3.1).
 model AuditLog {
   id           String   @id @default(cuid())

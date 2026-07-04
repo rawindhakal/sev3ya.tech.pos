@@ -10,10 +10,24 @@ const pick = <T>(arr: T[]): T => arr[rand(0, arr.length - 1)];
 async function main() {
   console.log('🌱 Seeding CakeZake POS…');
 
-  // Clean slate (safe for a dev seed).
-  await prisma.orderItem.deleteMany();
+  // Clean slate (safe for a dev seed) — children before parents.
+  await prisma.auditLog.deleteMany();
+  await prisma.expense.deleteMany();
+  await prisma.stockMovement.deleteMany();
+  await prisma.recipeItem.deleteMany();
+  await prisma.purchaseOrderLine.deleteMany();
+  await prisma.purchaseOrder.deleteMany();
   await prisma.payment.deleteMany();
+  await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.ingredient.deleteMany();
+  await prisma.supplier.deleteMany();
+  await prisma.shift.deleteMany();
+  await prisma.employee.deleteMany();
+  await prisma.cashMovement.deleteMany();
+  await prisma.cashDrawerSession.deleteMany();
+  await prisma.reservation.deleteMany();
   await prisma.modifier.deleteMany();
   await prisma.modifierGroup.deleteMany();
   await prisma.menuItem.deleteMany();
@@ -313,6 +327,21 @@ async function main() {
       }
       orderCount++;
     }
+  }
+
+  // Expenses (Phase: Finance) across the last ~30 days.
+  const expenseData: [string, number, string][] = [
+    ['RENT', 4500000, 'Monthly shop rent'],
+    ['SALARY', 6800000, 'Staff wages'],
+    ['UTILITIES', 850000, 'Electricity & water'],
+    ['MARKETING', 400000, 'Social media ads'],
+    ['MAINTENANCE', 250000, 'Espresso machine service'],
+    ['SUPPLIES', 300000, 'Cups, napkins, packaging'],
+  ];
+  for (const [category, amountCents, description] of expenseData) {
+    await prisma.expense.create({
+      data: { category: category as any, amountCents, description, incurredAt: new Date(Date.now() - rand(1, 25) * 864e5) },
+    });
   }
 
   // Roll up seeded CRM stats onto each customer.

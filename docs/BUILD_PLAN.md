@@ -115,8 +115,16 @@ CRM, Loyalty & Marketing (#111–125):
 - [ ] Gift cards/wallet (#113), birthday campaigns (#114), punch-card (#116),
       SMS broadcast (#117), referrals (#118), surveys (#119)
 
+Financial Accounting & Expense Management (#156–170):
+- [x] Daily P&L ledger — gross − VAT − COGS − expenses = net profit (#156)
+- [x] Granular expense categorization ledger (#157)
+- [x] Tax filing summary — VAT/service charge collected (#162)
+- [x] Accounts-payable aging from open POs (#164)
+- [x] Break-even volume/revenue calculator (#165)
+- [ ] Double-entry COA (#158), bank reconciliation (#159), depreciation (#160),
+      multi-currency (#161), AR B2B ledger (#166), amortization (#168), budgets (#169)
+
 - [ ] Specialty Coffee & Roastery add-on (#81–95)
-- [ ] Financial Accounting & Expense Management (#141–155 of that module)
 
 ---
 
