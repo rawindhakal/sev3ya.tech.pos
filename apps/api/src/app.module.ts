@@ -19,6 +19,7 @@ import { ReportsModule } from './reports/reports.module';
 import { AuditModule } from './audit/audit.module';
 import { CrmModule } from './crm/crm.module';
 import { FinanceModule } from './finance/finance.module';
+import { RoasteryModule } from './roastery/roastery.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { FinanceModule } from './finance/finance.module';
     AuditModule,
     CrmModule,
     FinanceModule,
+    RoasteryModule,
   ],
   controllers: [HealthController],
 })

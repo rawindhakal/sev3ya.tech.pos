@@ -334,6 +334,63 @@ model Expense {
   @@map("expenses")
 }
 
+// ─────────────────────────────────────────────────────────────
+// SPECIALTY COFFEE & ROASTERY (matrix #81–95)
+// ─────────────────────────────────────────────────────────────
+
+model GreenBeanBatch {
+  id             String   @id @default(cuid())
+  name           String   // e.g. "Nepal Everest AA"
+  origin         String?
+  estate         String?
+  process        String?  // Washed / Natural / Honey
+  moisturePct    Float?
+  weightKg       Float    // received green weight
+  remainingKg    Float    // remaining un-roasted
+  costPerKgCents Int      @default(0)
+  purchasedAt    DateTime @default(now())
+  roasts         RoastBatch[]
+  cuppings       CuppingScore[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("green_bean_batches")
+}
+
+model RoastBatch {
+  id              String         @id @default(cuid())
+  number          Int            @default(autoincrement())
+  greenBatchId    String
+  greenBatch      GreenBeanBatch @relation(fields: [greenBatchId], references: [id], onDelete: Cascade)
+  greenInputKg    Float
+  roastedOutputKg Float
+  shrinkagePct    Float          // auto-computed (#83)
+  chargeTempC     Float?
+  dropTempC       Float?
+  devTimeSec      Int?
+  agtron          Int?           // roast colour (#93)
+  notes           String?
+  roastedAt       DateTime       @default(now())
+
+  @@map("roast_batches")
+}
+
+model CuppingScore {
+  id           String         @id @default(cuid())
+  greenBatchId String
+  greenBatch   GreenBeanBatch @relation(fields: [greenBatchId], references: [id], onDelete: Cascade)
+  aroma        Float
+  flavor       Float
+  acidity      Float
+  body         Float
+  balance      Float
+  total        Float // sum of the five (out of 50)
+  notes        String?
+  createdAt    DateTime       @default(now())
+
+  @@map("cupping_scores")
+}
+
 // Immutable audit trail of sensitive actions (matrix #155/#08, spec §3.1).
 model AuditLog {
   id           String   @id @default(cuid())

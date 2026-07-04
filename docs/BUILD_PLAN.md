@@ -124,7 +124,13 @@ Financial Accounting & Expense Management (#156–170):
 - [ ] Double-entry COA (#158), bank reconciliation (#159), depreciation (#160),
       multi-currency (#161), AR B2B ledger (#166), amortization (#168), budgets (#169)
 
-- [ ] Specialty Coffee & Roastery add-on (#81–95)
+Specialty Coffee & Roastery (#81–95):
+- [x] Green-bean batch tracking — origin/estate/process/moisture/aging (#81, #86)
+- [x] Roast profile log — charge/drop temp, dev time, Agtron (#82, #93)
+- [x] Green→roasted shrinkage auto-calc; output feeds Coffee Beans stock (#83, #87)
+- [x] SCA cupping score cards — aroma/flavor/acidity/body/balance (#84)
+- [ ] Roaster hardware sync (#82), production scheduling (#85), wholesale portal
+      (#88), grinder dial-in (#89), water chemistry (#90), blend components (#94)
 
 ---
 
