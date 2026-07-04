@@ -197,7 +197,7 @@ export class OrdersService {
     });
     return this.prisma.order.update({
       where: { id },
-      data: { status: 'SENT_TO_KITCHEN' },
+      data: { status: 'SENT_TO_KITCHEN', kotFiredAt: order.kotFiredAt ?? new Date() },
       include: orderInclude,
     });
   }

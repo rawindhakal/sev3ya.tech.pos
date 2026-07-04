@@ -216,6 +216,7 @@ model Order {
 
   // Lifecycle timestamps drive turnaround / guest-time metrics.
   seatedAt  DateTime?  // when the table became occupied for this order
+  kotFiredAt DateTime? // when the KOT was first sent to the kitchen (KDS timer)
   billedAt  DateTime?
   paidAt    DateTime?
   createdAt DateTime @default(now())

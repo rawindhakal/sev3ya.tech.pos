@@ -11,6 +11,7 @@ const NAV = [
   { href: '/pos', label: 'New Order (POS)', icon: '🛒', enabled: true },
   { href: '/reservations', label: 'Reservations', icon: '📅', enabled: true },
   { href: '/orders', label: 'Orders / KOT', icon: '🧾', enabled: true },
+  { href: '/kds', label: 'Kitchen (KDS)', icon: '👨‍🍳', enabled: true },
   { href: '/menu', label: 'Menu & Items', icon: '🍽️', enabled: true },
   { href: '/modifiers', label: 'Modifiers', icon: '➕', enabled: true },
   { href: '/cash-drawer', label: 'Cash Drawer', icon: '💵', enabled: true },

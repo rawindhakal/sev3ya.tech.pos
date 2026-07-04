@@ -47,9 +47,16 @@ High value, extends what exists. Backend already supports multi-tender + discoun
 - [ ] Vacant/dirty alerts (#35), booking deposit (#33), pre-order (#34),
       table sharing (#38), server-call (#40)
 
-## Phase 3 — Kitchen Display System / KDS (matrix #41–55, all must-have)
-- Live KDS screen (websockets), color prep timers, multi-station routing,
-  item aggregation, bump bar, recipe popups, KDS↔POS two-way sync.
+## 🔜 Phase 3 — Kitchen Display System / KDS (matrix #41–55, all must-have)
+- [x] Live KDS screen with color-coded prep timers (charcoal→amber@3m→crimson@5m) (#41)
+- [x] Order-ready per-item taps + bump to clear tickets (#44)
+- [x] KDS↔POS status sync — item ready advances order to READY (#50)
+- [x] Ingredient/out-of-stock flag endpoint from kitchen (#51)
+- [x] Token display: Processing / Ready split (spec §4.2)
+- [ ] Multi-station routing (espresso/bakery/kitchen) (#42)
+- [ ] Item aggregation view (#43), recipe pop-up (#45), priority sort (#46)
+- [ ] Historical bump recall (#47), performance metrics (#48), sound alerts (#49)
+- [ ] Course splitting (#53), expo screen (#54), smart batching (#55)
 
 ## Phase 4 — Inventory & Recipe Management (matrix #56–80, all must-have)
 - Recipe/BOM, ingredient stock depletion on sale, low-stock alerts,
