@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { api, formatMoney } from '@/lib/api';
 import type {
   Category,
@@ -52,6 +53,7 @@ function matchesQuery(name: string, q: string) {
 }
 
 export default function PosPage() {
+  const router = useRouter();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -311,6 +313,22 @@ export default function PosPage() {
     setSearch('');
   }
 
+  // Leave the terminal for another page without losing work: hold the bill if
+  // it has items, discard it if it's an empty draft (frees the table).
+  async function exitTo(path: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (order && cart.length > 0) await persistCart();
+      else if (order && cart.length === 0) await api.delete(`/orders/${order.id}`);
+    } catch {
+      /* navigate anyway */
+    } finally {
+      setBusy(false);
+    }
+    router.push(path);
+  }
+
   async function voidBasket() {
     if (!order) return resetTerminal();
     let reason: string | undefined;
@@ -343,19 +361,38 @@ export default function PosPage() {
       {/* Top bar */}
       <div className="flex items-center justify-between border-b border-white/10 bg-[#111] px-5 py-2.5 text-sm">
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => exitTo('/')}
+            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10"
+            title={order ? 'Holds the current bill and exits' : 'Back to dashboard'}
+          >
+            ‹ Exit
+          </button>
           <span className="text-lg">🍰</span>
           <span className="font-bold tracking-wide">POS TERMINAL</span>
           <span className="text-white/40">·</span>
           <span className="text-white/60">USER: Admin</span>
         </div>
         <div className="flex items-center gap-4">
+          <nav className="flex items-center gap-1 text-xs">
+            {[
+              { label: 'Dashboard', path: '/' },
+              { label: 'Tables', path: '/tables' },
+              { label: 'Reservations', path: '/reservations' },
+              { label: 'Orders', path: '/orders' },
+            ].map((l) => (
+              <button key={l.path} onClick={() => exitTo(l.path)} className="rounded-md px-2 py-1 text-white/50 hover:bg-white/10 hover:text-white">
+                {l.label}
+              </button>
+            ))}
+          </nav>
           <span className="flex items-center gap-1.5 text-[#2ECC71]">
             <span className="h-2 w-2 rounded-full bg-[#2ECC71]" /> ONLINE
           </span>
           <span className="text-white/60 tabular-nums">
             {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <a href="/settings" className="text-white/60 hover:text-white">⚙ Settings</a>
+          <button onClick={() => exitTo('/settings')} className="text-white/60 hover:text-white">⚙ Settings</button>
         </div>
       </div>
 
