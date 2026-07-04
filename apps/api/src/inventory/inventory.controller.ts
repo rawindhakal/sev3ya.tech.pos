@@ -32,6 +32,7 @@ class UpdateIngredientDto {
   @IsOptional() @IsString() unit?: string;
   @IsOptional() @IsNumber() @Min(0) reorderLevel?: number;
   @IsOptional() @IsInt() @Min(0) costPerUnitCents?: number;
+  @IsOptional() @IsString() supplierId?: string;
 }
 class MovementDto {
   @IsEnum(StockMovementType) type: StockMovementType;

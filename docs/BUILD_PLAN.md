@@ -77,7 +77,14 @@ Employee & Shift Management (#126–140):
 - [x] PIN login gate on the POS terminal (spec §2.1); void/discount gated by permission
 - [ ] Shift scheduler (#127), tip pooling (#128), break tracking (#132),
       performance leaderboard (#133), task checklists (#135), labor-cost widget (#139)
-- [ ] Purchasing & Supplier Management (#141–155): POs, GRN, supplier ledgers
+Purchasing & Supplier Management (#141–155):
+- [x] Centralized vendor directory (#141)
+- [x] Purchase-order workflow (draft → ordered → received)
+- [x] GRN / split-delivery receiving that adds stock (#146)
+- [x] Auto-generate PO from stock deficits (#150)
+- [x] Supplier catalog mapping — ingredient → primary supplier (#67)
+- [ ] MOQ warnings (#144), lead-time (#145), RMA returns (#147), pricing history
+      (#148), scorecarding (#151), payment-term alerts (#153), purchase ledger audit (#155)
 - [ ] Admin, Multi-Store & Security (#156–170): full JWT route protection,
       audit logs, multi-branch
   > Backend permission ENFORCEMENT (beyond UI gating) is the next auth step.

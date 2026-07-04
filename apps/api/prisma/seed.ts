@@ -190,6 +190,17 @@ async function main() {
   const chocolate = await prisma.ingredient.create({
     data: { name: 'Chocolate Syrup', unit: 'ml', stockQty: 3000, reorderLevel: 800, costPerUnitCents: 40 },
   });
+  // Suppliers (Phase 5) + assign ingredients to a primary vendor.
+  const himalayan = await prisma.supplier.create({
+    data: { name: 'Himalayan Coffee Co.', contact: '01-4111222', address: 'Kathmandu', taxId: 'PAN 500111222' },
+  });
+  const dairyBest = await prisma.supplier.create({
+    data: { name: 'DairyBest Supplies', contact: '01-4333444', address: 'Lalitpur' },
+  });
+  await prisma.ingredient.update({ where: { id: beans.id }, data: { supplierId: himalayan.id } });
+  await prisma.ingredient.update({ where: { id: milk.id }, data: { supplierId: dairyBest.id } });
+  await prisma.ingredient.update({ where: { id: chocolate.id }, data: { supplierId: dairyBest.id } });
+
   const recipes: [string, { id: string; qty: number }[]][] = [
     ['Cappuccino', [{ id: beans.id, qty: 18 }, { id: milk.id, qty: 150 }]],
     ['Cafe Latte', [{ id: beans.id, qty: 18 }, { id: milk.id, qty: 200 }]],

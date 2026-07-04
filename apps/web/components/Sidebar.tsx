@@ -15,6 +15,7 @@ const NAV = [
   { href: '/menu', label: 'Menu & Items', icon: '🍽️', enabled: true },
   { href: '/modifiers', label: 'Modifiers', icon: '➕', enabled: true },
   { href: '/inventory', label: 'Inventory', icon: '📦', enabled: true },
+  { href: '/purchasing', label: 'Purchasing', icon: '🚚', enabled: true },
   { href: '/employees', label: 'Employees', icon: '👥', enabled: true },
   { href: '/cash-drawer', label: 'Cash Drawer', icon: '💵', enabled: true },
   { href: '/settings', label: 'Settings', icon: '⚙️', enabled: true },

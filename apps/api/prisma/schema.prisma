@@ -408,12 +408,73 @@ model Ingredient {
   reorderLevel Float   @default(0)   // low-stock threshold (#58)
   // Cost per base unit, in cents (paisa) — drives valuation (#75).
   costPerUnitCents Int  @default(0)
+  // Primary supplier for reordering (supplier catalog mapping, #67).
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
   recipeItems  RecipeItem[]
   movements    StockMovement[]
+  poLines      PurchaseOrderLine[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@map("ingredients")
+}
+
+// ─────────────────────────────────────────────────────────────
+// PURCHASING & SUPPLIERS (matrix #141–155)
+// ─────────────────────────────────────────────────────────────
+
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  contact     String?  // phone / email
+  address     String?
+  taxId       String?
+  isActive    Boolean  @default(true)
+  ingredients Ingredient[]
+  orders      PurchaseOrder[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("suppliers")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id         String              @id @default(cuid())
+  number     Int                 @default(autoincrement())
+  supplierId String
+  supplier   Supplier            @relation(fields: [supplierId], references: [id])
+  status     PurchaseOrderStatus @default(DRAFT)
+  notes      String?
+  lines      PurchaseOrderLine[]
+  orderedAt  DateTime?
+  receivedAt DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id            String        @id @default(cuid())
+  poId          String
+  po            PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  ingredientId  String
+  ingredient    Ingredient    @relation(fields: [ingredientId], references: [id])
+  quantity      Float         // ordered qty in ingredient unit
+  receivedQty   Float         @default(0) // received so far (split delivery #146)
+  unitCostCents Int           @default(0)
+
+  @@map("purchase_order_lines")
 }
 
 model RecipeItem {

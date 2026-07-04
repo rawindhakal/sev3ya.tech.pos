@@ -26,7 +26,7 @@ export class InventoryService {
     return this.prisma.ingredient.create({ data: dto });
   }
 
-  async updateIngredient(id: string, dto: Prisma.IngredientUpdateInput) {
+  async updateIngredient(id: string, dto: Prisma.IngredientUncheckedUpdateInput) {
     await this.getIngredient(id);
     return this.prisma.ingredient.update({ where: { id }, data: dto });
   }
