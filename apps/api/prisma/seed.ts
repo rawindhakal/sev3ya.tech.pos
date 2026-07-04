@@ -166,6 +166,17 @@ async function main() {
     ],
   });
 
+  // Employees + role permissions (Phase 5). Dev PINs.
+  await prisma.employee.deleteMany();
+  await prisma.employee.createMany({
+    data: [
+      { name: 'Admin', role: 'ADMIN', pin: '1111', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true, canManageStaff: true },
+      { name: 'Manager Gita', role: 'MANAGER', pin: '2222', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true },
+      { name: 'Cashier Ram', role: 'CASHIER', pin: '3333', canDiscount: true },
+      { name: 'Barista Sita', role: 'BARISTA', pin: '4444' },
+    ],
+  });
+
   // Ingredients + recipes (Phase 4) — costs in paisa per base unit.
   const beans = await prisma.ingredient.create({
     data: { name: 'Coffee Beans', unit: 'g', stockQty: 5000, reorderLevel: 1000, costPerUnitCents: 200 },

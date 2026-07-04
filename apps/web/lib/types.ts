@@ -78,6 +78,21 @@ export interface Waiter {
   isActive: boolean;
 }
 
+export type StaffRole = 'ADMIN' | 'MANAGER' | 'CASHIER' | 'BARISTA' | 'WAITER';
+
+export interface Employee {
+  id: string;
+  name: string;
+  role: StaffRole;
+  isActive: boolean;
+  canVoid: boolean;
+  canDiscount: boolean;
+  canManageInventory: boolean;
+  canViewReports: boolean;
+  canManageStaff: boolean;
+  clockedIn?: boolean;
+}
+
 export interface RestaurantTable {
   id: string;
   name: string;

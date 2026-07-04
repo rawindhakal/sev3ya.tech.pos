@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api, formatMoney } from '@/lib/api';
 import type {
   Category,
+  Employee,
   MenuItem,
   ModifierGroup,
   Order,
@@ -60,6 +61,11 @@ export default function PosPage() {
   const [waiters, setWaiters] = useState<Waiter[]>([]);
   const [now, setNow] = useState(new Date());
 
+  // Terminal session (PIN login — spec §2.1 Step 1)
+  const [emp, setEmp] = useState<Employee | null>(null);
+  const [pin, setPin] = useState('');
+  const [pinErr, setPinErr] = useState('');
+
   // active order context
   const [mode, setMode] = useState<ModeKey | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
@@ -101,8 +107,34 @@ export default function PosPage() {
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
     api.get<Waiter[]>('/waiters').then(setWaiters).catch(() => {});
     const clock = setInterval(() => setNow(new Date()), 1000);
+    // Restore a previous terminal session.
+    try {
+      const saved = localStorage.getItem('cakezake-emp');
+      if (saved) setEmp(JSON.parse(saved));
+    } catch {
+      /* ignore */
+    }
     return () => clearInterval(clock);
   }, []);
+
+  async function login() {
+    if (!/^\d{4,6}$/.test(pin)) return setPinErr('Enter your 4–6 digit PIN');
+    try {
+      const e = await api.post<Employee>('/employees/login', { pin });
+      setEmp(e);
+      localStorage.setItem('cakezake-emp', JSON.stringify(e));
+      setPin('');
+      setPinErr('');
+    } catch {
+      setPinErr('Invalid PIN');
+      setPin('');
+    }
+  }
+  function lock() {
+    setEmp(null);
+    localStorage.removeItem('cakezake-emp');
+    resetTerminal();
+  }
 
   function flash(msg: string) {
     setToast(msg);
@@ -466,6 +498,34 @@ export default function PosPage() {
 
   const custLabel = order?.customerName ? `${order.customerName}${order.customerPhone ? ` · ${order.customerPhone}` : ''}` : null;
 
+  // ── PIN login gate (spec §2.1 Step 1) ──────────────
+  if (!emp) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-[#1A1A1A] text-white">
+        <div className="w-72 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
+          <div className="mb-1 text-3xl">🍰</div>
+          <div className="mb-1 font-bold tracking-wide">POS TERMINAL</div>
+          <p className="mb-4 text-xs text-white/40">Enter your PIN to sign in</p>
+          <div className="mb-4 flex justify-center gap-2">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <span key={i} className={`h-3 w-3 rounded-full ${i < pin.length ? 'bg-[#2ECC71]' : 'bg-white/15'}`} />
+            ))}
+          </div>
+          {pinErr && <p className="mb-3 text-xs text-[#E74C3C]">{pinErr}</p>}
+          <div className="grid grid-cols-3 gap-2">
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => (
+              <button key={n} onClick={() => setPin((p) => (p.length < 6 ? p + n : p))} className="rounded-lg bg-white/5 py-3 text-lg font-semibold hover:bg-white/10">{n}</button>
+            ))}
+            <button onClick={() => setPin((p) => p.slice(0, -1))} className="rounded-lg bg-white/5 py-3 text-sm hover:bg-white/10">⌫</button>
+            <button onClick={() => setPin((p) => (p.length < 6 ? p + '0' : p))} className="rounded-lg bg-white/5 py-3 text-lg font-semibold hover:bg-white/10">0</button>
+            <button onClick={login} className="rounded-lg bg-[#2ECC71] py-3 text-sm font-bold text-black hover:bg-[#28b463]">Enter</button>
+          </div>
+          <p className="mt-4 text-[10px] text-white/25">Dev PINs — Admin 1111 · Manager 2222 · Cashier 3333</p>
+        </div>
+      </div>
+    );
+  }
+
   // ── Render ─────────────────────────────────────────
   return (
     <div className="flex h-full flex-col bg-[#1A1A1A] text-white">
@@ -489,7 +549,8 @@ export default function PosPage() {
           <span className="text-lg">🍰</span>
           <span className="font-bold tracking-wide">POS TERMINAL</span>
           <span className="text-white/40">·</span>
-          <span className="text-white/60">USER: Admin</span>
+          <span className="text-white/60">{emp.name} ({emp.role})</span>
+          <button onClick={lock} className="rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/60 hover:bg-white/10" title="Lock terminal">🔒 Lock</button>
         </div>
         <div className="flex items-center gap-4">
           <nav className="flex items-center gap-1 text-xs">
@@ -532,7 +593,7 @@ export default function PosPage() {
             </button>
           );
         })}
-        {order && (
+        {order && emp.canVoid && (
           <button onClick={voidBasket} className="ml-auto rounded-lg bg-[#E74C3C]/15 px-4 py-2 text-sm font-semibold text-[#E74C3C] hover:bg-[#E74C3C]/25">
             ✕ Void Basket
           </button>
@@ -727,8 +788,8 @@ export default function PosPage() {
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between text-white/50"><span>Sub-Total ({totals.count} items)</span><span>{formatMoney(totals.subtotal)}</span></div>
                 <div className="flex items-center justify-between text-white/50">
-                  <span>Discount (Rs)</span>
-                  <input type="number" min={0} value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" className="w-20 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white" />
+                  <span>Discount (Rs){!emp.canDiscount && <span className="ml-1 text-[9px] text-white/30">🔒</span>}</span>
+                  <input type="number" min={0} value={discount} disabled={!emp.canDiscount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={emp.canDiscount ? '' : 'No discount permission'} className="w-20 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white disabled:opacity-40" />
                 </div>
                 {serviceChargeRate > 0 && <div className="flex justify-between text-white/50"><span>Service ({Math.round(serviceChargeRate * 100)}%)</span><span>{formatMoney(totals.serviceCharge)}</span></div>}
                 <div className="flex justify-between text-white/50"><span>VAT ({Math.round(vatRate * 100)}%)</span><span>{formatMoney(totals.tax)}</span></div>
@@ -737,7 +798,7 @@ export default function PosPage() {
 
               {/* actions */}
               <div className="mt-3 grid grid-cols-3 gap-2">
-                <button className="rounded-lg bg-white/10 py-2 text-xs font-semibold text-white/80 hover:bg-white/20 disabled:opacity-40" disabled={busy} onClick={voidBasket}>Void Basket</button>
+                <button className="rounded-lg bg-white/10 py-2 text-xs font-semibold text-white/80 hover:bg-white/20 disabled:opacity-40" disabled={busy || !emp.canVoid} title={emp.canVoid ? '' : 'No void permission'} onClick={voidBasket}>Void Basket</button>
                 <button className="rounded-lg bg-white/10 py-2 text-xs font-semibold text-white/80 hover:bg-white/20 disabled:opacity-40" disabled={busy || isQuick} onClick={() => runAction('kot_print')}>Print KOT</button>
                 <button className="rounded-lg bg-[#2ECC71] py-2 text-xs font-bold text-black hover:bg-[#28b463] disabled:opacity-40" disabled={busy} onClick={() => runAction('pay')}>Proceed to Pay</button>
               </div>

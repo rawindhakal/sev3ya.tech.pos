@@ -70,12 +70,17 @@ High value, extends what exists. Backend already supports multi-tender + discoun
 - [ ] UOM converter (#74), lot/expiry (#69), allergens (#77), add-on deduct (#78),
       recipe costing simulator (#79), purchase returns (#80), etc.
 
-## Phase 5 — People & Operations (must-have)
-- Employee & Shift Management (#111–125): auth, roles, clock-in/out, rosters
-- Purchasing & Supplier Management (#126–140): POs, GRN, supplier ledgers
-- Admin, Multi-Store & Security (#156–170): RBAC, multi-branch, audit logs
-  > Note: authentication/roles here also unlock manager-approval features in
-  > Phase 1 (discount/refund approval).
+## 🔜 Phase 5 — People & Operations (must-have)
+Employee & Shift Management (#126–140):
+- [x] PIN time clocking — clock in/out + active shifts (#126)
+- [x] Role-based permission matrix — roles + granular perms (#129)
+- [x] PIN login gate on the POS terminal (spec §2.1); void/discount gated by permission
+- [ ] Shift scheduler (#127), tip pooling (#128), break tracking (#132),
+      performance leaderboard (#133), task checklists (#135), labor-cost widget (#139)
+- [ ] Purchasing & Supplier Management (#141–155): POs, GRN, supplier ledgers
+- [ ] Admin, Multi-Store & Security (#156–170): full JWT route protection,
+      audit logs, multi-branch
+  > Backend permission ENFORCEMENT (beyond UI gating) is the next auth step.
 
 ## Phase 6 — Advanced Analytics & Reporting Engine (matrix #171–200, must-have)
 - Configurable report builder, exports (PDF/Excel), forecasting, X/Z reports,

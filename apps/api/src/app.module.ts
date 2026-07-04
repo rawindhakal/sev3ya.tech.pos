@@ -13,6 +13,7 @@ import { CashDrawerModule } from './cash-drawer/cash-drawer.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { KdsModule } from './kds/kds.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { EmployeesModule } from './employees/employees.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { InventoryModule } from './inventory/inventory.module';
     ReservationsModule,
     KdsModule,
     InventoryModule,
+    EmployeesModule,
   ],
   controllers: [HealthController],
 })

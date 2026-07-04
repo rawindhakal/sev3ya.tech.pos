@@ -240,6 +240,50 @@ model Waiter {
   @@map("waiters")
 }
 
+// ─────────────────────────────────────────────────────────────
+// EMPLOYEES, ROLES & SHIFTS (matrix #126–140, spec §2.1/§3.1 Step 3)
+// ─────────────────────────────────────────────────────────────
+
+enum StaffRole {
+  ADMIN
+  MANAGER
+  CASHIER
+  BARISTA
+  WAITER
+}
+
+model Employee {
+  id       String    @id @default(cuid())
+  name     String
+  role     StaffRole @default(CASHIER)
+  pin      String    // terminal clock-in / login PIN (dev: plaintext)
+  isActive Boolean   @default(true)
+
+  // Granular permission matrix (#129, spec §3.1 Step 3).
+  canVoid            Boolean @default(false)
+  canDiscount        Boolean @default(false)
+  canManageInventory Boolean @default(false)
+  canViewReports     Boolean @default(false)
+  canManageStaff     Boolean @default(false)
+
+  shifts    Shift[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("employees")
+}
+
+model Shift {
+  id         String    @id @default(cuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  clockIn    DateTime  @default(now())
+  clockOut   DateTime?
+
+  @@index([employeeId])
+  @@map("shifts")
+}
+
 model OrderItem {
   id         String    @id @default(cuid())
   orderId    String
