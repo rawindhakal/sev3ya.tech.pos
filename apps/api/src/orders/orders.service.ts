@@ -253,11 +253,15 @@ export class OrdersService {
           data: { status: 'AVAILABLE' },
         });
       }
+      // Redeem loyalty points first (guards balance), then award on this sale.
+      if (dto.redeemPoints)
+        await this.crm.redeem(tx, dto.customerPhone ?? order.customerPhone, dto.redeemPoints, id);
       // Deduct recipe ingredients from stock on sale (matrix #56).
       await this.inventory.deductForOrder(tx, id);
       // Roll up loyalty / CRM stats for the customer (matrix #111).
       await this.crm.recordSale(tx, updated);
-      return updated;
+      // Return the fresh row so redeemedPoints / customerId are reflected.
+      return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
   }
 

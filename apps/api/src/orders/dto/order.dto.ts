@@ -55,6 +55,9 @@ export class PaymentLineDto {
 export class PayDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => PaymentLineDto)
   payments: PaymentLineDto[];
+  // Optional loyalty redemption (already reflected in the order discount).
+  @IsOptional() @IsInt() @Min(0) redeemPoints?: number;
+  @IsOptional() @IsString() customerPhone?: string;
 }
 
 export class UpdateOrderDto {

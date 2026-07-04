@@ -211,6 +211,9 @@ model Order {
 
   notes     String?
 
+  // Loyalty points redeemed against this order (#111).
+  redeemedPoints Int @default(0)
+
   // Void / refund audit trail (matrix #10).
   voidReason   String?
   refundReason String?

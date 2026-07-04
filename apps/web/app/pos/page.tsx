@@ -74,6 +74,7 @@ export default function PosPage() {
   const [guestCount, setGuestCount] = useState(2);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [discount, setDiscount] = useState('');
+  const [redeemPts, setRedeemPts] = useState(''); // loyalty points to redeem
   const [isQuick, setIsQuick] = useState(false);
 
   // capture overlays
@@ -158,6 +159,7 @@ export default function PosPage() {
 
   const vatRate = settings?.vatRate ?? 0.13;
   const serviceChargeRate = settings?.serviceChargeRate ?? 0;
+  const pointsAvail = custInfo?.found ? custInfo.loyaltyPoints ?? 0 : 0;
   const totals = useMemo(() => {
     let subtotal = 0;
     let count = 0;
@@ -167,11 +169,15 @@ export default function PosPage() {
       count += l.quantity;
     }
     const discountCents = Math.min(subtotal, Math.round((parseFloat(discount) || 0) * 100));
-    const taxable = subtotal - discountCents;
+    // Loyalty redemption (1 point = Rs 1), capped by balance & remaining bill.
+    const reqPts = Math.max(0, Math.min(parseInt(redeemPts) || 0, pointsAvail));
+    const redeemCents = Math.min(reqPts * 100, subtotal - discountCents);
+    const redeemPoints = Math.floor(redeemCents / 100);
+    const taxable = subtotal - discountCents - redeemCents;
     const serviceCharge = Math.round(taxable * serviceChargeRate);
     const tax = Math.round((taxable + serviceCharge) * vatRate);
-    return { count, subtotal, discountCents, serviceCharge, tax, total: taxable + serviceCharge + tax };
-  }, [cart, vatRate, serviceChargeRate, discount]);
+    return { count, subtotal, discountCents, redeemCents, redeemPoints, serviceCharge, tax, total: taxable + serviceCharge + tax };
+  }, [cart, vatRate, serviceChargeRate, discount, redeemPts, pointsAvail]);
 
   const orderType: OrderType = mode === 'DELIVERY' ? 'DELIVERY' : mode === 'DINE_IN' ? 'DINE_IN' : 'TAKEAWAY';
 
@@ -374,7 +380,7 @@ export default function PosPage() {
     if (!order) throw new Error('No active order');
     const saved = await api.put<Order>(`/orders/${order.id}/cart`, {
       items: cart.map((l) => (l.menuItemId ? { menuItemId: l.menuItemId, quantity: l.quantity, modifiers: l.modifiers } : { name: l.name, unitPriceCents: l.unitPriceCents, quantity: l.quantity, modifiers: l.modifiers })),
-      discountCents: totals.discountCents,
+      discountCents: totals.discountCents + totals.redeemCents,
       waiterId: waiterId || undefined,
       guestCount,
     });
@@ -418,9 +424,13 @@ export default function PosPage() {
     if (!order) return;
     setBusy(true);
     try {
-      await api.post(`/orders/${order.id}/pay`, { payments });
+      await api.post(`/orders/${order.id}/pay`, {
+        payments,
+        redeemPoints: totals.redeemPoints || undefined,
+        customerPhone: order.customerPhone ?? undefined,
+      });
       setPayOpen(false);
-      flash(`Order #${order.number} settled ✓`);
+      flash(totals.redeemPoints ? `Settled ✓ · ${totals.redeemPoints} pts redeemed` : `Order #${order.number} settled ✓`);
       resetTerminal();
     } catch (e) {
       alert((e as Error).message);
@@ -435,6 +445,8 @@ export default function PosPage() {
     setTable(null);
     setCart([]);
     setDiscount('');
+    setRedeemPts('');
+    setCustInfo(null);
     setIsQuick(false);
     setActiveCat('all');
     setSearch('');
@@ -452,6 +464,8 @@ export default function PosPage() {
     setTable(null);
     setCart([]);
     setDiscount('');
+    setRedeemPts('');
+    setCustInfo(null);
     setIsQuick(false);
     setActiveCat('all');
     setSearch('');
@@ -810,6 +824,15 @@ export default function PosPage() {
                   <span>Discount (Rs){!emp.canDiscount && <span className="ml-1 text-[9px] text-white/30">🔒</span>}</span>
                   <input type="number" min={0} value={discount} disabled={!emp.canDiscount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={emp.canDiscount ? '' : 'No discount permission'} className="w-20 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white disabled:opacity-40" />
                 </div>
+                {pointsAvail > 0 && (
+                  <div className="flex items-center justify-between text-amber-300/80">
+                    <span>⭐ Redeem pts <span className="text-white/30">(of {pointsAvail})</span></span>
+                    <input type="number" min={0} max={pointsAvail} value={redeemPts} onChange={(e) => setRedeemPts(e.target.value)} placeholder="0" className="w-20 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white" />
+                  </div>
+                )}
+                {totals.redeemCents > 0 && (
+                  <div className="flex justify-between text-amber-300"><span>Points redeemed</span><span>−{formatMoney(totals.redeemCents)}</span></div>
+                )}
                 {serviceChargeRate > 0 && <div className="flex justify-between text-white/50"><span>Service ({Math.round(serviceChargeRate * 100)}%)</span><span>{formatMoney(totals.serviceCharge)}</span></div>}
                 <div className="flex justify-between text-white/50"><span>VAT ({Math.round(vatRate * 100)}%)</span><span>{formatMoney(totals.tax)}</span></div>
                 <div className="flex justify-between border-t border-white/10 pt-1.5 text-lg font-bold text-[#2ECC71]"><span>TOTAL DUE</span><span>{formatMoney(totals.total)}</span></div>

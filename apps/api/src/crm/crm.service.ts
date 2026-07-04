@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -58,6 +58,18 @@ export class CrmService {
       },
     });
     await tx.order.update({ where: { id: order.id }, data: { customerId: cust.id } });
+  }
+
+  // Redeem loyalty points against an order (1 point = Rs 1). Runs inside the
+  // payment transaction; guards the balance and records the redemption.
+  async redeem(tx: Prisma.TransactionClient, phone: string | null, points: number, orderId: string) {
+    if (!phone || points <= 0) return;
+    const c = await tx.customer.findUnique({ where: { phone } });
+    if (!c) throw new BadRequestException('No customer found for point redemption');
+    if (c.loyaltyPoints < points)
+      throw new BadRequestException(`Only ${c.loyaltyPoints} points available`);
+    await tx.customer.update({ where: { id: c.id }, data: { loyaltyPoints: { decrement: points } } });
+    await tx.order.update({ where: { id: orderId }, data: { redeemedPoints: points, customerId: c.id } });
   }
 
   async findAll(search?: string) {
