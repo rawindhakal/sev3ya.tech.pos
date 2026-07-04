@@ -105,6 +105,9 @@ model RestaurantTable {
   area      String?     // e.g. "Ground floor", "Patio"
   status    TableStatus @default(AVAILABLE)
   isVip     Boolean     @default(false) // VIP / regulars highlighting (#39)
+  // Floor-plan canvas position within its area (matrix #26).
+  posX      Int?
+  posY      Int?
   orders    Order[]
   reservations Reservation[]
   createdAt DateTime    @default(now())

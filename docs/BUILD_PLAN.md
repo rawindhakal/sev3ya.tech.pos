@@ -40,7 +40,7 @@ High value, extends what exists. Backend already supports multi-tender + discoun
 - [x] Max occupancy constraints (#36)
 - [x] VIP table highlighting (#39)
 - [x] Reservation & waitlist management (#30)
-- [ ] Visual drag-drop floor plan layout (#26)
+- [x] Visual drag-drop floor plan layout (#26)
 - [ ] QR code digital ordering per table (#37)
 - [ ] Seat-wise order tracking (#29)
 - [ ] Section allocation for servers (#32)

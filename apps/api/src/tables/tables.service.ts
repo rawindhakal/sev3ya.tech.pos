@@ -48,9 +48,30 @@ export class TablesService {
     return this.prisma.restaurantTable.create({ data });
   }
 
+  // Persist many table positions in one transaction (floor-plan save).
+  async saveLayout(positions: { id: string; posX: number; posY: number }[]) {
+    await this.prisma.$transaction(
+      positions.map((p) =>
+        this.prisma.restaurantTable.update({
+          where: { id: p.id },
+          data: { posX: p.posX, posY: p.posY },
+        }),
+      ),
+    );
+    return { saved: positions.length };
+  }
+
   async update(
     id: string,
-    data: { name?: string; seats?: number; area?: string; status?: TableStatus; isVip?: boolean },
+    data: {
+      name?: string;
+      seats?: number;
+      area?: string;
+      status?: TableStatus;
+      isVip?: boolean;
+      posX?: number;
+      posY?: number;
+    },
   ) {
     const table = await this.prisma.restaurantTable.findUnique({ where: { id } });
     if (!table) throw new NotFoundException(`Table ${id} not found`);

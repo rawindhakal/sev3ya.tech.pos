@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import type { RestaurantTable, TableArea, TableStatus } from '@/lib/types';
 import Modal from '@/components/Modal';
+import FloorPlan from '@/components/FloorPlan';
 
 const STATUS_STYLE: Record<TableStatus, string> = {
   AVAILABLE: 'border-green-300 bg-green-50',
@@ -33,6 +34,8 @@ export default function TablesPage() {
   const [form, setForm] = useState({ name: '', seats: 4, area: '', isVip: false });
   const [saving, setSaving] = useState(false);
   const [, setTick] = useState(0); // forces timer re-render each second
+  const [view, setView] = useState<'grid' | 'floor'>('grid');
+  const [selected, setSelected] = useState<RestaurantTable | null>(null);
 
   const [transferFor, setTransferFor] = useState<RestaurantTable | null>(null);
   const [mergeFor, setMergeFor] = useState<RestaurantTable | null>(null);
@@ -128,7 +131,23 @@ export default function TablesPage() {
             {counts.AVAILABLE ?? 0} free · {counts.OCCUPIED ?? 0} occupied · {counts.RESERVED ?? 0} reserved · {counts.CLEANING ?? 0} cleaning
           </p>
         </div>
-        <button className="btn-primary" onClick={() => setAddOpen(true)}>+ Table</button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-slate-200 p-0.5">
+            <button
+              onClick={() => setView('grid')}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${view === 'grid' ? 'bg-brand-600 text-white' : 'text-slate-500'}`}
+            >
+              Grid
+            </button>
+            <button
+              onClick={() => setView('floor')}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${view === 'floor' ? 'bg-brand-600 text-white' : 'text-slate-500'}`}
+            >
+              Floor plan
+            </button>
+          </div>
+          <button className="btn-primary" onClick={() => setAddOpen(true)}>+ Table</button>
+        </div>
       </header>
 
       {error && (
@@ -137,7 +156,9 @@ export default function TablesPage() {
         </div>
       )}
 
-      {areas.map((a) => (
+      {view === 'floor' && <FloorPlan areas={areas} onTableClick={setSelected} />}
+
+      {view === 'grid' && areas.map((a) => (
         <div key={a.area} className="mb-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">{a.area}</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -196,6 +217,38 @@ export default function TablesPage() {
           </div>
         </div>
       ))}
+
+      {/* Selected-table action sheet (floor-plan click) */}
+      <Modal open={!!selected} title={selected ? `Table ${selected.name}` : ''} onClose={() => setSelected(null)}>
+        {selected && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <span className={`badge ${STATUS_BADGE[selected.status]}`}>{selected.status}</span>
+              <span>{selected.seats} seats</span>
+              {selected.isVip && <span className="badge bg-amber-100 text-amber-700">⭐ VIP</span>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {selected.status === 'OCCUPIED' && selected.activeOrder ? (
+                <>
+                  <button className="btn-ghost text-xs" onClick={() => { setTransferFor(selected); setSelected(null); }}>Transfer</button>
+                  <button className="btn-ghost text-xs" onClick={() => { setMergeFor(selected); setSelected(null); }}>Merge</button>
+                </>
+              ) : (
+                (['AVAILABLE', 'RESERVED', 'CLEANING'] as TableStatus[])
+                  .filter((s) => s !== selected.status)
+                  .map((s) => (
+                    <button key={s} className="btn-ghost text-xs" onClick={() => { setStatus(selected.id, s); setSelected(null); }}>
+                      {s === 'AVAILABLE' ? 'Mark Free' : s === 'RESERVED' ? 'Reserve' : 'Cleaning'}
+                    </button>
+                  ))
+              )}
+              <button className="btn-ghost text-xs" onClick={() => { toggleVip(selected); setSelected(null); }}>
+                {selected.isVip ? 'Remove VIP' : 'Make VIP'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Transfer modal */}
       <Modal open={!!transferFor} title={`Transfer order from ${transferFor?.name ?? ''}`} onClose={() => setTransferFor(null)}>

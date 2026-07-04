@@ -85,6 +85,8 @@ export interface RestaurantTable {
   area?: string | null;
   status: TableStatus;
   isVip?: boolean;
+  posX?: number | null;
+  posY?: number | null;
   activeOrder?: {
     id: string;
     number: number;
