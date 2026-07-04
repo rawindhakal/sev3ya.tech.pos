@@ -80,6 +80,7 @@ export default function PosPage() {
   const [overlay, setOverlay] = useState<null | 'table' | 'customer'>(null);
   const [areas, setAreas] = useState<TableArea[]>([]);
   const [cust, setCust] = useState({ name: '', phone: '' });
+  const [custInfo, setCustInfo] = useState<null | { found: boolean; name?: string; loyaltyPoints?: number; visitCount?: number; tier?: string }>(null);
 
   // table management (folded into the POS floor)
   const [manage, setManage] = useState(false);
@@ -141,6 +142,18 @@ export default function PosPage() {
   function flash(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
+  }
+
+  // Returning-customer lookup for the capture overlay (#123, #124).
+  async function lookupCustomer(phone: string) {
+    if (phone.replace(/\D/g, '').length < 7) return setCustInfo(null);
+    try {
+      const r = await api.get<{ found: boolean; name?: string; loyaltyPoints?: number; visitCount?: number; tier?: string }>(`/customers/lookup?phone=${encodeURIComponent(phone)}`);
+      setCustInfo(r);
+      if (r.found && r.name && !cust.name) setCust((c) => ({ ...c, name: r.name! }));
+    } catch {
+      setCustInfo(null);
+    }
   }
 
   const vatRate = settings?.vatRate ?? 0.13;
@@ -833,10 +846,19 @@ export default function PosPage() {
           </div>
           <div>
             <label className="label">Phone</label>
-            <input className="input" value={cust.phone} onChange={(e) => setCust({ ...cust, phone: e.target.value })} placeholder="98XXXXXXXX" />
+            <input className="input" value={cust.phone} onChange={(e) => { setCust({ ...cust, phone: e.target.value }); lookupCustomer(e.target.value); }} placeholder="98XXXXXXXX" />
           </div>
+          {custInfo && (
+            custInfo.found ? (
+              <div className="rounded-lg bg-green-50 p-2.5 text-sm text-green-700">
+                ⭐ Returning · <strong>{custInfo.name}</strong> · {custInfo.tier} · {custInfo.loyaltyPoints} pts · {custInfo.visitCount} visits
+              </div>
+            ) : cust.phone.replace(/\D/g, '').length >= 7 ? (
+              <div className="rounded-lg bg-indigo-50 p-2.5 text-sm text-indigo-700">🆕 First-time customer</div>
+            ) : null
+          )}
           <div className="flex justify-end gap-2">
-            <button type="button" className="btn-ghost" onClick={() => { setOverlay(null); setMode(null); }}>Cancel</button>
+            <button type="button" className="btn-ghost" onClick={() => { setOverlay(null); setMode(null); setCustInfo(null); }}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Starting…' : 'Start order'}</button>
           </div>
         </form>

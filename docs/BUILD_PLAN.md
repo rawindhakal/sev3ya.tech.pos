@@ -105,10 +105,18 @@ Admin, Multi-Store & Security (#156–170):
       multi-branch comparison (#195), reorder forecasting (#199),
       scheduled PDF dispatch (#200)
 
-## Extras (lower priority — matrix flags these "Extra Feature")
-- Specialty Coffee & Roastery add-on (#81–95)
-- CRM, Loyalty & Marketing (#96–110)
-- Financial Accounting & Expense Management (#141–155)
+## Extras (matrix flags these "Extra Feature")
+CRM, Loyalty & Marketing (#111–125):
+- [x] Points-based loyalty engine — auto-award on sale (#111)
+- [x] Tiered membership Silver/Gold/Platinum by spend (#112)
+- [x] RFM segmentation — At Risk / Loyal / High Spender / New (#115)
+- [x] Behavior history + first-time tag via phone lookup in POS (#123, #124)
+- [x] GDPR one-click delete (#125)
+- [ ] Gift cards/wallet (#113), birthday campaigns (#114), punch-card (#116),
+      SMS broadcast (#117), referrals (#118), surveys (#119)
+
+- [ ] Specialty Coffee & Roastery add-on (#81–95)
+- [ ] Financial Accounting & Expense Management (#141–155 of that module)
 
 ---
 

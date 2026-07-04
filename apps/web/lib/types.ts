@@ -181,6 +181,21 @@ export interface Reservation {
   table?: { id: string; name: string; area?: string | null } | null;
 }
 
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string | null;
+  loyaltyPoints: number;
+  totalSpentCents: number;
+  visitCount: number;
+  lastVisitAt?: string | null;
+  optIn: boolean;
+  tier: string;
+  segment: string;
+  orders?: { number: number; type?: string; totalCents: number; paidAt: string; items?: { nameSnapshot: string; quantity: number }[] }[];
+}
+
 export interface Settings {
   vatRate: number;
   serviceChargeRate: number;

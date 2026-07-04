@@ -9,6 +9,7 @@ import { computeTotals } from '../common/settings';
 import { SettingsService } from '../settings/settings.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
+import { CrmService } from '../crm/crm.service';
 import type { TokenPayload } from '../common/token';
 import { ForbiddenException } from '@nestjs/common';
 import { OrderType } from '@prisma/client';
@@ -36,6 +37,7 @@ export class OrdersService {
     private readonly settings: SettingsService,
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
+    private readonly crm: CrmService,
   ) {}
 
   // Pick the price for a menu item based on the order type (matrix #15).
@@ -253,6 +255,8 @@ export class OrdersService {
       }
       // Deduct recipe ingredients from stock on sale (matrix #56).
       await this.inventory.deductForOrder(tx, id);
+      // Roll up loyalty / CRM stats for the customer (matrix #111).
+      await this.crm.recordSale(tx, updated);
       return updated;
     });
   }

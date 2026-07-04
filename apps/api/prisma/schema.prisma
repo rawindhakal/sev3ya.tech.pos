@@ -196,6 +196,8 @@ model Order {
   // Customer capture for takeaway / delivery (design spec §2.1 Step 2).
   customerName  String?
   customerPhone String?
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id])
 
   items     OrderItem[]
   payments  Payment[]
@@ -282,6 +284,28 @@ model Shift {
 
   @@index([employeeId])
   @@map("shifts")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CRM & LOYALTY (matrix #111–125)
+// ─────────────────────────────────────────────────────────────
+
+model Customer {
+  id              String    @id @default(cuid())
+  name            String
+  phone           String    @unique
+  email           String?
+  birthday        DateTime?
+  loyaltyPoints   Int       @default(0)
+  totalSpentCents Int       @default(0)
+  visitCount      Int       @default(0)
+  lastVisitAt     DateTime?
+  optIn           Boolean   @default(true) // marketing opt-in (#125 GDPR)
+  orders          Order[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("customers")
 }
 
 // Immutable audit trail of sensitive actions (matrix #155/#08, spec §3.1).

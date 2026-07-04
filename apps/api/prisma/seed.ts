@@ -227,6 +227,19 @@ async function main() {
   ];
   const types: OrderType[] = ['DINE_IN', 'DINE_IN', 'DINE_IN', 'TAKEAWAY', 'DELIVERY'];
 
+  // Customer pool (CRM) — takeaway/delivery orders get linked to one.
+  const customerPool = await Promise.all(
+    [
+      ['Rabin Dhakal', '9801000001'],
+      ['Anita Sharma', '9801000002'],
+      ['Bikash Thapa', '9801000003'],
+      ['Puja Karki', '9801000004'],
+      ['Suman Gurung', '9801000005'],
+      ['Nisha Rai', '9801000006'],
+    ].map(([name, phone]) => prisma.customer.create({ data: { name, phone } })),
+  );
+  const crmStats = new Map<string, { points: number; spent: number; visits: number; last: Date }>();
+
   let orderCount = 0;
   for (let d = 29; d >= 0; d--) {
     // More orders on recent days + weekends → organic-looking trend.
@@ -241,6 +254,8 @@ async function main() {
       const table = isDineIn ? pick(allTables) : null;
       const waiter = pick(allWaiters);
       const guestCount = isDineIn ? rand(1, 6) : 1;
+      // Takeaway / delivery → attach a customer.
+      const customer = isDineIn ? null : pick(customerPool);
 
       // Build 1–5 line items.
       const lineCount = rand(1, 5);
@@ -272,6 +287,9 @@ async function main() {
           tableId: table?.id ?? null,
           waiterId: waiter.id,
           guestCount,
+          customerId: customer?.id ?? null,
+          customerName: customer?.name ?? null,
+          customerPhone: customer?.phone ?? null,
           subtotalCents: subtotal,
           taxCents: tax,
           totalCents: total,
@@ -285,8 +303,24 @@ async function main() {
           },
         },
       });
+      if (customer) {
+        const s = crmStats.get(customer.id) ?? { points: 0, spent: 0, visits: 0, last: paidAt };
+        s.points += Math.floor(total / 1000);
+        s.spent += total;
+        s.visits += 1;
+        if (paidAt > s.last) s.last = paidAt;
+        crmStats.set(customer.id, s);
+      }
       orderCount++;
     }
+  }
+
+  // Roll up seeded CRM stats onto each customer.
+  for (const [id, s] of crmStats) {
+    await prisma.customer.update({
+      where: { id },
+      data: { loyaltyPoints: s.points, totalSpentCents: s.spent, visitCount: s.visits, lastVisitAt: s.last },
+    });
   }
 
   const counts = {
@@ -295,6 +329,7 @@ async function main() {
     modifierGroups: await prisma.modifierGroup.count(),
     tables: await prisma.restaurantTable.count(),
     waiters: await prisma.waiter.count(),
+    customers: await prisma.customer.count(),
     orders: orderCount,
   };
   console.log('✅ Seed complete:', counts);
