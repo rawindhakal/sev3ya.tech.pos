@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { signToken } from '../common/token';
+import { AuditService } from '../audit/audit.service';
 
 // Never leak the PIN to clients.
 const publicSelect = {
@@ -22,7 +24,10 @@ const publicSelect = {
 
 @Injectable()
 export class EmployeesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   findAll() {
     return this.prisma.employee.findMany({
@@ -71,7 +76,18 @@ export class EmployeesService {
     const openShift = await this.prisma.shift.findFirst({
       where: { employeeId: emp.id, clockOut: null },
     });
-    return { ...emp, clockedIn: !!openShift };
+    const token = signToken({
+      sub: emp.id,
+      name: emp.name,
+      role: emp.role,
+      canVoid: emp.canVoid,
+      canDiscount: emp.canDiscount,
+      canManageInventory: emp.canManageInventory,
+      canViewReports: emp.canViewReports,
+      canManageStaff: emp.canManageStaff,
+    });
+    await this.audit.log({ sub: emp.id, name: emp.name }, 'LOGIN', `${emp.role} signed in`);
+    return { ...emp, clockedIn: !!openShift, token };
   }
 
   // ── Clock in / out (#126) ──────────────────────────

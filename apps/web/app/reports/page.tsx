@@ -48,6 +48,7 @@ export default function ReportsPage() {
   const [to, setTo] = useState(today);
   const [data, setData] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [audit, setAudit] = useState<{ employeeName: string; action: string; detail?: string | null; createdAt: string }[] | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -64,6 +65,25 @@ export default function ReportsPage() {
   function preset(days: number) {
     setFrom(iso(new Date(Date.now() - (days - 1) * 864e5)));
     setTo(today);
+  }
+
+  // Audit trail requires a manager token (canViewReports).
+  async function loadAudit() {
+    if (!localStorage.getItem('cakezake-token')) {
+      const pin = prompt('Manager PIN to view the audit trail:');
+      if (!pin) return;
+      try {
+        const e = await api.post<{ token?: string }>('/employees/login', { pin });
+        if (e.token) localStorage.setItem('cakezake-token', e.token);
+      } catch {
+        return alert('Invalid PIN');
+      }
+    }
+    try {
+      setAudit(await api.get('/audit'));
+    } catch (e) {
+      alert((e as Error).message + ' — needs the "view reports" permission.');
+    }
   }
 
   if (error) return <div className="p-8"><div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div></div>;
@@ -192,6 +212,28 @@ export default function ReportsPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Audit trail (sensitive actions) */}
+      <div className="mt-6 card p-6 print:hidden">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold text-slate-800">Audit trail</h2>
+          <button className="btn-ghost text-xs" onClick={loadAudit}>{audit ? 'Refresh' : 'Load (manager)'}</button>
+        </div>
+        {audit === null ? (
+          <p className="text-sm text-slate-400">Immutable log of voids, refunds &amp; logins. Load with a manager PIN.</p>
+        ) : audit.length === 0 ? (
+          <p className="text-sm text-slate-400">No audit entries.</p>
+        ) : (
+          <div className="max-h-80 space-y-1 overflow-y-auto text-sm">
+            {audit.map((a, i) => (
+              <div key={i} className="flex justify-between border-b border-slate-50 py-1">
+                <span className="text-slate-600"><span className="badge mr-2 bg-slate-100 text-slate-500">{a.action}</span>{a.employeeName}{a.detail ? ` · ${a.detail}` : ''}</span>
+                <span className="text-slate-400">{new Date(a.createdAt).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Void audit */}

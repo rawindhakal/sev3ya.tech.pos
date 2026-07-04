@@ -120,9 +120,10 @@ export default function PosPage() {
   async function login() {
     if (!/^\d{4,6}$/.test(pin)) return setPinErr('Enter your 4–6 digit PIN');
     try {
-      const e = await api.post<Employee>('/employees/login', { pin });
+      const e = await api.post<Employee & { token?: string }>('/employees/login', { pin });
       setEmp(e);
       localStorage.setItem('cakezake-emp', JSON.stringify(e));
+      if (e.token) localStorage.setItem('cakezake-token', e.token);
       setPin('');
       setPinErr('');
     } catch {
@@ -133,6 +134,7 @@ export default function PosPage() {
   function lock() {
     setEmp(null);
     localStorage.removeItem('cakezake-emp');
+    localStorage.removeItem('cakezake-token');
     resetTerminal();
   }
 

@@ -85,9 +85,12 @@ Purchasing & Supplier Management (#141–155):
 - [x] Supplier catalog mapping — ingredient → primary supplier (#67)
 - [ ] MOQ warnings (#144), lead-time (#145), RMA returns (#147), pricing history
       (#148), scorecarding (#151), payment-term alerts (#153), purchase ledger audit (#155)
-- [ ] Admin, Multi-Store & Security (#156–170): full JWT route protection,
-      audit logs, multi-branch
-  > Backend permission ENFORCEMENT (beyond UI gating) is the next auth step.
+Admin, Multi-Store & Security (#156–170):
+- [x] Signed staff tokens (HMAC) issued on PIN login
+- [x] Backend permission ENFORCEMENT — void/refund require canVoid (guards)
+- [x] Immutable audit log of VOID / REFUND / LOGIN + protected /audit viewer
+- [x] Back-office manager-PIN prompt to authorise sensitive actions
+- [ ] Full route protection on all endpoints, multi-branch, config hardening
 
 ## 🔜 Phase 6 — Advanced Analytics & Reporting Engine (matrix #186–200)
 - [x] End-of-day / Z-report summary — gross, tax, discounts, avg ticket (#186)

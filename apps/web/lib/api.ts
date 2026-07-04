@@ -2,11 +2,18 @@
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
+// Read the staff token (set on PIN login) so requests carry the actor identity.
+function authHeader(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const t = window.localStorage.getItem('cakezake-token');
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     cache: 'no-store',
     ...options,
+    headers: { 'Content-Type': 'application/json', ...authHeader(), ...(options?.headers ?? {}) },
   });
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

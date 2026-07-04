@@ -70,11 +70,27 @@ export default function OrdersPage() {
     }
   }
 
-  // Void an open order with a mandatory audited reason (matrix #10).
+  // Void/refund require a manager identity with the canVoid permission. If no
+  // one is signed in on this back-office device, prompt for a PIN once.
+  async function ensureAuth(): Promise<boolean> {
+    if (localStorage.getItem('cakezake-token')) return true;
+    const pin = prompt('Manager PIN required to authorise:');
+    if (!pin) return false;
+    try {
+      const e = await api.post<{ token?: string }>('/employees/login', { pin });
+      if (e.token) localStorage.setItem('cakezake-token', e.token);
+      return true;
+    } catch {
+      alert('Invalid PIN');
+      return false;
+    }
+  }
+
   async function voidOrder(o: Order) {
     const reason = prompt(`Void order #${o.number}? Enter a reason:`);
     if (reason === null) return;
     if (!reason.trim()) return alert('A reason is required to void.');
+    if (!(await ensureAuth())) return;
     setBusy(o.id);
     try {
       await api.delete(`/orders/${o.id}`, { reason: reason.trim() });
@@ -86,11 +102,11 @@ export default function OrdersPage() {
     }
   }
 
-  // Refund a paid order with a mandatory reason (matrix #10).
   async function refundOrder(o: Order) {
     const reason = prompt(`Refund order #${o.number}? Enter a reason:`);
     if (reason === null) return;
     if (!reason.trim()) return alert('A reason is required to refund.');
+    if (!(await ensureAuth())) return;
     setBusy(o.id);
     try {
       await api.post(`/orders/${o.id}/refund`, { reason: reason.trim() });

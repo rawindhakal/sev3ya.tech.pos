@@ -8,8 +8,11 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
+import { AuthGuard, SoftAuthGuard, CurrentEmployee } from '../common/auth.guard';
+import type { TokenPayload } from '../common/token';
 import {
   CreateOrderDto,
   PayDto,
@@ -64,8 +67,9 @@ export class OrdersController {
   }
 
   @Post(':id/refund')
-  refund(@Param('id') id: string, @Body() dto: RefundDto) {
-    return this.orders.refund(id, dto);
+  @UseGuards(new AuthGuard('canVoid'))
+  refund(@Param('id') id: string, @Body() dto: RefundDto, @CurrentEmployee() emp: TokenPayload) {
+    return this.orders.refund(id, dto, emp);
   }
 
   @Post(':id/transfer')
@@ -78,10 +82,10 @@ export class OrdersController {
     return this.orders.merge(id, fromOrderId);
   }
 
-  // Void with a mandatory reason. Reason can also be supplied via query for
-  // simple DELETE calls.
+  // Void (with items → needs canVoid) or discard an empty draft (allowed).
   @Delete(':id')
-  cancel(@Param('id') id: string, @Body() body: VoidDto) {
-    return this.orders.cancel(id, body);
+  @UseGuards(SoftAuthGuard)
+  cancel(@Param('id') id: string, @Body() body: VoidDto, @CurrentEmployee() emp: TokenPayload) {
+    return this.orders.cancel(id, body, emp);
   }
 }

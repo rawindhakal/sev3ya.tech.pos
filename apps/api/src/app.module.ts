@@ -16,6 +16,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { EmployeesModule } from './employees/employees.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
 import { ReportsModule } from './reports/reports.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ReportsModule } from './reports/reports.module';
     EmployeesModule,
     PurchasingModule,
     ReportsModule,
+    AuditModule,
   ],
   controllers: [HealthController],
 })

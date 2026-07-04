@@ -8,6 +8,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { computeTotals } from '../common/settings';
 import { SettingsService } from '../settings/settings.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { AuditService } from '../audit/audit.service';
+import type { TokenPayload } from '../common/token';
+import { ForbiddenException } from '@nestjs/common';
 import { OrderType } from '@prisma/client';
 import {
   CartLineDto,
@@ -32,6 +35,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
     private readonly inventory: InventoryService,
+    private readonly audit: AuditService,
   ) {}
 
   // Pick the price for a menu item based on the order type (matrix #15).
@@ -254,15 +258,20 @@ export class OrdersService {
   }
 
   // Void an un-paid order with a mandatory audit reason (matrix #10).
-  async cancel(id: string, dto: VoidDto) {
+  async cancel(id: string, dto: VoidDto, actor?: TokenPayload) {
     const order = await this.findOne(id);
     if (order.status === 'PAID')
       throw new BadRequestException('Paid orders must be refunded, not voided');
-    // Audit rule: a void with items requires a documented reason.
-    if (order.items.length > 0 && !dto.reason?.trim())
-      throw new BadRequestException('A reason is required to void an order with items');
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    // Voiding an order that has items needs a documented reason AND the void
+    // permission (empty drafts can be discarded freely).
+    if (order.items.length > 0) {
+      if (!dto.reason?.trim())
+        throw new BadRequestException('A reason is required to void an order with items');
+      if (!actor?.canVoid)
+        throw new ForbiddenException('Voiding an order requires the "canVoid" permission');
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.order.update({
         where: { id },
         data: { status: 'CANCELLED', voidReason: dto.reason?.trim() || 'Discarded draft' },
         include: orderInclude,
@@ -273,19 +282,22 @@ export class OrdersService {
           data: { status: 'AVAILABLE' },
         });
       }
-      return updated;
+      return u;
     });
+    if (order.items.length > 0)
+      await this.audit.log(actor ?? null, 'VOID', `Order #${order.number} — ${dto.reason?.trim()}`);
+    return updated;
   }
 
   // Refund a paid order (full or partial) with a mandatory reason (matrix #10).
-  async refund(id: string, dto: RefundDto) {
+  async refund(id: string, dto: RefundDto, actor?: TokenPayload) {
     const order = await this.findOne(id);
     if (order.status !== 'PAID')
       throw new BadRequestException('Only paid orders can be refunded');
     const amount = dto.amountCents ?? order.totalCents;
     if (amount > order.totalCents)
       throw new BadRequestException('Refund cannot exceed the order total');
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id },
       data: {
         status: 'REFUNDED',
@@ -295,6 +307,8 @@ export class OrdersService {
       },
       include: orderInclude,
     });
+    await this.audit.log(actor ?? null, 'REFUND', `Order #${order.number} — ${dto.reason} (${amount})`);
+    return updated;
   }
 
   // Recompute an order's money snapshots from its current items + rates.

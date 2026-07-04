@@ -284,6 +284,19 @@ model Shift {
   @@map("shifts")
 }
 
+// Immutable audit trail of sensitive actions (matrix #155/#08, spec §3.1).
+model AuditLog {
+  id           String   @id @default(cuid())
+  employeeId   String?
+  employeeName String
+  action       String   // VOID, REFUND, LOGIN, …
+  detail       String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
 model OrderItem {
   id         String    @id @default(cuid())
   orderId    String
