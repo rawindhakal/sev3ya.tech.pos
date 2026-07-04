@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeTotals } from '../common/settings';
 import { SettingsService } from '../settings/settings.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { OrderType } from '@prisma/client';
 import {
   CartLineDto,
@@ -30,6 +31,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
+    private readonly inventory: InventoryService,
   ) {}
 
   // Pick the price for a menu item based on the order type (matrix #15).
@@ -245,6 +247,8 @@ export class OrdersService {
           data: { status: 'AVAILABLE' },
         });
       }
+      // Deduct recipe ingredients from stock on sale (matrix #56).
+      await this.inventory.deductForOrder(tx, id);
       return updated;
     });
   }

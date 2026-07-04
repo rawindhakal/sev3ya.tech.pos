@@ -166,6 +166,36 @@ async function main() {
     ],
   });
 
+  // Ingredients + recipes (Phase 4) — costs in paisa per base unit.
+  const beans = await prisma.ingredient.create({
+    data: { name: 'Coffee Beans', unit: 'g', stockQty: 5000, reorderLevel: 1000, costPerUnitCents: 200 },
+  });
+  const milk = await prisma.ingredient.create({
+    data: { name: 'Milk', unit: 'ml', stockQty: 20000, reorderLevel: 5000, costPerUnitCents: 10 },
+  });
+  const sugar = await prisma.ingredient.create({
+    data: { name: 'Sugar', unit: 'g', stockQty: 8000, reorderLevel: 2000, costPerUnitCents: 12 },
+  });
+  const chocolate = await prisma.ingredient.create({
+    data: { name: 'Chocolate Syrup', unit: 'ml', stockQty: 3000, reorderLevel: 800, costPerUnitCents: 40 },
+  });
+  const recipes: [string, { id: string; qty: number }[]][] = [
+    ['Cappuccino', [{ id: beans.id, qty: 18 }, { id: milk.id, qty: 150 }]],
+    ['Cafe Latte', [{ id: beans.id, qty: 18 }, { id: milk.id, qty: 200 }]],
+    ['Iced Latte', [{ id: beans.id, qty: 18 }, { id: milk.id, qty: 180 }]],
+    ['Espresso', [{ id: beans.id, qty: 18 }]],
+    ['Americano', [{ id: beans.id, qty: 18 }]],
+  ];
+  for (const [name, lines] of recipes) {
+    const mi = await prisma.menuItem.findFirst({ where: { name } });
+    if (!mi) continue;
+    for (const l of lines) {
+      await prisma.recipeItem.create({
+        data: { menuItemId: mi.id, ingredientId: l.id, quantity: l.qty },
+      });
+    }
+  }
+
   // ── Generate ~30 days of order history so analytics has real data ──
   const allItems = await prisma.menuItem.findMany();
   const allTables = await prisma.restaurantTable.findMany();

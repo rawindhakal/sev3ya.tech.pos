@@ -50,6 +50,7 @@ model MenuItem {
   modifierGroups ModifierGroup[] @relation("MenuItemModifierGroups")
 
   orderItems OrderItem[]
+  recipe     RecipeItem[] // BOM: ingredients this item consumes (matrix #57)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -349,4 +350,58 @@ model CashMovement {
 
   @@index([sessionId])
   @@map("cash_movements")
+}
+
+// ─────────────────────────────────────────────────────────────
+// INVENTORY & RECIPE (matrix #56–80)
+// ─────────────────────────────────────────────────────────────
+
+model Ingredient {
+  id           String  @id @default(cuid())
+  name         String
+  unit         String  @default("g") // base stock unit: g / ml / pcs
+  stockQty     Float   @default(0)   // current on-hand in base unit
+  reorderLevel Float   @default(0)   // low-stock threshold (#58)
+  // Cost per base unit, in cents (paisa) — drives valuation (#75).
+  costPerUnitCents Int  @default(0)
+  recipeItems  RecipeItem[]
+  movements    StockMovement[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("ingredients")
+}
+
+model RecipeItem {
+  id           String     @id @default(cuid())
+  menuItemId   String
+  menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  // Amount of the ingredient consumed per one menu item (in ingredient.unit).
+  quantity     Float
+
+  @@unique([menuItemId, ingredientId])
+  @@map("recipe_items")
+}
+
+enum StockMovementType {
+  PURCHASE
+  SALE_DEDUCTION
+  WASTAGE
+  STOCK_TAKE
+  ADJUSTMENT
+}
+
+model StockMovement {
+  id           String            @id @default(cuid())
+  ingredientId String
+  ingredient   Ingredient        @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  type         StockMovementType
+  quantity     Float             // signed delta in base unit (− for consumption)
+  reason       String?
+  createdAt    DateTime          @default(now())
+
+  @@index([ingredientId])
+  @@map("stock_movements")
 }

@@ -58,9 +58,17 @@ High value, extends what exists. Backend already supports multi-tender + discoun
 - [ ] Historical bump recall (#47), performance metrics (#48), sound alerts (#49)
 - [ ] Course splitting (#53), expo screen (#54), smart batching (#55)
 
-## Phase 4 — Inventory & Recipe Management (matrix #56–80, all must-have)
-- Recipe/BOM, ingredient stock depletion on sale, low-stock alerts,
-  wastage, stock takes, unit conversions, variance reports.
+## 🔜 Phase 4 — Inventory & Recipe Management (matrix #56–80, all must-have)
+- [x] Real-time ingredient stock tracking, auto-deduct on sale (#56)
+- [x] Recipe mapping / BOM per menu item (#57)
+- [x] Low-stock auto-alert thresholds (#58)
+- [x] Physical stock-take with variance logging (#59)
+- [x] Wastage & spillage tracker (#60)
+- [x] Stock valuation (#75)
+- [ ] PO workflow (#61), GRN (#62), FIFO/avg costing (#63)
+- [ ] Reorder engine (#70), theoretical vs actual (#71), menu engineering (#72)
+- [ ] UOM converter (#74), lot/expiry (#69), allergens (#77), add-on deduct (#78),
+      recipe costing simulator (#79), purchase returns (#80), etc.
 
 ## Phase 5 — People & Operations (must-have)
 - Employee & Shift Management (#111–125): auth, roles, clock-in/out, rosters
