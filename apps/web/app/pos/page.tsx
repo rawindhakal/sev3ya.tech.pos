@@ -145,9 +145,9 @@ export default function PosPage() {
     if (order) return; // finish/clear current order first
     setMode(key);
     if (key === 'DINE_IN') {
+      // Show the floor inline in the terminal (no separate page/modal).
       const data = await api.get<TableArea[]>('/tables?groupBy=area');
       setAreas(data);
-      setOverlay('table');
     } else if (key === 'QUICK') {
       startOrder('TAKEAWAY', null, true);
     } else {
@@ -384,7 +384,54 @@ export default function PosPage() {
       </div>
 
       {/* Body */}
-      {!order ? (
+      {!order && mode === 'DINE_IN' ? (
+        // Inline table floor for Dine-In (rendered in the terminal itself).
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
+          <div className="mb-4 flex items-center gap-4">
+            <h2 className="text-lg font-bold">Select a table</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wider text-white/40">Waiter</span>
+              <select className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm" value={waiterId} onChange={(e) => setWaiterId(e.target.value)}>
+                <option value="" className="text-black">Unassigned</option>
+                {waiters.map((w) => <option key={w.id} value={w.id} className="text-black">{w.name}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wider text-white/40">Guests</span>
+              <input type="number" min={1} className="w-16 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm" value={guestCount} onChange={(e) => setGuestCount(Math.max(1, Number(e.target.value)))} />
+            </div>
+            <button onClick={resetTerminal} className="ml-auto text-sm text-white/50 hover:text-white">← Back</button>
+          </div>
+          {areas.map((a) => (
+            <div key={a.area} className="mb-5">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">{a.area}</div>
+              <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
+                {a.tables.map((t) => {
+                  const free = t.status === 'AVAILABLE';
+                  const cls = free
+                    ? 'border-[#2ECC71]/40 bg-[#2ECC71]/10 hover:border-[#2ECC71] hover:bg-[#2ECC71]/20'
+                    : t.status === 'RESERVED'
+                      ? 'border-indigo-400/40 bg-indigo-400/10 cursor-not-allowed'
+                      : 'border-[#F39C12]/40 bg-[#F39C12]/10 cursor-not-allowed';
+                  return (
+                    <button
+                      key={t.id}
+                      disabled={!free || busy}
+                      onClick={() => startOrder('DINE_IN', t)}
+                      className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border-2 ${cls}`}
+                    >
+                      {t.isVip && <span className="absolute right-1 top-1 text-[10px]">⭐</span>}
+                      <span className="text-base font-bold">{t.name}</span>
+                      <span className="text-[10px] text-white/50">{t.seats} seats</span>
+                      <span className="mt-1 text-[9px] uppercase tracking-wide text-white/40">{t.status}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : !order ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
           <div className="text-white/40">
             <div className="mb-2 text-5xl">🧾</div>
@@ -523,41 +570,6 @@ export default function PosPage() {
           </aside>
         </div>
       )}
-
-      {/* Table picker overlay */}
-      <Modal open={overlay === 'table'} title="Select a table" onClose={() => { setOverlay(null); setMode(null); }}>
-        <div className="mb-3 flex items-end gap-3">
-          <div>
-            <label className="label">Waiter</label>
-            <select className="input w-40" value={waiterId} onChange={(e) => setWaiterId(e.target.value)}>
-              <option value="">Unassigned</option>
-              {waiters.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Guests</label>
-            <input type="number" min={1} className="input w-20" value={guestCount} onChange={(e) => setGuestCount(Math.max(1, Number(e.target.value)))} />
-          </div>
-        </div>
-        <div className="max-h-80 space-y-4 overflow-y-auto">
-          {areas.map((a) => (
-            <div key={a.area}>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{a.area}</div>
-              <div className="grid grid-cols-4 gap-2">
-                {a.tables.map((t) => {
-                  const free = t.status === 'AVAILABLE';
-                  return (
-                    <button key={t.id} disabled={!free || busy} onClick={() => startOrder('DINE_IN', t)} className={`rounded-lg border-2 p-2 text-center ${free ? 'border-slate-200 hover:border-brand-400 hover:bg-brand-50' : 'cursor-not-allowed border-transparent bg-amber-50'}`}>
-                      <div className="font-bold text-slate-800">{t.name}</div>
-                      <div className="text-[10px] text-slate-400">{t.seats} seats</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Modal>
 
       {/* Customer capture overlay */}
       <Modal open={overlay === 'customer'} title={mode === 'DELIVERY' ? 'Delivery details' : 'Customer details'} onClose={() => { setOverlay(null); setMode(null); }}>
