@@ -129,8 +129,20 @@ export default function PosPage() {
   }, [items, activeCat, search]);
 
   // ── Mode selection ─────────────────────────────────
+  // Switching mode holds the current bill first, so staff can freely jump
+  // between Dine-In / Takeaway / Home Delivery / Quick-Bill.
   async function selectMode(key: ModeKey) {
-    if (order) return; // finish/clear current order first
+    if (busy) return;
+    if (order) {
+      setBusy(true);
+      try {
+        await holdCurrent();
+      } catch {
+        /* proceed */
+      }
+      clearContext();
+      setBusy(false);
+    }
     setMode(key);
     if (key === 'DINE_IN') {
       // Show the floor inline in the terminal (no separate page/modal).
@@ -313,20 +325,61 @@ export default function PosPage() {
     setSearch('');
   }
 
-  // Leave the terminal for another page without losing work: hold the bill if
-  // it has items, discard it if it's an empty draft (frees the table).
+  // Preserve work when leaving a bill: hold it if it has items, or discard an
+  // empty draft (freeing its table).
+  async function holdCurrent() {
+    if (order && cart.length > 0) await persistCart();
+    else if (order && cart.length === 0) await api.delete(`/orders/${order.id}`);
+  }
+
+  function clearContext() {
+    setOrder(null);
+    setTable(null);
+    setCart([]);
+    setDiscount('');
+    setIsQuick(false);
+    setActiveCat('all');
+    setSearch('');
+  }
+
+  // Leave the terminal for another app page (holds work first).
   async function exitTo(path: string) {
     if (busy) return;
     setBusy(true);
     try {
-      if (order && cart.length > 0) await persistCart();
-      else if (order && cart.length === 0) await api.delete(`/orders/${order.id}`);
+      await holdCurrent();
     } catch {
       /* navigate anyway */
     } finally {
       setBusy(false);
     }
     router.push(path);
+  }
+
+  // In-terminal Back: from an open dine-in bill → the table floor; from a
+  // takeaway/delivery bill or the floor → the mode selection.
+  async function goBack() {
+    if (busy) return;
+    if (!order) {
+      setMode(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await holdCurrent();
+      const backToFloor = !!table;
+      clearContext();
+      if (backToFloor) {
+        setMode('DINE_IN');
+        setAreas(await api.get<TableArea[]>('/tables?groupBy=area'));
+      } else {
+        setMode(null);
+      }
+    } catch {
+      resetTerminal();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function voidBasket() {
@@ -362,11 +415,12 @@ export default function PosPage() {
       <div className="flex items-center justify-between border-b border-white/10 bg-[#111] px-5 py-2.5 text-sm">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => exitTo('/')}
-            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10"
-            title={order ? 'Holds the current bill and exits' : 'Back to dashboard'}
+            onClick={goBack}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10 disabled:opacity-40"
+            title={table ? 'Back to table floor (holds this bill)' : 'Back to order modes'}
           >
-            ‹ Exit
+            ‹ Back
           </button>
           <span className="text-lg">🍰</span>
           <span className="font-bold tracking-wide">POS TERMINAL</span>
@@ -404,10 +458,10 @@ export default function PosPage() {
           return (
             <button
               key={m.key}
-              disabled={!!order && !active}
+              disabled={busy}
               onClick={() => selectMode(m.key)}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
-                active ? 'bg-[#2ECC71] text-black' : 'bg-white/5 text-white/70 hover:bg-white/10 disabled:opacity-30'
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${
+                active ? 'bg-[#2ECC71] text-black' : 'bg-white/5 text-white/70 hover:bg-white/10'
               }`}
             >
               {m.icon} {m.label}
