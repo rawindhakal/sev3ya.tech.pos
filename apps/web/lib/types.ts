@@ -147,6 +147,21 @@ export interface Order {
   createdAt: string;
 }
 
+export type ReservationStatus = 'BOOKED' | 'SEATED' | 'CANCELLED' | 'NO_SHOW';
+
+export interface Reservation {
+  id: string;
+  customerName: string;
+  phone?: string | null;
+  partySize: number;
+  reservedAt: string;
+  isWaitlist: boolean;
+  status: ReservationStatus;
+  notes?: string | null;
+  tableId?: string | null;
+  table?: { id: string; name: string; area?: string | null } | null;
+}
+
 export interface Settings {
   vatRate: number;
   serviceChargeRate: number;

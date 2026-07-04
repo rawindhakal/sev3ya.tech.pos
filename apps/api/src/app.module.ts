@@ -10,6 +10,7 @@ import { OrdersModule } from './orders/orders.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SettingsModule } from './settings/settings.module';
 import { CashDrawerModule } from './cash-drawer/cash-drawer.module';
+import { ReservationsModule } from './reservations/reservations.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { CashDrawerModule } from './cash-drawer/cash-drawer.module';
     AnalyticsModule,
     SettingsModule,
     CashDrawerModule,
+    ReservationsModule,
   ],
   controllers: [HealthController],
 })

@@ -106,10 +106,43 @@ model RestaurantTable {
   status    TableStatus @default(AVAILABLE)
   isVip     Boolean     @default(false) // VIP / regulars highlighting (#39)
   orders    Order[]
+  reservations Reservation[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
   @@map("restaurant_tables")
+}
+
+// ─────────────────────────────────────────────────────────────
+// RESERVATIONS & WAITLIST (matrix #30)
+// ─────────────────────────────────────────────────────────────
+
+enum ReservationStatus {
+  BOOKED
+  SEATED
+  CANCELLED
+  NO_SHOW
+}
+
+model Reservation {
+  id           String            @id @default(cuid())
+  customerName String
+  phone        String?
+  partySize    Int               @default(2)
+  reservedAt   DateTime          // requested date/time (≈ now for waitlist)
+  isWaitlist   Boolean           @default(false) // walk-in queue vs advance booking
+  status       ReservationStatus @default(BOOKED)
+  notes        String?
+
+  tableId String?
+  table   RestaurantTable? @relation(fields: [tableId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reservedAt])
+  @@index([status])
+  @@map("reservations")
 }
 
 // ─────────────────────────────────────────────────────────────
