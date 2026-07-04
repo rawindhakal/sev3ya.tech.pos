@@ -9,7 +9,6 @@ import ThemeToggle from './ThemeToggle';
 const NAV = [
   { href: '/', label: 'Dashboard', icon: '📊', enabled: true },
   { href: '/pos', label: 'New Order (POS)', icon: '🛒', enabled: true },
-  { href: '/tables', label: 'Tables', icon: '🪑', enabled: true },
   { href: '/reservations', label: 'Reservations', icon: '📅', enabled: true },
   { href: '/orders', label: 'Orders / KOT', icon: '🧾', enabled: true },
   { href: '/menu', label: 'Menu & Items', icon: '🍽️', enabled: true },

@@ -75,6 +75,13 @@ export default function PosPage() {
   const [areas, setAreas] = useState<TableArea[]>([]);
   const [cust, setCust] = useState({ name: '', phone: '' });
 
+  // table management (folded into the POS floor)
+  const [manage, setManage] = useState(false);
+  const [addTableOpen, setAddTableOpen] = useState(false);
+  const [tableForm, setTableForm] = useState({ name: '', seats: 4, area: '', isVip: false });
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+
   // menu ui
   const [activeCat, setActiveCat] = useState('all');
   const [search, setSearch] = useState('');
@@ -199,6 +206,63 @@ export default function PosPage() {
       })),
     );
   }
+
+  // ── Table management (in-POS) ──────────────────────
+  async function reloadAreas() {
+    try {
+      setAreas(await api.get<TableArea[]>('/tables?groupBy=area'));
+    } catch {
+      /* ignore */
+    }
+  }
+  async function addTable(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      await api.post('/tables', {
+        name: tableForm.name.trim(),
+        seats: Number(tableForm.seats),
+        area: tableForm.area.trim() || undefined,
+        isVip: tableForm.isVip,
+      });
+      setTableForm({ name: '', seats: 4, area: '', isVip: false });
+      setAddTableOpen(false);
+      reloadAreas();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+  async function tablePatch(id: string, data: Record<string, unknown>) {
+    try {
+      await api.patch(`/tables/${id}`, data);
+      reloadAreas();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+  async function doTransfer(tableId: string) {
+    if (!order) return;
+    try {
+      const updated = await api.post<Order>(`/orders/${order.id}/transfer`, { tableId });
+      setOrder(updated);
+      setTable(updated.table ? ({ id: updated.table.id, name: updated.table.name } as RestaurantTable) : null);
+      setTransferOpen(false);
+      flash('Order transferred');
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+  async function doMerge(fromOrderId: string) {
+    if (!order) return;
+    try {
+      const updated = await api.post<Order>(`/orders/${order.id}/merge`, { fromOrderId });
+      resume(updated);
+      setMergeOpen(false);
+      flash('Tables merged');
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+  const flatTables = areas.flatMap((a) => a.tables);
 
   // Open an occupied table's existing bill (only one billing at a time).
   async function resumeTable(t: RestaurantTable) {
@@ -431,9 +495,9 @@ export default function PosPage() {
           <nav className="flex items-center gap-1 text-xs">
             {[
               { label: 'Dashboard', path: '/' },
-              { label: 'Tables', path: '/tables' },
               { label: 'Reservations', path: '/reservations' },
               { label: 'Orders', path: '/orders' },
+              { label: 'Menu', path: '/menu' },
             ].map((l) => (
               <button key={l.path} onClick={() => exitTo(l.path)} className="rounded-md px-2 py-1 text-white/50 hover:bg-white/10 hover:text-white">
                 {l.label}
@@ -479,20 +543,30 @@ export default function PosPage() {
       {!order && mode === 'DINE_IN' ? (
         // Inline table floor for Dine-In (rendered in the terminal itself).
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
-          <div className="mb-4 flex items-center gap-4">
-            <h2 className="text-lg font-bold">Select a table</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-wider text-white/40">Waiter</span>
-              <select className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm" value={waiterId} onChange={(e) => setWaiterId(e.target.value)}>
-                <option value="" className="text-black">Unassigned</option>
-                {waiters.map((w) => <option key={w.id} value={w.id} className="text-black">{w.name}</option>)}
-              </select>
+          <div className="mb-4 flex flex-wrap items-center gap-4">
+            <h2 className="text-lg font-bold">{manage ? 'Manage tables' : 'Select a table'}</h2>
+            {!manage && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs uppercase tracking-wider text-white/40">Waiter</span>
+                  <select className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm" value={waiterId} onChange={(e) => setWaiterId(e.target.value)}>
+                    <option value="" className="text-black">Unassigned</option>
+                    {waiters.map((w) => <option key={w.id} value={w.id} className="text-black">{w.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs uppercase tracking-wider text-white/40">Guests</span>
+                  <input type="number" min={1} className="w-16 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm" value={guestCount} onChange={(e) => setGuestCount(Math.max(1, Number(e.target.value)))} />
+                </div>
+              </>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={() => setAddTableOpen(true)} className="rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10">+ Add Table</button>
+              <button onClick={() => setManage((v) => !v)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${manage ? 'bg-[#2ECC71] text-black' : 'bg-white/5 text-white/80 hover:bg-white/10'}`}>
+                {manage ? '✓ Done' : '✎ Manage'}
+              </button>
+              <button onClick={resetTerminal} className="text-sm text-white/50 hover:text-white">← Modes</button>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-wider text-white/40">Guests</span>
-              <input type="number" min={1} className="w-16 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm" value={guestCount} onChange={(e) => setGuestCount(Math.max(1, Number(e.target.value)))} />
-            </div>
-            <button onClick={resetTerminal} className="ml-auto text-sm text-white/50 hover:text-white">← Back</button>
           </div>
           {areas.map((a) => (
             <div key={a.area} className="mb-5">
@@ -503,18 +577,32 @@ export default function PosPage() {
                   const occupied = t.status === 'OCCUPIED' && !!t.activeOrder;
                   const clickable = free || occupied;
                   const cls = free
-                    ? 'border-[#2ECC71]/40 bg-[#2ECC71]/10 hover:border-[#2ECC71] hover:bg-[#2ECC71]/20'
+                    ? 'border-[#2ECC71]/40 bg-[#2ECC71]/10'
                     : occupied
-                      ? 'border-[#F39C12]/50 bg-[#F39C12]/15 hover:border-[#F39C12] hover:bg-[#F39C12]/25'
+                      ? 'border-[#F39C12]/50 bg-[#F39C12]/15'
                       : t.status === 'RESERVED'
-                        ? 'border-indigo-400/40 bg-indigo-400/10 cursor-not-allowed'
-                        : 'border-white/10 bg-white/5 cursor-not-allowed';
+                        ? 'border-indigo-400/40 bg-indigo-400/10'
+                        : 'border-white/10 bg-white/5';
+                  if (manage) {
+                    return (
+                      <div key={t.id} className={`relative flex flex-col items-center justify-center gap-1 rounded-xl border-2 p-2 ${cls}`}>
+                        <span className="text-sm font-bold">{t.name} {t.isVip && '⭐'}</span>
+                        <span className="text-[9px] uppercase text-white/40">{t.status}</span>
+                        <div className="mt-1 flex flex-wrap justify-center gap-1">
+                          <button onClick={() => tablePatch(t.id, { isVip: !t.isVip })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">VIP</button>
+                          {t.status !== 'AVAILABLE' && <button onClick={() => tablePatch(t.id, { status: 'AVAILABLE' })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">Free</button>}
+                          {t.status !== 'CLEANING' && <button onClick={() => tablePatch(t.id, { status: 'CLEANING' })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">Clean</button>}
+                          {t.status !== 'RESERVED' && <button onClick={() => tablePatch(t.id, { status: 'RESERVED' })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">Reserve</button>}
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                     <button
                       key={t.id}
                       disabled={!clickable || busy}
                       onClick={() => (occupied ? resumeTable(t) : startOrder('DINE_IN', t))}
-                      className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border-2 ${cls}`}
+                      className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border-2 ${cls} ${clickable ? 'hover:brightness-125' : 'cursor-not-allowed opacity-70'}`}
                     >
                       {t.isVip && <span className="absolute right-1 top-1 text-[10px]">⭐</span>}
                       <span className="text-base font-bold">{t.name}</span>
@@ -594,6 +682,12 @@ export default function PosPage() {
                   </select>
                 )}
               </div>
+              {table && (
+                <div className="mt-2 flex gap-2">
+                  <button onClick={() => { reloadAreas(); setTransferOpen(true); }} className="flex-1 rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⇄ Transfer table</button>
+                  <button onClick={() => { reloadAreas(); setMergeOpen(true); }} className="flex-1 rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⧉ Merge table</button>
+                </div>
+              )}
             </div>
 
             {/* item table */}
@@ -679,6 +773,59 @@ export default function PosPage() {
             <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Starting…' : 'Start order'}</button>
           </div>
         </form>
+      </Modal>
+
+      {/* Add table */}
+      <Modal open={addTableOpen} title="Add table" onClose={() => setAddTableOpen(false)}>
+        <form onSubmit={addTable} className="space-y-4">
+          <div>
+            <label className="label">Name</label>
+            <input className="input" value={tableForm.name} onChange={(e) => setTableForm({ ...tableForm, name: e.target.value })} placeholder="e.g. T7" required autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Seats</label>
+              <input className="input" type="number" min={1} value={tableForm.seats} onChange={(e) => setTableForm({ ...tableForm, seats: Number(e.target.value) })} />
+            </div>
+            <div>
+              <label className="label">Area</label>
+              <input className="input" value={tableForm.area} onChange={(e) => setTableForm({ ...tableForm, area: e.target.value })} placeholder="e.g. Patio" />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked={tableForm.isVip} onChange={(e) => setTableForm({ ...tableForm, isVip: e.target.checked })} /> VIP table
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={() => setAddTableOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Add</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Transfer table */}
+      <Modal open={transferOpen} title={`Transfer ${table?.name ?? ''} to…`} onClose={() => setTransferOpen(false)}>
+        <div className="grid grid-cols-4 gap-2">
+          {flatTables.filter((t) => t.status === 'AVAILABLE').map((t) => (
+            <button key={t.id} onClick={() => doTransfer(t.id)} className="rounded-lg border-2 border-slate-200 p-3 text-center hover:border-brand-400 hover:bg-brand-50">
+              <div className="font-bold text-slate-800">{t.name}</div>
+              <div className="text-[10px] text-slate-400">{t.seats} seats</div>
+            </button>
+          ))}
+          {flatTables.filter((t) => t.status === 'AVAILABLE').length === 0 && <p className="col-span-4 text-sm text-slate-400">No free tables.</p>}
+        </div>
+      </Modal>
+
+      {/* Merge table */}
+      <Modal open={mergeOpen} title={`Merge another table into ${table?.name ?? ''}`} onClose={() => setMergeOpen(false)}>
+        <div className="grid grid-cols-4 gap-2">
+          {flatTables.filter((t) => t.status === 'OCCUPIED' && t.activeOrder && t.id !== table?.id).map((t) => (
+            <button key={t.id} onClick={() => doMerge(t.activeOrder!.id)} className="rounded-lg border-2 border-slate-200 p-3 text-center hover:border-brand-400 hover:bg-brand-50">
+              <div className="font-bold text-slate-800">{t.name}</div>
+              <div className="text-[10px] text-slate-400">{formatMoney(t.activeOrder!.totalCents)}</div>
+            </button>
+          ))}
+          {flatTables.filter((t) => t.status === 'OCCUPIED' && t.activeOrder && t.id !== table?.id).length === 0 && <p className="col-span-4 text-sm text-slate-400">No other occupied tables.</p>}
+        </div>
       </Modal>
 
       {/* modifier picker */}
