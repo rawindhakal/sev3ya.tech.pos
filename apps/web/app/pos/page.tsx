@@ -9,6 +9,7 @@ import type {
   MenuItem,
   ModifierGroup,
   Order,
+  OrderItem,
   OrderType,
   PaymentMethod,
   RestaurantTable,
@@ -18,7 +19,7 @@ import type {
 } from '@/lib/types';
 import { priceForType } from '@/lib/types';
 import Modal from '@/components/Modal';
-import Receipt from '@/components/Receipt';
+import Receipt, { ReceiptMode } from '@/components/Receipt';
 import PaymentPanel from '@/components/PaymentPanel';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
@@ -33,11 +34,36 @@ const MODES: { key: ModeKey; label: string; icon: string }[] = [
 
 interface CartLine {
   key: string;
+  id?: string; // server OrderItem id once saved (enables reconcile + KOT status)
   menuItemId?: string;
   name: string;
   unitPriceCents: number;
   modifiers: { name: string; priceCents: number }[];
   quantity: number;
+  notes?: string;
+  kotStatus?: string; // undefined/PENDING = editable; else fired (locked)
+  station?: string;
+}
+
+const isFired = (l: CartLine) => !!l.kotStatus && l.kotStatus !== 'PENDING';
+
+// Rebuild the cart from a server order (drops cancelled items, carries ids so
+// re-saving reconciles instead of duplicating).
+function orderToCart(o: Order): CartLine[] {
+  return (o.items ?? [])
+    .filter((it) => !it.cancelledAt)
+    .map((it) => ({
+      key: it.id,
+      id: it.id,
+      menuItemId: it.menuItemId ?? undefined,
+      name: it.nameSnapshot,
+      unitPriceCents: it.unitPriceCents,
+      modifiers: (it.modifiers ?? []).map((m) => ({ name: m.name, priceCents: m.priceCents })),
+      quantity: it.quantity,
+      notes: it.notes ?? undefined,
+      kotStatus: it.kotStatus,
+      station: it.station,
+    }));
 }
 
 const lineKey = (id: string, mods: { name: string }[]) =>
@@ -74,6 +100,7 @@ export default function PosPage() {
   const [guestCount, setGuestCount] = useState(2);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [discount, setDiscount] = useState('');
+  const [discountMode, setDiscountMode] = useState<'rs' | 'pct'>('rs');
   const [redeemPts, setRedeemPts] = useState(''); // loyalty points to redeem
   const [isQuick, setIsQuick] = useState(false);
 
@@ -81,7 +108,9 @@ export default function PosPage() {
   const [overlay, setOverlay] = useState<null | 'table' | 'customer'>(null);
   const [areas, setAreas] = useState<TableArea[]>([]);
   const [cust, setCust] = useState({ name: '', phone: '' });
-  const [custInfo, setCustInfo] = useState<null | { found: boolean; name?: string; loyaltyPoints?: number; visitCount?: number; tier?: string }>(null);
+  const [custInfo, setCustInfo] = useState<null | { found: boolean; name?: string; loyaltyPoints?: number; visitCount?: number; tier?: string; creditBalanceCents?: number }>(null);
+  const [custModal, setCustModal] = useState(false);
+  const [billCust, setBillCust] = useState({ name: '', phone: '' });
 
   // table management (folded into the POS floor)
   const [manage, setManage] = useState(false);
@@ -101,7 +130,7 @@ export default function PosPage() {
   const [payOpen, setPayOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<{ order: Order; mode: 'KOT' | 'BILL' } | null>(null);
+  const [receipt, setReceipt] = useState<{ order: Order; mode: ReceiptMode; items?: OrderItem[] } | null>(null);
 
   useEffect(() => {
     api.get<Settings>('/settings').then(setSettings).catch(() => {});
@@ -168,7 +197,11 @@ export default function PosPage() {
       subtotal += (l.unitPriceCents + mod) * l.quantity;
       count += l.quantity;
     }
-    const discountCents = Math.min(subtotal, Math.round((parseFloat(discount) || 0) * 100));
+    const discountRaw = parseFloat(discount) || 0;
+    const discountCents = Math.min(
+      subtotal,
+      discountMode === 'pct' ? Math.round(subtotal * (discountRaw / 100)) : Math.round(discountRaw * 100),
+    );
     // Loyalty redemption (1 point = Rs 1), capped by balance & remaining bill.
     const reqPts = Math.max(0, Math.min(parseInt(redeemPts) || 0, pointsAvail));
     const redeemCents = Math.min(reqPts * 100, subtotal - discountCents);
@@ -177,7 +210,7 @@ export default function PosPage() {
     const serviceCharge = Math.round(taxable * serviceChargeRate);
     const tax = Math.round((taxable + serviceCharge) * vatRate);
     return { count, subtotal, discountCents, redeemCents, redeemPoints, serviceCharge, tax, total: taxable + serviceCharge + tax };
-  }, [cart, vatRate, serviceChargeRate, discount, redeemPts, pointsAvail]);
+  }, [cart, vatRate, serviceChargeRate, discount, discountMode, redeemPts, pointsAvail]);
 
   const orderType: OrderType = mode === 'DELIVERY' ? 'DELIVERY' : mode === 'DINE_IN' ? 'DINE_IN' : 'TAKEAWAY';
 
@@ -247,17 +280,9 @@ export default function PosPage() {
     setWaiterId(o.waiterId ?? '');
     setGuestCount(o.guestCount);
     setDiscount(o.discountCents ? (o.discountCents / 100).toFixed(2) : '');
+    setDiscountMode('rs');
     setIsQuick(false);
-    setCart(
-      o.items.map((it) => ({
-        key: lineKey(it.menuItemId ?? it.nameSnapshot, it.modifiers ?? []),
-        menuItemId: it.menuItemId ?? undefined,
-        name: it.nameSnapshot,
-        unitPriceCents: it.unitPriceCents,
-        modifiers: (it.modifiers ?? []).map((m) => ({ name: m.name, priceCents: m.priceCents })),
-        quantity: it.quantity,
-      })),
-    );
+    setCart(orderToCart(o));
   }
 
   // ── Table management (in-POS) ──────────────────────
@@ -345,10 +370,14 @@ export default function PosPage() {
 
   function addLine(item: MenuItem, mods: { name: string; priceCents: number }[]) {
     setCart((prev) => {
-      const key = lineKey(item.id, mods);
-      const existing = prev.find((l) => l.key === key);
-      if (existing) return prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + 1 } : l));
-      return [...prev, { key, menuItemId: item.id, name: item.name, unitPriceCents: priceForType(item, orderType), modifiers: mods, quantity: 1 }];
+      const modSig = mods.map((m) => m.name).sort().join(',');
+      // Merge only into an UNFIRED line with same item + modifiers + no note.
+      const existing = prev.find(
+        (l) => !isFired(l) && l.menuItemId === item.id && !l.notes &&
+          l.modifiers.map((m) => m.name).sort().join(',') === modSig,
+      );
+      if (existing) return prev.map((l) => (l.key === existing.key ? { ...l, quantity: l.quantity + 1 } : l));
+      return [...prev, { key: lineKey(item.id, mods), menuItemId: item.id, name: item.name, unitPriceCents: priceForType(item, orderType), modifiers: mods, quantity: 1, station: item.station }];
     });
   }
 
@@ -356,8 +385,12 @@ export default function PosPage() {
     if (!openItem) return;
     const priceCents = Math.round((parseFloat(openItem.price) || 0) * 100);
     if (!openItem.name.trim() || priceCents <= 0) return flash('Enter a name and price above zero');
-    setCart((prev) => [...prev, { key: `open::${openItem.name}::${Date.now()}`, name: openItem.name.trim(), unitPriceCents: priceCents, modifiers: [], quantity: 1 }]);
+    setCart((prev) => [...prev, { key: `open::${openItem.name}::${Date.now()}`, name: openItem.name.trim(), unitPriceCents: priceCents, modifiers: [], quantity: 1, station: 'BILLING' }]);
     setOpenItem(null);
+  }
+
+  function setLineNote(key: string, note: string) {
+    setCart((prev) => prev.map((l) => (l.key === key ? { ...l, notes: note } : l)));
   }
 
   function confirmPicker() {
@@ -372,29 +405,56 @@ export default function PosPage() {
   }
 
   function changeQty(key: string, delta: number) {
-    setCart((prev) => prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + delta } : l)).filter((l) => l.quantity > 0));
+    // Fired lines are locked — must be cancelled, not edited.
+    setCart((prev) => prev.map((l) => (l.key === key && !isFired(l) ? { ...l, quantity: l.quantity + delta } : l)).filter((l) => l.quantity > 0));
   }
 
   // ── Persist + actions ──────────────────────────────
   async function persistCart(): Promise<Order> {
     if (!order) throw new Error('No active order');
     const saved = await api.put<Order>(`/orders/${order.id}/cart`, {
-      items: cart.map((l) => (l.menuItemId ? { menuItemId: l.menuItemId, quantity: l.quantity, modifiers: l.modifiers } : { name: l.name, unitPriceCents: l.unitPriceCents, quantity: l.quantity, modifiers: l.modifiers })),
+      items: cart.map((l) => ({
+        id: l.id, // preserve fired items & reconcile
+        ...(l.menuItemId ? { menuItemId: l.menuItemId } : { name: l.name, unitPriceCents: l.unitPriceCents }),
+        quantity: l.quantity,
+        modifiers: l.modifiers,
+        notes: l.notes,
+      })),
       discountCents: totals.discountCents + totals.redeemCents,
       waiterId: waiterId || undefined,
       guestCount,
     });
     setOrder(saved);
+    setCart(orderToCart(saved)); // re-sync so new lines pick up their ids
     return saved;
   }
 
-  function doPrint(o: Order, m: 'KOT' | 'BILL') {
-    setReceipt({ order: o, mode: m });
-    setTimeout(() => {
-      document.body.classList.add('print-receipt');
-      window.print();
-      document.body.classList.remove('print-receipt');
-    }, 150);
+  // Print one ticket (blocks until the print dialog returns).
+  function printTicket(o: Order, m: ReceiptMode, tItems?: OrderItem[]) {
+    return new Promise<void>((resolve) => {
+      setReceipt({ order: o, mode: m, items: tItems });
+      setTimeout(() => {
+        document.body.classList.add('print-receipt');
+        window.print();
+        document.body.classList.remove('print-receipt');
+        setTimeout(resolve, 200);
+      }, 150);
+    });
+  }
+
+  // Fire incremental KOT — the API returns only the just-fired items; print a
+  // KOT (kitchen) and/or BOT (bar) ticket for them (billing items don't print).
+  async function fireKot(id: string, print: boolean): Promise<Order> {
+    const res = await api.post<{ order: Order; fired: OrderItem[] }>(`/orders/${id}/kot`, {});
+    setOrder(res.order);
+    setCart(orderToCart(res.order));
+    if (print) {
+      const kitchen = res.fired.filter((i) => i.station === 'KITCHEN');
+      const bar = res.fired.filter((i) => i.station === 'BAR');
+      if (kitchen.length) await printTicket(res.order, 'KOT', kitchen);
+      if (bar.length) await printTicket(res.order, 'BOT', bar);
+    }
+    return res.order;
   }
 
   async function runAction(kind: 'draft' | 'kot' | 'kot_print' | 'bill' | 'bill_print' | 'pay') {
@@ -403,20 +463,63 @@ export default function PosPage() {
     try {
       let current = await persistCart();
       const id = current.id;
-      const kot = async () => (current = await api.post<Order>(`/orders/${id}/kot`, {}));
       const bill = async () => (current = await api.post<Order>(`/orders/${id}/bill`, {}));
       switch (kind) {
         case 'draft': flash(`Order #${current.number} held`); break;
-        case 'kot': await kot(); flash(`KOT fired for #${current.number}`); break;
-        case 'kot_print': await kot(); doPrint(current, 'KOT'); flash('KOT fired & printed'); break;
+        case 'kot': await fireKot(id, false); flash(`KOT fired for #${current.number}`); break;
+        case 'kot_print': await fireKot(id, true); flash('KOT/BOT fired & printed'); break;
         case 'bill': await bill(); flash(`Bill generated #${current.number}`); break;
-        case 'bill_print': await bill(); doPrint(current, 'BILL'); break;
+        case 'bill_print': await bill(); await printTicket(current, 'BILL'); break;
         case 'pay': await bill(); setOrder(current); setPayOpen(true); break;
       }
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Cancel a single (possibly fired) line — prints a cancellation KOT/BOT.
+  async function cancelLine(l: CartLine) {
+    if (!order) return;
+    if (!l.id) {
+      // Unsaved line — just drop it locally.
+      setCart((prev) => prev.filter((x) => x.key !== l.key));
+      return;
+    }
+    const reason = prompt(`Cancel "${l.name}"? Reason:`);
+    if (reason === null) return;
+    if (!reason.trim()) return flash('A reason is required to cancel an item');
+    setBusy(true);
+    try {
+      const res = await api.post<{ order: Order; cancelledItem: OrderItem; wasFired: boolean }>(
+        `/orders/${order.id}/items/${l.id}/cancel`,
+        { reason: reason.trim() },
+      );
+      setOrder(res.order);
+      setCart(orderToCart(res.order));
+      // If it had already been fired, tell the station via a cancellation ticket.
+      if (res.wasFired && l.station && l.station !== 'BILLING') {
+        await printTicket(res.order, 'CANCEL', [{ ...res.cancelledItem }]);
+      }
+      flash('Item cancelled');
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Attach / look up a customer while billing (also enables credit + points).
+  async function attachCustomer(name: string, phone: string) {
+    if (!order) return;
+    try {
+      const updated = await api.post<Order>(`/orders/${order.id}/customer`, { name: name || undefined, phone });
+      setOrder(updated);
+      lookupCustomer(phone);
+      flash(`Customer ${updated.customerName} attached`);
+    } catch (e) {
+      alert((e as Error).message);
     }
   }
 
@@ -782,6 +885,15 @@ export default function PosPage() {
                   <button onClick={() => { reloadAreas(); setMergeOpen(true); }} className="flex-1 rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⧉ Merge table</button>
                 </div>
               )}
+              {/* Customer (attach at billing; enables loyalty + credit) */}
+              <div className="mt-2 flex items-center gap-2">
+                {order?.customerName ? (
+                  <span className="flex-1 truncate rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/70">👤 {order.customerName}{order.customerPhone ? ` · ${order.customerPhone}` : ''}</span>
+                ) : (
+                  <span className="flex-1 text-[11px] text-white/30">No customer attached</span>
+                )}
+                <button onClick={() => { setBillCust({ name: order?.customerName ?? '', phone: order?.customerPhone ?? '' }); setCustModal(true); }} className="rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/70 hover:bg-white/10">{order?.customerName ? 'Change' : '+ Customer'}</button>
+              </div>
             </div>
 
             {/* item table */}
@@ -794,20 +906,43 @@ export default function PosPage() {
               ) : (
                 cart.map((l) => {
                   const mod = l.modifiers.reduce((s, m) => s + m.priceCents, 0);
+                  const fired = isFired(l);
                   return (
                     <div key={l.key} className="border-b border-white/5 px-4 py-2.5">
                       <div className="grid grid-cols-[1fr_auto_auto] items-start gap-2 text-sm">
-                        <span className="font-medium">{l.name}</span>
+                        <span className="font-medium">
+                          {l.name}
+                          {l.station && l.station !== 'BILLING' && <span className="ml-1 text-[9px] text-white/30">{l.station === 'KITCHEN' ? 'KOT' : 'BOT'}</span>}
+                          {fired && <span className="ml-1 rounded bg-[#F39C12]/20 px-1 text-[9px] text-[#F39C12]">fired</span>}
+                        </span>
                         <span className="text-right text-white/60">{formatMoney(l.unitPriceCents + mod)}</span>
                         <span className="text-right font-semibold">{formatMoney((l.unitPriceCents + mod) * l.quantity)}</span>
                       </div>
                       {l.modifiers.length > 0 && (
                         <div className="mt-0.5 text-[11px] text-white/40">— {l.modifiers.map((m) => m.name).join(', ')}</div>
                       )}
+                      {/* Per-item note (e.g. "only 2 ice cubes") */}
+                      {fired ? (
+                        l.notes && <div className="mt-0.5 text-[11px] italic text-amber-300/80">» {l.notes}</div>
+                      ) : (
+                        <input
+                          value={l.notes ?? ''}
+                          onChange={(e) => setLineNote(l.key, e.target.value)}
+                          placeholder="+ note (e.g. no ice)"
+                          className="mt-1 w-full rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white placeholder-white/25"
+                        />
+                      )}
                       <div className="mt-1 flex items-center gap-2">
-                        <button onClick={() => changeQty(l.key, -1)} className="h-6 w-6 rounded bg-white/10 text-white/80 hover:bg-white/20">−</button>
-                        <span className="w-6 text-center text-sm font-semibold">{l.quantity}</span>
-                        <button onClick={() => changeQty(l.key, 1)} className="h-6 w-6 rounded bg-white/10 text-white/80 hover:bg-white/20">+</button>
+                        {fired ? (
+                          <span className="text-sm font-semibold">Qty {l.quantity}</span>
+                        ) : (
+                          <>
+                            <button onClick={() => changeQty(l.key, -1)} className="h-6 w-6 rounded bg-white/10 text-white/80 hover:bg-white/20">−</button>
+                            <span className="w-6 text-center text-sm font-semibold">{l.quantity}</span>
+                            <button onClick={() => changeQty(l.key, 1)} className="h-6 w-6 rounded bg-white/10 text-white/80 hover:bg-white/20">+</button>
+                          </>
+                        )}
+                        <button onClick={() => cancelLine(l)} className="ml-auto rounded bg-[#E74C3C]/15 px-2 py-0.5 text-[10px] text-[#E74C3C] hover:bg-[#E74C3C]/25">Cancel</button>
                       </div>
                     </div>
                   );
@@ -821,8 +956,20 @@ export default function PosPage() {
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between text-white/50"><span>Sub-Total ({totals.count} items)</span><span>{formatMoney(totals.subtotal)}</span></div>
                 <div className="flex items-center justify-between text-white/50">
-                  <span>Discount (Rs){!emp.canDiscount && <span className="ml-1 text-[9px] text-white/30">🔒</span>}</span>
-                  <input type="number" min={0} value={discount} disabled={!emp.canDiscount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={emp.canDiscount ? '' : 'No discount permission'} className="w-20 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white disabled:opacity-40" />
+                  <span className="flex items-center gap-1">
+                    Discount{!emp.canDiscount && <span className="text-[9px] text-white/30">🔒</span>}
+                    <button
+                      disabled={!emp.canDiscount}
+                      onClick={() => setDiscountMode((m) => (m === 'rs' ? 'pct' : 'rs'))}
+                      className="rounded bg-white/10 px-1.5 text-[10px] text-white/70 disabled:opacity-40"
+                    >
+                      {discountMode === 'rs' ? 'Rs' : '%'}
+                    </button>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <input type="number" min={0} value={discount} disabled={!emp.canDiscount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={emp.canDiscount ? '' : 'No discount permission'} className="w-16 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white disabled:opacity-40" />
+                    {discountMode === 'pct' && totals.discountCents > 0 && <span className="text-[10px] text-white/40">−{formatMoney(totals.discountCents)}</span>}
+                  </div>
                 </div>
                 {pointsAvail > 0 && (
                   <div className="flex items-center justify-between text-amber-300/80">
@@ -1001,12 +1148,34 @@ export default function PosPage() {
         )}
       </Modal>
 
+      {/* attach customer at billing */}
+      <Modal open={custModal} title="Add / find customer" onClose={() => setCustModal(false)}>
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (!billCust.phone.trim()) return; attachCustomer(billCust.name.trim(), billCust.phone.trim()); setCustModal(false); }}
+          className="space-y-4"
+        >
+          <div>
+            <label className="label">Phone</label>
+            <input className="input" value={billCust.phone} onChange={(e) => setBillCust({ ...billCust, phone: e.target.value })} placeholder="98XXXXXXXX" required autoFocus />
+          </div>
+          <div>
+            <label className="label">Name (optional)</label>
+            <input className="input" value={billCust.name} onChange={(e) => setBillCust({ ...billCust, name: e.target.value })} placeholder="Customer name" />
+          </div>
+          <p className="text-xs text-slate-400">Attaching a customer enables loyalty points, redemption, and credit (pay-later).</p>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={() => setCustModal(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Attach</button>
+          </div>
+        </form>
+      </Modal>
+
       {/* payment */}
       <Modal open={payOpen} title="Settle payment" onClose={() => setPayOpen(false)}>
         {order && <PaymentPanel totalCents={order.totalCents} busy={busy} onCancel={() => setPayOpen(false)} onConfirm={confirmPayment} />}
       </Modal>
 
-      <Receipt order={receipt?.order ?? null} settings={settings} mode={receipt?.mode ?? 'BILL'} />
+      <Receipt order={receipt?.order ?? null} settings={settings} mode={receipt?.mode ?? 'BILL'} items={receipt?.items} />
     </div>
   );
 }

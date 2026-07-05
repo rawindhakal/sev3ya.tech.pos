@@ -11,6 +11,7 @@ type ItemForm = {
   priceDollars: string;
   takeawayDollars: string;
   deliveryDollars: string;
+  station: string;
   categoryId: string;
   isAvailable: boolean;
 };
@@ -21,6 +22,7 @@ const emptyForm: ItemForm = {
   priceDollars: '',
   takeawayDollars: '',
   deliveryDollars: '',
+  station: 'BILLING',
   categoryId: '',
   isAvailable: true,
 };
@@ -85,6 +87,7 @@ export default function MenuPage() {
       priceDollars: (item.priceCents / 100).toFixed(2),
       takeawayDollars: item.takeawayPriceCents != null ? (item.takeawayPriceCents / 100).toFixed(2) : '',
       deliveryDollars: item.deliveryPriceCents != null ? (item.deliveryPriceCents / 100).toFixed(2) : '',
+      station: item.station ?? 'BILLING',
       categoryId: item.categoryId,
       isAvailable: item.isAvailable,
     });
@@ -103,6 +106,7 @@ export default function MenuPage() {
         priceCents: dollarsToCents(parseFloat(form.priceDollars || '0')),
         takeawayPriceCents: optCents(form.takeawayDollars),
         deliveryPriceCents: optCents(form.deliveryDollars),
+        station: form.station,
         categoryId: form.categoryId,
         isAvailable: form.isAvailable,
       };
@@ -344,6 +348,15 @@ export default function MenuPage() {
           <p className="-mt-2 text-xs text-slate-400">
             Leave takeaway/delivery blank to use the dine-in price.
           </p>
+          <div>
+            <label className="label">Prep station (printer)</label>
+            <select className="input" value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })}>
+              <option value="BILLING">Billing only (no ticket)</option>
+              <option value="KITCHEN">Kitchen — KOT</option>
+              <option value="BAR">Bar — BOT</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-400">Routes this item to the kitchen (KOT) or bar (BOT) printer when fired. Default is billing-only.</p>
+          </div>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"

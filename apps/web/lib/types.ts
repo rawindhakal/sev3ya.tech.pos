@@ -37,6 +37,7 @@ export interface MenuItem {
   priceCents: number;
   takeawayPriceCents?: number | null;
   deliveryPriceCents?: number | null;
+  station?: PrepStation;
   isAvailable: boolean;
   imageUrl?: string | null;
   categoryId: string;
@@ -122,6 +123,8 @@ export interface CartModifier {
   priceCents: number;
 }
 
+export type PrepStation = 'KITCHEN' | 'BAR' | 'BILLING';
+
 export interface OrderItem {
   id: string;
   menuItemId?: string | null;
@@ -131,6 +134,9 @@ export interface OrderItem {
   modifiers?: CartModifier[] | null;
   notes?: string | null;
   kotStatus: string;
+  station?: PrepStation;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
 }
 
 export interface Payment {
@@ -188,6 +194,7 @@ export interface Customer {
   email?: string | null;
   loyaltyPoints: number;
   totalSpentCents: number;
+  creditBalanceCents?: number;
   visitCount: number;
   lastVisitAt?: string | null;
   optIn: boolean;
