@@ -1,12 +1,14 @@
 import {
   IsArray,
   IsBoolean,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   Min,
 } from 'class-validator';
+import { PrepStation } from '@prisma/client';
 
 export class CreateMenuItemDto {
   @IsString()
@@ -36,6 +38,10 @@ export class CreateMenuItemDto {
   @IsString()
   @IsNotEmpty()
   categoryId: string;
+
+  @IsOptional()
+  @IsEnum(PrepStation)
+  station?: PrepStation;
 
   @IsOptional()
   @IsBoolean()
@@ -81,6 +87,10 @@ export class UpdateMenuItemDto {
   @IsString()
   @IsNotEmpty()
   categoryId?: string;
+
+  @IsOptional()
+  @IsEnum(PrepStation)
+  station?: PrepStation;
 
   @IsOptional()
   @IsBoolean()

@@ -191,6 +191,14 @@ async function main() {
     ],
   });
 
+  // Prep-station routing: drinks → BAR (BOT), food/bakery → KITCHEN (KOT).
+  for (const [catName, station] of [
+    ['Hot Coffee', 'BAR'], ['Cold Drinks', 'BAR'], ['Bakery', 'KITCHEN'], ['Food', 'KITCHEN'],
+  ] as const) {
+    const c = await prisma.category.findFirst({ where: { name: catName } });
+    if (c) await prisma.menuItem.updateMany({ where: { categoryId: c.id }, data: { station: station as any } });
+  }
+
   // Ingredients + recipes (Phase 4) — costs in paisa per base unit.
   const beans = await prisma.ingredient.create({
     data: { name: 'Coffee Beans', unit: 'g', stockQty: 5000, reorderLevel: 1000, costPerUnitCents: 200 },

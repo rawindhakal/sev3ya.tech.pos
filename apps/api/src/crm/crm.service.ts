@@ -72,6 +72,29 @@ export class CrmService {
     await tx.order.update({ where: { id: orderId }, data: { redeemedPoints: points, customerId: c.id } });
   }
 
+  // Attach/create a customer by phone (used when billing).
+  upsertByPhone(name: string | undefined, phone: string) {
+    return this.prisma.customer.upsert({
+      where: { phone },
+      create: { phone, name: name?.trim() || 'Guest' },
+      update: name?.trim() ? { name: name.trim() } : {},
+    });
+  }
+
+  // Add to a customer's outstanding credit (CREDIT tender / house account).
+  async addCredit(tx: Prisma.TransactionClient, customerId: string, amountCents: number) {
+    if (amountCents <= 0) return;
+    await tx.customer.update({ where: { id: customerId }, data: { creditBalanceCents: { increment: amountCents } } });
+  }
+
+  // Settle (pay down) a customer's credit balance.
+  async settleCredit(id: string, amountCents: number) {
+    const c = await this.prisma.customer.findUnique({ where: { id } });
+    if (!c) throw new NotFoundException(`Customer ${id} not found`);
+    const pay = Math.min(amountCents, c.creditBalanceCents);
+    return this.prisma.customer.update({ where: { id }, data: { creditBalanceCents: { decrement: pay } } });
+  }
+
   async findAll(search?: string) {
     const where: Prisma.CustomerWhereInput = search
       ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { phone: { contains: search } }] }

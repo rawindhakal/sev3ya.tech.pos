@@ -12,25 +12,29 @@ export class KdsService {
       orderBy: { kotFiredAt: 'asc' },
       include: {
         table: { select: { name: true } },
-        items: { orderBy: { createdAt: 'asc' } },
+        // Only fired, non-cancelled items belong on the kitchen board.
+        items: { where: { cancelledAt: null, kotStatus: { not: 'PENDING' } }, orderBy: { createdAt: 'asc' } },
       },
     });
-    return orders.map((o) => ({
-      id: o.id,
-      number: o.number,
-      type: o.type,
-      status: o.status,
-      table: o.table?.name ?? null,
-      firedAt: o.kotFiredAt,
-      items: o.items.map((it) => ({
-        id: it.id,
-        name: it.nameSnapshot,
-        quantity: it.quantity,
-        modifiers: it.modifiers,
-        kotStatus: it.kotStatus,
-        notes: it.notes,
-      })),
-    }));
+    return orders
+      .filter((o) => o.items.length > 0)
+      .map((o) => ({
+        id: o.id,
+        number: o.number,
+        type: o.type,
+        status: o.status,
+        table: o.table?.name ?? null,
+        firedAt: o.kotFiredAt,
+        items: o.items.map((it) => ({
+          id: it.id,
+          name: it.nameSnapshot,
+          quantity: it.quantity,
+          modifiers: it.modifiers,
+          kotStatus: it.kotStatus,
+          station: it.station,
+          notes: it.notes,
+        })),
+      }));
   }
 
   // Split view for the token display: processing vs ready (spec §4.2).

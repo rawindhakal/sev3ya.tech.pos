@@ -17,6 +17,8 @@ export class CartModifierDto {
 }
 
 export class CartLineDto {
+  // Existing order-item id (for reconcile; preserves KOT/fired status).
+  @IsOptional() @IsString() id?: string;
   // Either menuItemId (menu item) OR name+unitPriceCents (open item, #16).
   @IsOptional() @IsString() @IsNotEmpty() menuItemId?: string;
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
@@ -25,6 +27,15 @@ export class CartLineDto {
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CartModifierDto)
   modifiers?: CartModifierDto[];
   @IsOptional() @IsString() notes?: string;
+}
+
+export class CancelItemDto {
+  @IsString() @IsNotEmpty() reason: string;
+}
+
+export class AttachCustomerDto {
+  @IsOptional() @IsString() name?: string;
+  @IsString() @IsNotEmpty() phone: string;
 }
 
 export class CreateOrderDto {

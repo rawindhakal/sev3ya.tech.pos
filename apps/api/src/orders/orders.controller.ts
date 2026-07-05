@@ -14,6 +14,8 @@ import { OrdersService } from './orders.service';
 import { AuthGuard, SoftAuthGuard, CurrentEmployee } from '../common/auth.guard';
 import type { TokenPayload } from '../common/token';
 import {
+  AttachCustomerDto,
+  CancelItemDto,
   CreateOrderDto,
   PayDto,
   RefundDto,
@@ -54,6 +56,24 @@ export class OrdersController {
   @Post(':id/kot')
   kot(@Param('id') id: string) {
     return this.orders.sendKot(id);
+  }
+
+  @Post(':id/customer')
+  attachCustomer(@Param('id') id: string, @Body() dto: AttachCustomerDto) {
+    return this.orders.attachCustomer(id, dto);
+  }
+
+  // Cancel a single item (prints a cancellation KOT if already fired). Needs
+  // the void permission when the item was already sent to the kitchen.
+  @Post(':id/items/:itemId/cancel')
+  @UseGuards(SoftAuthGuard)
+  cancelItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: CancelItemDto,
+    @CurrentEmployee() emp: TokenPayload,
+  ) {
+    return this.orders.cancelItem(id, itemId, dto.reason, emp);
   }
 
   @Post(':id/bill')

@@ -72,6 +72,7 @@ export class OrdersService {
           menuItemId: mi.id,
           nameSnapshot: mi.name,
           unitPriceCents: this.tierPrice(mi, type),
+          station: mi.station, // KOT/BOT/Billing routing snapshot
         };
       }
       // Open item: custom name + price, not linked to the menu.
@@ -82,6 +83,7 @@ export class OrdersService {
         menuItemId: null,
         nameSnapshot: l.name,
         unitPriceCents: l.unitPriceCents,
+        station: 'BILLING' as const,
       };
     });
   }
@@ -156,18 +158,51 @@ export class OrdersService {
     return order;
   }
 
-  // Replace the whole cart and recompute totals. Keeps the order in draft.
+  // Reconcile the cart: keep already-fired items (preserving KOT status),
+  // update quantities/notes on existing lines, add new lines as PENDING, and
+  // delete only removed UNFIRED lines. Enables incremental KOT + item cancel.
   async saveCart(id: string, dto: SaveCartDto) {
     const existing = await this.findOne(id);
-    const resolved = await this.resolveLines(dto.items, existing.type);
-    const rates = await this.settings.getRates();
-    const totals = computeTotals(resolved, {
-      ...rates,
-      discountCents: dto.discountCents ?? 0,
-    });
+    const existingById = new Map(existing.items.map((i) => [i.id, i]));
+    const incomingIds = new Set(dto.items.filter((l) => l.id).map((l) => l.id!));
+
+    // Resolve pricing/station for the genuinely new lines only.
+    const newLines = dto.items.filter((l) => !l.id || !existingById.has(l.id));
+    const resolvedNew = await this.resolveLines(newLines, existing.type);
+
     return this.prisma.$transaction(async (tx) => {
-      await tx.orderItem.deleteMany({ where: { orderId: id } });
-      return tx.order.update({
+      // Remove lines the user deleted — but only if never fired & not cancelled.
+      for (const ex of existing.items) {
+        if (!incomingIds.has(ex.id) && ex.kotStatus === 'PENDING' && !ex.cancelledAt) {
+          await tx.orderItem.delete({ where: { id: ex.id } });
+        }
+      }
+      // Update existing matched lines (qty/notes/modifiers) — keep KOT status.
+      for (const line of dto.items) {
+        if (line.id && existingById.has(line.id)) {
+          await tx.orderItem.update({
+            where: { id: line.id },
+            data: {
+              quantity: line.quantity,
+              notes: line.notes ?? null,
+              modifiers: (line.modifiers ?? []) as unknown as Prisma.InputJsonValue,
+            },
+          });
+        }
+      }
+      // Create new lines as PENDING.
+      let ni = 0;
+      for (const line of dto.items) {
+        if (!line.id || !existingById.has(line.id)) {
+          await tx.orderItem.create({ data: { orderId: id, ...resolvedNew[ni] } });
+          ni++;
+        }
+      }
+      // Recompute from non-cancelled items.
+      const rates = await this.settings.getRates();
+      const items = await tx.orderItem.findMany({ where: { orderId: id, cancelledAt: null } });
+      const totals = computeTotals(items, { ...rates, discountCents: dto.discountCents ?? 0 });
+      await tx.order.update({
         where: { id },
         data: {
           notes: dto.notes,
@@ -178,11 +213,29 @@ export class OrdersService {
           serviceChargeCents: totals.serviceChargeCents,
           taxCents: totals.taxCents,
           totalCents: totals.totalCents,
-          items: { create: resolved },
         },
-        include: orderInclude,
       });
+      return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
+  }
+
+  // Cancel a single order item (prints a cancellation KOT if already fired).
+  async cancelItem(orderId: string, itemId: string, reason: string, actor?: TokenPayload) {
+    const order = await this.findOne(orderId);
+    const item = order.items.find((i) => i.id === itemId);
+    if (!item) throw new BadRequestException('Item not on this order');
+    if (item.cancelledAt) throw new BadRequestException('Item already cancelled');
+    const wasFired = item.kotStatus !== 'PENDING';
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.orderItem.update({
+        where: { id: itemId },
+        data: { cancelledAt: new Date(), cancelReason: reason },
+      });
+      await this.recompute(tx, orderId);
+      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude });
+    });
+    await this.audit.log(actor ?? null, 'CANCEL_ITEM', `Order #${order.number} — ${item.quantity}× ${item.nameSnapshot} (${reason})`);
+    return { order: updated, cancelledItem: item, wasFired };
   }
 
   async update(id: string, dto: UpdateOrderDto) {
@@ -194,25 +247,29 @@ export class OrdersService {
     });
   }
 
-  // Send to kitchen: flag items and advance status.
+  // Incremental KOT: fire only the not-yet-fired (PENDING) items and return
+  // exactly those so the client prints KOT/BOT for the new items only.
   async sendKot(id: string) {
     const order = await this.findOne(id);
-    if (order.items.length === 0)
-      throw new BadRequestException('Cannot send an empty order to the kitchen');
+    const pending = order.items.filter((i) => i.kotStatus === 'PENDING' && !i.cancelledAt);
+    if (pending.length === 0)
+      throw new BadRequestException('No new items to fire to the kitchen');
     await this.prisma.orderItem.updateMany({
-      where: { orderId: id, kotStatus: 'PENDING' },
+      where: { orderId: id, kotStatus: 'PENDING', cancelledAt: null },
       data: { kotStatus: 'PREPARING' },
     });
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id },
       data: { status: 'SENT_TO_KITCHEN', kotFiredAt: order.kotFiredAt ?? new Date() },
       include: orderInclude,
     });
+    // fired items carry station so the POS can split KOT (kitchen) vs BOT (bar).
+    return { order: updated, fired: pending };
   }
 
   async bill(id: string) {
     const order = await this.findOne(id);
-    if (order.items.length === 0)
+    if (order.items.filter((i) => !i.cancelledAt).length === 0)
       throw new BadRequestException('Cannot bill an empty order');
     return this.prisma.order.update({
       where: { id },
@@ -260,8 +317,25 @@ export class OrdersService {
       await this.inventory.deductForOrder(tx, id);
       // Roll up loyalty / CRM stats for the customer (matrix #111).
       await this.crm.recordSale(tx, updated);
+      // Credit-tender amounts become the customer's outstanding balance.
+      const creditCents = dto.payments.filter((p) => p.method === 'CREDIT').reduce((s, p) => s + p.amountCents, 0);
+      if (creditCents > 0) {
+        const withCust = await tx.order.findUniqueOrThrow({ where: { id }, select: { customerId: true } });
+        if (withCust.customerId) await this.crm.addCredit(tx, withCust.customerId, creditCents);
+      }
       // Return the fresh row so redeemedPoints / customerId are reflected.
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
+    });
+  }
+
+  // Attach (or create) a customer to an order while billing.
+  async attachCustomer(id: string, dto: { name?: string; phone: string }) {
+    await this.findOne(id);
+    const cust = await this.crm.upsertByPhone(dto.name, dto.phone);
+    return this.prisma.order.update({
+      where: { id },
+      data: { customerId: cust.id, customerName: cust.name, customerPhone: cust.phone },
+      include: orderInclude,
     });
   }
 
@@ -323,7 +397,7 @@ export class OrdersService {
   private async recompute(tx: Prisma.TransactionClient, orderId: string) {
     const order = await tx.order.findUniqueOrThrow({
       where: { id: orderId },
-      include: { items: true },
+      include: { items: { where: { cancelledAt: null } } },
     });
     const rates = await this.settings.getRates();
     const totals = computeTotals(order.items, {

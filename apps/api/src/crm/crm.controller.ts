@@ -8,7 +8,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { IsBoolean, IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { CrmService } from './crm.service';
 
 class CreateCustomerDto {
@@ -52,6 +52,11 @@ export class CrmController {
   update(@Param('id') id: string, @Body() dto: UpdateCustomerDto) {
     return this.crm.update(id, dto);
   }
+  @Post(':id/settle-credit')
+  settleCredit(@Param('id') id: string, @Body('amountCents') amountCents: number) {
+    return this.crm.settleCredit(id, amountCents);
+  }
+
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.crm.remove(id);

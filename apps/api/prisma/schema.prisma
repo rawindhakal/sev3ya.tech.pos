@@ -40,6 +40,8 @@ model MenuItem {
   priceCents          Int
   takeawayPriceCents  Int?
   deliveryPriceCents  Int?
+  // Which prep station this item routes to (KOT/BOT/Billing) (user workflow).
+  station     PrepStation @default(BILLING)
   isAvailable Boolean  @default(true)
   imageUrl    String?
 
@@ -177,6 +179,13 @@ enum KotStatus {
   SERVED
 }
 
+// Prep station an item routes to: kitchen (KOT), bar (BOT), or bill-only.
+enum PrepStation {
+  KITCHEN
+  BAR
+  BILLING
+}
+
 model Order {
   id         String      @id @default(cuid())
   // Human-friendly running order number.
@@ -301,6 +310,8 @@ model Customer {
   birthday        DateTime?
   loyaltyPoints   Int       @default(0)
   totalSpentCents Int       @default(0)
+  // Outstanding credit the customer owes (CREDIT tender / house account).
+  creditBalanceCents Int    @default(0)
   visitCount      Int       @default(0)
   lastVisitAt     DateTime?
   optIn           Boolean   @default(true) // marketing opt-in (#125 GDPR)
@@ -424,8 +435,13 @@ model OrderItem {
 
   // Selected modifiers stored as JSON snapshot: [{name, priceCents}]
   modifiers  Json?
-  kotStatus  KotStatus @default(PENDING)
+  kotStatus  KotStatus   @default(PENDING)
+  station    PrepStation @default(BILLING) // snapshot of the item's prep station
   notes      String?
+
+  // Item-level cancellation (prints a cancellation KOT + audited).
+  cancelledAt  DateTime?
+  cancelReason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
