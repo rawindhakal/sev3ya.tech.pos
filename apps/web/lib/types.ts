@@ -203,11 +203,23 @@ export interface Customer {
   orders?: { number: number; type?: string; totalCents: number; paidAt: string; items?: { nameSnapshot: string; quantity: number }[] }[];
 }
 
+export interface Features {
+  reservations: boolean;
+  inventory: boolean;
+  purchasing: boolean;
+  roastery: boolean;
+  modifiers: boolean;
+  crm: boolean;
+  finance: boolean;
+  kds: boolean;
+}
+
 export interface Settings {
   vatRate: number;
   serviceChargeRate: number;
   currency: string;
   restaurantName: string;
+  features?: Features;
   address?: string | null;
   phone?: string | null;
   taxId?: string | null;

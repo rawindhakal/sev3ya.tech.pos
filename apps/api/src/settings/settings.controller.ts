@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
-import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { SettingsService } from './settings.service';
 
 class UpdateSettingsDto {
@@ -13,6 +13,14 @@ class UpdateSettingsDto {
   @IsOptional() @IsString() receiptHeader?: string;
   @IsOptional() @IsString() receiptFooter?: string;
   @IsOptional() @IsString() wifiPassword?: string;
+  @IsOptional() @IsBoolean() featReservations?: boolean;
+  @IsOptional() @IsBoolean() featInventory?: boolean;
+  @IsOptional() @IsBoolean() featPurchasing?: boolean;
+  @IsOptional() @IsBoolean() featRoastery?: boolean;
+  @IsOptional() @IsBoolean() featModifiers?: boolean;
+  @IsOptional() @IsBoolean() featCrm?: boolean;
+  @IsOptional() @IsBoolean() featFinance?: boolean;
+  @IsOptional() @IsBoolean() featKds?: boolean;
 }
 
 @Controller('settings')

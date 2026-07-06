@@ -2,34 +2,43 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
+import type { Features } from '@/lib/types';
 import ThemeToggle from './ThemeToggle';
 
-// Navigation is defined once here. As features land, flip `enabled: true`
-// and point href at the new route — the shell already handles the rest.
-const NAV = [
-  { href: '/', label: 'Dashboard', icon: '📊', enabled: true },
-  { href: '/pos', label: 'New Order (POS)', icon: '🛒', enabled: true },
-  { href: '/reservations', label: 'Reservations', icon: '📅', enabled: true },
-  { href: '/customers', label: 'Customers (CRM)', icon: '🧑‍🤝‍🧑', enabled: true },
-  { href: '/orders', label: 'Orders / KOT', icon: '🧾', enabled: true },
-  { href: '/kds', label: 'Kitchen (KDS)', icon: '👨‍🍳', enabled: true },
-  { href: '/menu', label: 'Menu & Items', icon: '🍽️', enabled: true },
-  { href: '/modifiers', label: 'Modifiers', icon: '➕', enabled: true },
-  { href: '/inventory', label: 'Inventory', icon: '📦', enabled: true },
-  { href: '/purchasing', label: 'Purchasing', icon: '🚚', enabled: true },
-  { href: '/roastery', label: 'Roastery', icon: '🔥', enabled: true },
-  { href: '/employees', label: 'Employees', icon: '👥', enabled: true },
-  { href: '/cash-drawer', label: 'Cash Drawer', icon: '💵', enabled: true },
-  { href: '/reports', label: 'Reports', icon: '📈', enabled: true },
-  { href: '/finance', label: 'Finance', icon: '💰', enabled: true },
-  { href: '/settings', label: 'Settings', icon: '⚙️', enabled: true },
+// `feature` maps a nav item to a toggle in admin settings; core items omit it.
+const NAV: { href: string; label: string; icon: string; feature?: keyof Features }[] = [
+  { href: '/', label: 'Dashboard', icon: '📊' },
+  { href: '/pos', label: 'New Order (POS)', icon: '🛒' },
+  { href: '/reservations', label: 'Reservations', icon: '📅', feature: 'reservations' },
+  { href: '/customers', label: 'Customers (CRM)', icon: '🧑‍🤝‍🧑', feature: 'crm' },
+  { href: '/orders', label: 'Orders / KOT', icon: '🧾' },
+  { href: '/kds', label: 'Kitchen (KDS)', icon: '👨‍🍳', feature: 'kds' },
+  { href: '/menu', label: 'Menu & Items', icon: '🍽️' },
+  { href: '/modifiers', label: 'Modifiers', icon: '➕', feature: 'modifiers' },
+  { href: '/inventory', label: 'Inventory', icon: '📦', feature: 'inventory' },
+  { href: '/purchasing', label: 'Purchasing', icon: '🚚', feature: 'purchasing' },
+  { href: '/roastery', label: 'Roastery', icon: '🔥', feature: 'roastery' },
+  { href: '/employees', label: 'Employees', icon: '👥' },
+  { href: '/cash-drawer', label: 'Cash Drawer', icon: '💵' },
+  { href: '/reports', label: 'Reports', icon: '📈' },
+  { href: '/finance', label: 'Finance', icon: '💰', feature: 'finance' },
+  { href: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [features, setFeatures] = useState<Features | null>(null);
+
+  useEffect(() => {
+    api.get<{ features?: Features }>('/settings').then((s) => setFeatures(s.features ?? null)).catch(() => {});
+  }, [pathname]); // re-read after visiting settings
+
+  const visible = NAV.filter((i) => !i.feature || !features || features[i.feature]);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
+    <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
       <div className="flex items-center gap-2 px-6 py-5">
         <span className="text-2xl">🍰</span>
         <div>
@@ -38,32 +47,15 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-2">
-        {NAV.map((item) => {
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
+        {visible.map((item) => {
           const active = pathname === item.href;
-          const base =
-            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors';
-          if (!item.enabled) {
-            return (
-              <div
-                key={item.href}
-                className={`${base} cursor-not-allowed text-slate-300`}
-                title="Coming soon"
-              >
-                <span className="text-base">{item.icon}</span>
-                <span className="flex-1">{item.label}</span>
-                <span className="badge bg-slate-100 text-slate-400">soon</span>
-              </div>
-            );
-          }
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`${base} ${
-                active
-                  ? 'bg-brand-50 text-brand-700'
-                  : 'text-slate-600 hover:bg-slate-100'
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
               <span className="text-base">{item.icon}</span>
@@ -73,7 +65,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="space-y-2 border-t border-slate-100 px-4 py-4">
+      <div className="space-y-2 border-t border-slate-100 px-4 py-4 dark:border-slate-700">
         <ThemeToggle />
         <div className="text-center text-xs text-slate-400">v0.1 · sev3ya.tech</div>
       </div>

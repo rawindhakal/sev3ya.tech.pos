@@ -491,6 +491,17 @@ model CafeSetting {
   receiptHeader     String?
   receiptFooter     String?
   wifiPassword      String?
+
+  // Module feature toggles — admin enables/disables sections app-wide.
+  featReservations Boolean @default(true)
+  featInventory    Boolean @default(true)
+  featPurchasing   Boolean @default(true)
+  featRoastery     Boolean @default(true)
+  featModifiers    Boolean @default(true)
+  featCrm          Boolean @default(true)
+  featFinance      Boolean @default(true)
+  featKds          Boolean @default(true)
+
   updatedAt         DateTime @updatedAt
 
   @@map("cafe_settings")

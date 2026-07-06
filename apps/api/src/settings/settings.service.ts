@@ -35,6 +35,16 @@ export class SettingsService {
       receiptHeader: s.receiptHeader,
       receiptFooter: s.receiptFooter,
       wifiPassword: s.wifiPassword,
+      features: {
+        reservations: s.featReservations,
+        inventory: s.featInventory,
+        purchasing: s.featPurchasing,
+        roastery: s.featRoastery,
+        modifiers: s.featModifiers,
+        crm: s.featCrm,
+        finance: s.featFinance,
+        kds: s.featKds,
+      },
     };
   }
 
@@ -54,6 +64,14 @@ export class SettingsService {
     receiptHeader?: string;
     receiptFooter?: string;
     wifiPassword?: string;
+    featReservations?: boolean;
+    featInventory?: boolean;
+    featPurchasing?: boolean;
+    featRoastery?: boolean;
+    featModifiers?: boolean;
+    featCrm?: boolean;
+    featFinance?: boolean;
+    featKds?: boolean;
   }) {
     await this.ensure();
     await this.prisma.cafeSetting.update({ where: { id: SINGLETON }, data });

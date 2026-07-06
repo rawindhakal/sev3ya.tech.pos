@@ -2,7 +2,19 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import type { Settings } from '@/lib/types';
+import type { Features, Settings } from '@/lib/types';
+
+// UI feature key → backend column.
+const FEATURES: { key: keyof Features; col: string; label: string }[] = [
+  { key: 'reservations', col: 'featReservations', label: 'Reservations & waitlist' },
+  { key: 'inventory', col: 'featInventory', label: 'Inventory & recipes' },
+  { key: 'purchasing', col: 'featPurchasing', label: 'Purchasing & suppliers' },
+  { key: 'roastery', col: 'featRoastery', label: 'Roastery' },
+  { key: 'modifiers', col: 'featModifiers', label: 'Modifiers / item options' },
+  { key: 'crm', col: 'featCrm', label: 'Customers (CRM & loyalty)' },
+  { key: 'finance', col: 'featFinance', label: 'Finance & P&L' },
+  { key: 'kds', col: 'featKds', label: 'Kitchen display (KDS)' },
+];
 
 export default function SettingsPage() {
   const [form, setForm] = useState<Settings | null>(null);
@@ -37,6 +49,18 @@ export default function SettingsPage() {
       alert((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function toggleFeature(key: keyof Features, col: string) {
+    if (!form?.features) return;
+    const next = !form.features[key];
+    setForm({ ...form, features: { ...form.features, [key]: next } });
+    try {
+      await api.patch('/settings', { [col]: next });
+    } catch (e) {
+      alert((e as Error).message);
+      setForm({ ...form, features: { ...form.features, [key]: !next } });
     }
   }
 
@@ -130,6 +154,32 @@ export default function SettingsPage() {
           {saved && <span className="text-sm text-emerald-600">✓ Saved</span>}
         </div>
       </form>
+
+      {/* Feature toggles — enable/disable whole modules app-wide */}
+      {form.features && (
+        <div className="card mt-6 p-6">
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">Modules</h2>
+          <p className="mb-4 text-xs text-slate-400">Turn sections on or off. Disabled modules are hidden from the sidebar for everyone.</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {FEATURES.map((f) => {
+              const on = form.features![f.key];
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => toggleFeature(f.key, f.col)}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm hover:bg-slate-50"
+                >
+                  <span className="font-medium text-slate-700">{f.label}</span>
+                  <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-brand-500' : 'bg-slate-300'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
