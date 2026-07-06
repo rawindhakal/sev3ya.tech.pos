@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import {
   IsEnum,
   IsInt,
@@ -36,6 +36,12 @@ export class CashDrawerController {
   @Get('sessions')
   history() {
     return this.drawer.history();
+  }
+
+  // Z-report for the current (or a given) session's business day.
+  @Get('report')
+  report(@Query('sessionId') sessionId?: string) {
+    return this.drawer.report(sessionId);
   }
 
   @Get('sessions/:id')

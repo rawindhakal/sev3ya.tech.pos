@@ -26,7 +26,7 @@ export default function Receipt({
   mode: ReceiptMode;
   items?: OrderItem[]; // explicit items for KOT/BOT/CANCEL; defaults to the bill
 }) {
-  if (!order) return <div id="print-area" />;
+  if (!order) return null;
   const when = new Date().toLocaleString();
   const list = items ?? order.items.filter((i) => !i.cancelledAt);
   const isBill = mode === 'BILL';
