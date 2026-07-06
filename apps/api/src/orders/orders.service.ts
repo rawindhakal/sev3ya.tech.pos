@@ -60,6 +60,7 @@ export class OrdersService {
     return lines.map((l) => {
       const base = {
         quantity: l.quantity,
+        discountCents: l.discountCents ?? 0,
         modifiers: (l.modifiers ?? []) as unknown as Prisma.InputJsonValue,
         notes: l.notes ?? null,
       };
@@ -184,6 +185,7 @@ export class OrdersService {
             where: { id: line.id },
             data: {
               quantity: line.quantity,
+              discountCents: line.discountCents ?? 0,
               notes: line.notes ?? null,
               modifiers: (line.modifiers ?? []) as unknown as Prisma.InputJsonValue,
             },

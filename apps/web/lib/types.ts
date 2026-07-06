@@ -131,6 +131,7 @@ export interface OrderItem {
   nameSnapshot: string;
   unitPriceCents: number;
   quantity: number;
+  discountCents?: number;
   modifiers?: CartModifier[] | null;
   notes?: string | null;
   kotStatus: string;

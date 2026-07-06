@@ -437,6 +437,7 @@ model OrderItem {
   modifiers  Json?
   kotStatus  KotStatus   @default(PENDING)
   station    PrepStation @default(BILLING) // snapshot of the item's prep station
+  discountCents Int      @default(0) // item-wise discount (needs manager perm)
   notes      String?
 
   // Item-level cancellation (prints a cancellation KOT + audited).

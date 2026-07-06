@@ -21,9 +21,10 @@ export interface TotalsOptions {
 }
 
 // Single source of truth for money math. All values in integer cents.
-// Order of operations: subtotal − discount → + service charge → + VAT.
+// Order: (line gross − item discount) → subtotal − order discount →
+//        + service charge → + VAT.
 export function computeTotals(
-  lines: { unitPriceCents: number; quantity: number; modifiers?: any }[],
+  lines: { unitPriceCents: number; quantity: number; modifiers?: any; discountCents?: number }[],
   opts: TotalsOptions = {},
 ): OrderTotals {
   const discountCents = opts.discountCents ?? 0;
@@ -38,7 +39,8 @@ export function computeTotals(
       (sum: number, m: any) => sum + (m?.priceCents ?? 0),
       0,
     );
-    subtotalCents += (line.unitPriceCents + modCents) * line.quantity;
+    const lineGross = (line.unitPriceCents + modCents) * line.quantity;
+    subtotalCents += Math.max(0, lineGross - (line.discountCents ?? 0));
     itemCount += line.quantity;
   }
   const taxable = Math.max(0, subtotalCents - discountCents);

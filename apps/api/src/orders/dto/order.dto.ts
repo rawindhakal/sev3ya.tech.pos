@@ -24,6 +24,7 @@ export class CartLineDto {
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsInt() @Min(0) unitPriceCents?: number;
   @IsInt() @Min(1) quantity: number;
+  @IsOptional() @IsInt() @Min(0) discountCents?: number; // item-wise discount
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CartModifierDto)
   modifiers?: CartModifierDto[];
   @IsOptional() @IsString() notes?: string;

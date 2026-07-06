@@ -40,6 +40,7 @@ interface CartLine {
   unitPriceCents: number;
   modifiers: { name: string; priceCents: number }[];
   quantity: number;
+  discountCents?: number; // item-wise discount (needs discount permission)
   notes?: string;
   kotStatus?: string; // undefined/PENDING = editable; else fired (locked)
   station?: string;
@@ -60,6 +61,7 @@ function orderToCart(o: Order): CartLine[] {
       unitPriceCents: it.unitPriceCents,
       modifiers: (it.modifiers ?? []).map((m) => ({ name: m.name, priceCents: m.priceCents })),
       quantity: it.quantity,
+      discountCents: (it as { discountCents?: number }).discountCents ?? 0,
       notes: it.notes ?? undefined,
       kotStatus: it.kotStatus,
       station: it.station,
@@ -101,6 +103,7 @@ export default function PosPage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [discount, setDiscount] = useState('');
   const [discountMode, setDiscountMode] = useState<'rs' | 'pct'>('rs');
+  const [discountApproved, setDiscountApproved] = useState(false); // manager override
   const [redeemPts, setRedeemPts] = useState(''); // loyalty points to redeem
   const [isQuick, setIsQuick] = useState(false);
 
@@ -194,7 +197,8 @@ export default function PosPage() {
     let count = 0;
     for (const l of cart) {
       const mod = l.modifiers.reduce((s, m) => s + m.priceCents, 0);
-      subtotal += (l.unitPriceCents + mod) * l.quantity;
+      const gross = (l.unitPriceCents + mod) * l.quantity;
+      subtotal += Math.max(0, gross - (l.discountCents || 0));
       count += l.quantity;
     }
     const discountRaw = parseFloat(discount) || 0;
@@ -265,6 +269,7 @@ export default function PosPage() {
       setIsQuick(quick);
       setCart([]);
       setDiscount('');
+    setDiscountApproved(false);
       setOverlay(null);
     } catch (e) {
       alert((e as Error).message);
@@ -392,6 +397,25 @@ export default function PosPage() {
   function setLineNote(key: string, note: string) {
     setCart((prev) => prev.map((l) => (l.key === key ? { ...l, notes: note } : l)));
   }
+  function setLineDiscount(key: string, rs: string) {
+    const cents = Math.max(0, Math.round((parseFloat(rs) || 0) * 100));
+    setCart((prev) => prev.map((l) => (l.key === key ? { ...l, discountCents: cents } : l)));
+  }
+
+  // Discounts require the discount permission — or a one-off manager override.
+  const canDiscountNow = !!emp?.canDiscount || discountApproved;
+  async function requestDiscountApproval() {
+    const pin = prompt('Manager PIN to authorise a discount:');
+    if (!pin) return;
+    try {
+      const m = await api.post<{ canDiscount?: boolean; name?: string }>('/employees/login', { pin });
+      if (!m.canDiscount) return alert('That user cannot authorise discounts.');
+      setDiscountApproved(true);
+      flash(`Discount authorised by ${m.name}`);
+    } catch {
+      alert('Invalid PIN');
+    }
+  }
 
   function confirmPicker() {
     if (!picker) return;
@@ -417,6 +441,7 @@ export default function PosPage() {
         id: l.id, // preserve fired items & reconcile
         ...(l.menuItemId ? { menuItemId: l.menuItemId } : { name: l.name, unitPriceCents: l.unitPriceCents }),
         quantity: l.quantity,
+        discountCents: l.discountCents || 0,
         modifiers: l.modifiers,
         notes: l.notes,
       })),
@@ -548,6 +573,7 @@ export default function PosPage() {
     setTable(null);
     setCart([]);
     setDiscount('');
+    setDiscountApproved(false);
     setRedeemPts('');
     setCustInfo(null);
     setIsQuick(false);
@@ -567,6 +593,7 @@ export default function PosPage() {
     setTable(null);
     setCart([]);
     setDiscount('');
+    setDiscountApproved(false);
     setRedeemPts('');
     setCustInfo(null);
     setIsQuick(false);
@@ -925,12 +952,27 @@ export default function PosPage() {
                       {fired ? (
                         l.notes && <div className="mt-0.5 text-[11px] italic text-amber-300/80">» {l.notes}</div>
                       ) : (
-                        <input
-                          value={l.notes ?? ''}
-                          onChange={(e) => setLineNote(l.key, e.target.value)}
-                          placeholder="+ note (e.g. no ice)"
-                          className="mt-1 w-full rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white placeholder-white/25"
-                        />
+                        <div className="mt-1 flex gap-1">
+                          <input
+                            value={l.notes ?? ''}
+                            onChange={(e) => setLineNote(l.key, e.target.value)}
+                            placeholder="+ note (e.g. no ice)"
+                            className="min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white placeholder-white/25"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            value={l.discountCents ? (l.discountCents / 100).toString() : ''}
+                            disabled={!canDiscountNow}
+                            onChange={(e) => setLineDiscount(l.key, e.target.value)}
+                            placeholder="disc Rs"
+                            title={canDiscountNow ? 'Item discount (Rs)' : 'Needs manager approval'}
+                            className="w-16 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-[11px] text-amber-300 placeholder-white/25 disabled:opacity-40"
+                          />
+                        </div>
+                      )}
+                      {(l.discountCents ?? 0) > 0 && (
+                        <div className="text-[10px] text-amber-300/70">item −{formatMoney(l.discountCents!)}</div>
                       )}
                       <div className="mt-1 flex items-center gap-2">
                         {fired ? (
@@ -957,17 +999,20 @@ export default function PosPage() {
                 <div className="flex justify-between text-white/50"><span>Sub-Total ({totals.count} items)</span><span>{formatMoney(totals.subtotal)}</span></div>
                 <div className="flex items-center justify-between text-white/50">
                   <span className="flex items-center gap-1">
-                    Discount{!emp.canDiscount && <span className="text-[9px] text-white/30">🔒</span>}
+                    Discount
                     <button
-                      disabled={!emp.canDiscount}
+                      disabled={!canDiscountNow}
                       onClick={() => setDiscountMode((m) => (m === 'rs' ? 'pct' : 'rs'))}
                       className="rounded bg-white/10 px-1.5 text-[10px] text-white/70 disabled:opacity-40"
                     >
                       {discountMode === 'rs' ? 'Rs' : '%'}
                     </button>
+                    {!canDiscountNow && (
+                      <button onClick={requestDiscountApproval} className="rounded bg-[#F39C12]/20 px-1.5 text-[10px] text-[#F39C12]">🔒 Approve</button>
+                    )}
                   </span>
                   <div className="flex items-center gap-1">
-                    <input type="number" min={0} value={discount} disabled={!emp.canDiscount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={emp.canDiscount ? '' : 'No discount permission'} className="w-16 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white disabled:opacity-40" />
+                    <input type="number" min={0} value={discount} disabled={!canDiscountNow} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={canDiscountNow ? '' : 'Needs manager approval'} className="w-16 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white disabled:opacity-40" />
                     {discountMode === 'pct' && totals.discountCents > 0 && <span className="text-[10px] text-white/40">−{formatMoney(totals.discountCents)}</span>}
                   </div>
                 </div>
