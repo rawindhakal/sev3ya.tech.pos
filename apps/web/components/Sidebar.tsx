@@ -11,6 +11,7 @@ import ThemeToggle from './ThemeToggle';
 const NAV: { href: string; label: string; icon: string; feature?: keyof Features }[] = [
   { href: '/', label: 'Dashboard', icon: '📊' },
   { href: '/pos', label: 'New Order (POS)', icon: '🛒' },
+  { href: '/waiter', label: 'Waiter Panel', icon: '🧑‍🍳' },
   { href: '/reservations', label: 'Reservations', icon: '📅', feature: 'reservations' },
   { href: '/customers', label: 'Customers (CRM)', icon: '🧑‍🤝‍🧑', feature: 'crm' },
   { href: '/orders', label: 'Orders / KOT', icon: '🧾' },
