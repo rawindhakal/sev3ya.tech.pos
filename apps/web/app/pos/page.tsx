@@ -122,6 +122,8 @@ export default function PosPage() {
   const [tableForm, setTableForm] = useState({ name: '', seats: 4, area: '', isVip: false });
   const [transferOpen, setTransferOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveSel, setMoveSel] = useState<Record<string, boolean>>({});
 
   // menu ui
   const [activeCat, setActiveCat] = useState('all');
@@ -390,6 +392,35 @@ export default function PosPage() {
       setTable(updated.table ? ({ id: updated.table.id, name: updated.table.name } as RestaurantTable) : null);
       setTransferOpen(false);
       flash('Order transferred');
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+  async function openMoveItems() {
+    if (!order) return;
+    setBusy(true);
+    try {
+      await persistCart(); // ensure every line has an id before moving
+      await reloadAreas();
+      setMoveSel({});
+      setMoveOpen(true);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function doMoveItems(targetTableId: string) {
+    if (!order) return;
+    const itemIds = Object.keys(moveSel).filter((k) => moveSel[k]);
+    if (!itemIds.length) return flash('Select at least one item to move');
+    try {
+      const res = await api.post<{ source: Order; target: Order }>(`/orders/${order.id}/transfer-items`, { itemIds, targetTableId });
+      setOrder(res.source);
+      setCart(orderToCart(res.source));
+      setMoveOpen(false);
+      reloadAreas();
+      flash(`${itemIds.length} item(s) moved`);
     } catch (e) {
       alert((e as Error).message);
     }
@@ -989,9 +1020,10 @@ export default function PosPage() {
                 )}
               </div>
               {table && (
-                <div className="mt-2 flex gap-2">
-                  <button onClick={() => { reloadAreas(); setTransferOpen(true); }} className="flex-1 rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⇄ Transfer table</button>
-                  <button onClick={() => { reloadAreas(); setMergeOpen(true); }} className="flex-1 rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⧉ Merge table</button>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <button onClick={() => { reloadAreas(); setTransferOpen(true); }} className="rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⇄ Transfer</button>
+                  <button onClick={() => { reloadAreas(); setMergeOpen(true); }} className="rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⧉ Merge</button>
+                  <button onClick={openMoveItems} disabled={busy || cart.length === 0} className="rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10 disabled:opacity-40">↦ Move items</button>
                 </div>
               )}
               {/* Customer (attach at billing; enables loyalty + credit) */}
@@ -1211,6 +1243,29 @@ export default function PosPage() {
             </button>
           ))}
           {flatTables.filter((t) => t.status === 'OCCUPIED' && t.activeOrder && t.id !== table?.id).length === 0 && <p className="col-span-4 text-sm text-slate-400">No other occupied tables.</p>}
+        </div>
+      </Modal>
+
+      {/* Move selected items to another table */}
+      <Modal open={moveOpen} title="Move items to another table" onClose={() => setMoveOpen(false)}>
+        <p className="mb-2 text-sm text-slate-500">1. Select items to move:</p>
+        <div className="mb-4 max-h-48 space-y-1 overflow-y-auto">
+          {cart.map((l) => (
+            <label key={l.key} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <input type="checkbox" checked={!!moveSel[l.id ?? '']} disabled={!l.id} onChange={(e) => setMoveSel((s) => ({ ...s, [l.id!]: e.target.checked }))} />
+              <span className="flex-1">{l.quantity}× {l.name}{l.notes ? ` (${l.notes})` : ''}</span>
+              <span className="text-slate-400">{formatMoney((l.unitPriceCents + l.modifiers.reduce((s, m) => s + m.priceCents, 0)) * l.quantity)}</span>
+            </label>
+          ))}
+        </div>
+        <p className="mb-2 text-sm text-slate-500">2. Choose the destination table:</p>
+        <div className="grid grid-cols-4 gap-2">
+          {flatTables.filter((t) => t.id !== table?.id && (t.status === 'AVAILABLE' || (t.status === 'OCCUPIED' && t.activeOrder))).map((t) => (
+            <button key={t.id} onClick={() => doMoveItems(t.id)} className="rounded-lg border-2 border-slate-200 p-3 text-center hover:border-brand-400 hover:bg-brand-50">
+              <div className="font-bold text-slate-800">{t.name}</div>
+              <div className="text-[10px] text-slate-400">{t.status === 'OCCUPIED' ? formatMoney(t.activeOrder!.totalCents) : `${t.seats} seats`}</div>
+            </button>
+          ))}
         </div>
       </Modal>
 

@@ -102,6 +102,16 @@ export class OrdersController {
     return this.orders.merge(id, fromOrderId);
   }
 
+  @Post(':id/transfer-items')
+  @UseGuards(SoftAuthGuard)
+  transferItems(
+    @Param('id') id: string,
+    @Body() body: { itemIds: string[]; targetTableId: string },
+    @CurrentEmployee() emp: TokenPayload,
+  ) {
+    return this.orders.transferItems(id, body, emp);
+  }
+
   // Void (with items → needs canVoid) or discard an empty draft (allowed).
   @Delete(':id')
   @UseGuards(SoftAuthGuard)

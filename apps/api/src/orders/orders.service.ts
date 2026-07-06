@@ -473,4 +473,39 @@ export class OrdersService {
       return tx.order.findUniqueOrThrow({ where: { id: targetId }, include: orderInclude });
     });
   }
+
+  // Move selected items from this order to another table (item-level transfer).
+  // If the target table has no open order, a new one is started there.
+  async transferItems(id: string, dto: { itemIds: string[]; targetTableId: string }, actor?: TokenPayload) {
+    const source = await this.findOne(id);
+    if (['PAID', 'CANCELLED', 'REFUNDED'].includes(source.status))
+      throw new BadRequestException('Only active orders can be transferred from');
+    const items = source.items.filter((i) => dto.itemIds.includes(i.id) && !i.cancelledAt);
+    if (!items.length) throw new BadRequestException('No valid items to transfer');
+    const targetTable = await this.prisma.restaurantTable.findUnique({ where: { id: dto.targetTableId } });
+    if (!targetTable) throw new BadRequestException('Target table not found');
+    if (source.tableId === dto.targetTableId) throw new BadRequestException('Items are already on that table');
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      let target = await tx.order.findFirst({
+        where: { tableId: dto.targetTableId, status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!target) {
+        target = await tx.order.create({
+          data: { type: 'DINE_IN', tableId: dto.targetTableId, seatedAt: new Date(), waiterId: source.waiterId },
+        });
+        await tx.restaurantTable.update({ where: { id: dto.targetTableId }, data: { status: 'OCCUPIED' } });
+      }
+      await tx.orderItem.updateMany({ where: { id: { in: items.map((i) => i.id) } }, data: { orderId: target.id } });
+      await this.recompute(tx, id);
+      await this.recompute(tx, target.id);
+      return {
+        source: await tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude }),
+        target: await tx.order.findUniqueOrThrow({ where: { id: target.id }, include: orderInclude }),
+      };
+    });
+    await this.audit.log(actor ?? null, 'TRANSFER_ITEMS', `${items.length} item(s) from #${source.number} → ${targetTable.name}`);
+    return result;
+  }
 }
