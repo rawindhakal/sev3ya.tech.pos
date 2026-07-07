@@ -43,6 +43,14 @@ export interface MenuItem {
   categoryId: string;
   category?: { id: string; name: string };
   modifierGroups?: ModifierGroupRef[];
+  variants?: MenuItemVariant[];
+}
+
+export interface MenuItemVariant {
+  id: string;
+  name: string;
+  priceCents: number;
+  sortOrder: number;
 }
 
 // Returns the effective price for a menu item given the order type (#15).

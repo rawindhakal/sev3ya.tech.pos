@@ -57,6 +57,12 @@ export class OrdersService {
       ? await this.prisma.menuItem.findMany({ where: { id: { in: ids } } })
       : [];
     const byId = new Map(menuItems.map((m) => [m.id, m]));
+    // Fetch any chosen variants (portions) for authoritative pricing.
+    const variantIds = [...new Set(lines.filter((l) => l.variantId).map((l) => l.variantId!))];
+    const variants = variantIds.length
+      ? await this.prisma.menuItemVariant.findMany({ where: { id: { in: variantIds } } })
+      : [];
+    const variantById = new Map(variants.map((v) => [v.id, v]));
     return lines.map((l) => {
       const base = {
         quantity: l.quantity,
@@ -67,7 +73,14 @@ export class OrdersService {
       if (l.menuItemId) {
         const mi = byId.get(l.menuItemId);
         if (!mi) throw new BadRequestException(`Menu item ${l.menuItemId} not found`);
-        // Price comes from the DB (authoritative) at the correct tier.
+        // A chosen portion/variant replaces the base price + labels the line.
+        if (l.variantId) {
+          const v = variantById.get(l.variantId);
+          if (!v || v.menuItemId !== mi.id)
+            throw new BadRequestException('Invalid variant for this item');
+          return { ...base, menuItemId: mi.id, nameSnapshot: `${mi.name} (${v.name})`, unitPriceCents: v.priceCents, station: mi.station };
+        }
+        // Otherwise price comes from the DB (authoritative) at the correct tier.
         return {
           ...base,
           menuItemId: mi.id,

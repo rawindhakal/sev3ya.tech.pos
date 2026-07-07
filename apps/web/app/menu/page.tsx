@@ -14,6 +14,7 @@ type ItemForm = {
   station: string;
   categoryId: string;
   isAvailable: boolean;
+  variants: { name: string; price: string }[];
 };
 
 const emptyForm: ItemForm = {
@@ -25,6 +26,7 @@ const emptyForm: ItemForm = {
   station: 'BILLING',
   categoryId: '',
   isAvailable: true,
+  variants: [],
 };
 
 export default function MenuPage() {
@@ -90,6 +92,7 @@ export default function MenuPage() {
       station: item.station ?? 'BILLING',
       categoryId: item.categoryId,
       isAvailable: item.isAvailable,
+      variants: (item.variants ?? []).map((v) => ({ name: v.name, price: (v.priceCents / 100).toString() })),
     });
     setItemModal(true);
   }
@@ -109,6 +112,7 @@ export default function MenuPage() {
         station: form.station,
         categoryId: form.categoryId,
         isAvailable: form.isAvailable,
+        variants: form.variants.filter((v) => v.name.trim()).map((v, i) => ({ name: v.name.trim(), priceCents: dollarsToCents(parseFloat(v.price || '0')), sortOrder: i })),
       };
       if (editingId) {
         await api.patch(`/menu-items/${editingId}`, payload);
@@ -356,6 +360,20 @@ export default function MenuPage() {
               <option value="BAR">Bar — BOT</option>
             </select>
             <p className="mt-1 text-xs text-slate-400">Routes this item to the kitchen (KOT) or bar (BOT) printer when fired. Default is billing-only.</p>
+          </div>
+          <div>
+            <label className="label">Portions / variants (optional)</label>
+            <p className="mb-2 text-xs text-slate-400">e.g. Whiskey → 30ml, 60ml. A variant&apos;s price replaces the base price when ordered.</p>
+            <div className="space-y-2">
+              {form.variants.map((v, i) => (
+                <div key={i} className="flex gap-2">
+                  <input className="input flex-1" value={v.name} placeholder="Portion (e.g. 60ml)" onChange={(e) => setForm((f) => ({ ...f, variants: f.variants.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) }))} />
+                  <input className="input w-28" type="number" step="0.01" min="0" value={v.price} placeholder="Price Rs" onChange={(e) => setForm((f) => ({ ...f, variants: f.variants.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)) }))} />
+                  <button type="button" className="rounded-md px-2 text-red-500 hover:bg-red-50" onClick={() => setForm((f) => ({ ...f, variants: f.variants.filter((_, j) => j !== i) }))}>✕</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="mt-2 text-xs text-brand-600 hover:underline" onClick={() => setForm((f) => ({ ...f, variants: [...f.variants, { name: '', price: '' }] }))}>+ Add portion</button>
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input

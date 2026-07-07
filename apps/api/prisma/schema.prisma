@@ -53,12 +53,26 @@ model MenuItem {
 
   orderItems OrderItem[]
   recipe     RecipeItem[] // BOM: ingredients this item consumes (matrix #57)
+  variants   MenuItemVariant[] // portions e.g. Whiskey 30ml / 60ml
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([categoryId])
   @@map("menu_items")
+}
+
+// A priced portion/variant of a menu item (replaces the base price when chosen).
+model MenuItemVariant {
+  id         String   @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name       String   // e.g. "30ml", "Large"
+  priceCents Int
+  sortOrder  Int      @default(0)
+
+  @@index([menuItemId])
+  @@map("menu_item_variants")
 }
 
 model ModifierGroup {

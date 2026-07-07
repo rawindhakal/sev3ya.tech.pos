@@ -7,8 +7,16 @@ import {
   IsOptional,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PrepStation } from '@prisma/client';
+
+export class VariantDto {
+  @IsString() @IsNotEmpty() name: string;
+  @IsInt() @Min(0) priceCents: number;
+  @IsOptional() @IsInt() sortOrder?: number;
+}
 
 export class CreateMenuItemDto {
   @IsString()
@@ -56,6 +64,12 @@ export class CreateMenuItemDto {
   @IsArray()
   @IsString({ each: true })
   modifierGroupIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VariantDto)
+  variants?: VariantDto[];
 }
 
 export class UpdateMenuItemDto {
@@ -104,4 +118,10 @@ export class UpdateMenuItemDto {
   @IsArray()
   @IsString({ each: true })
   modifierGroupIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VariantDto)
+  variants?: VariantDto[];
 }

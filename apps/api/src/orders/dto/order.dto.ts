@@ -21,6 +21,7 @@ export class CartLineDto {
   @IsOptional() @IsString() id?: string;
   // Either menuItemId (menu item) OR name+unitPriceCents (open item, #16).
   @IsOptional() @IsString() @IsNotEmpty() menuItemId?: string;
+  @IsOptional() @IsString() variantId?: string; // chosen portion (30ml/60ml)
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsInt() @Min(0) unitPriceCents?: number;
   @IsInt() @Min(1) quantity: number;

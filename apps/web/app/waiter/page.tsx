@@ -5,12 +5,12 @@
 // settled at the main POS counter.
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
-import type { Category, Employee, MenuItem, ModifierGroup, Order, TableArea } from '@/lib/types';
+import type { Category, Employee, MenuItem, MenuItemVariant, ModifierGroup, Order, TableArea } from '@/lib/types';
 import { priceForType } from '@/lib/types';
 import Modal from '@/components/Modal';
 
 type Mode = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY';
-interface Line { key: string; id?: string; menuItemId?: string; name: string; unitPriceCents: number; modifiers: { name: string; priceCents: number }[]; quantity: number; notes?: string; kotStatus?: string }
+interface Line { key: string; id?: string; menuItemId?: string; variantId?: string; name: string; unitPriceCents: number; modifiers: { name: string; priceCents: number }[]; quantity: number; notes?: string; kotStatus?: string }
 
 const fired = (l: Line) => !!l.kotStatus && l.kotStatus !== 'PENDING';
 const toCart = (o: Order): Line[] => (o.items ?? []).filter((i) => !i.cancelledAt).map((it) => ({
@@ -38,7 +38,7 @@ export default function WaiterPage() {
   const [billOpen, setBillOpen] = useState(false);
   const [custOpen, setCustOpen] = useState(false);
   const [cust, setCust] = useState({ name: '', phone: '' });
-  const [picker, setPicker] = useState<{ item: MenuItem; groups: ModifierGroup[] } | null>(null);
+  const [picker, setPicker] = useState<{ item: MenuItem; groups: ModifierGroup[]; variants: MenuItemVariant[] } | null>(null);
   const [pickSel, setPickSel] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -95,25 +95,27 @@ export default function WaiterPage() {
   }
 
   async function clickItem(item: MenuItem) {
-    if (item.modifierGroups && item.modifierGroups.length) {
-      const detail = await api.get<{ modifierGroups: ModifierGroup[] }>(`/menu-items/${item.id}`);
-      setPickSel({}); setPicker({ item, groups: detail.modifierGroups });
+    if (item.variants?.length || item.modifierGroups?.length) {
+      const detail = await api.get<{ modifierGroups: ModifierGroup[]; variants: MenuItemVariant[] }>(`/menu-items/${item.id}`);
+      setPickSel({}); setPicker({ item, groups: detail.modifierGroups ?? [], variants: detail.variants ?? [] });
     } else addLine(item, []);
   }
-  function addLine(item: MenuItem, mods: { name: string; priceCents: number }[]) {
+  function addLine(item: MenuItem, mods: { name: string; priceCents: number }[], variant?: MenuItemVariant) {
     setCart((prev) => {
       const sig = mods.map((m) => m.name).sort().join(',');
-      const ex = prev.find((l) => !fired(l) && l.menuItemId === item.id && !l.notes && l.modifiers.map((m) => m.name).sort().join(',') === sig);
+      const ex = prev.find((l) => !fired(l) && l.menuItemId === item.id && !l.notes && l.variantId === variant?.id && l.modifiers.map((m) => m.name).sort().join(',') === sig);
       if (ex) return prev.map((l) => (l.key === ex.key ? { ...l, quantity: l.quantity + 1 } : l));
-      return [...prev, { key: `${item.id}:${Date.now()}`, menuItemId: item.id, name: item.name, unitPriceCents: priceForType(item, mode), modifiers: mods, quantity: 1 }];
+      return [...prev, { key: `${item.id}:${variant?.id ?? ''}:${Date.now()}`, menuItemId: item.id, variantId: variant?.id, name: variant ? `${item.name} (${variant.name})` : item.name, unitPriceCents: variant ? variant.priceCents : priceForType(item, mode), modifiers: mods, quantity: 1 }];
     });
     flash(`${item.name} added`);
   }
   function confirmPicker() {
     if (!picker) return;
+    let variant: MenuItemVariant | undefined;
+    if (picker.variants.length) { variant = picker.variants.find((v) => v.id === pickSel['__variant']?.[0]); if (!variant) return flash('Choose a portion'); }
     const mods: { name: string; priceCents: number }[] = [];
     for (const g of picker.groups) for (const mid of pickSel[g.id] ?? []) { const m = g.modifiers.find((x) => x.id === mid); if (m) mods.push({ name: m.name, priceCents: m.priceCents }); }
-    addLine(picker.item, mods); setPicker(null);
+    addLine(picker.item, mods, variant); setPicker(null);
   }
   function qty(key: string, d: number) { setCart((p) => p.map((l) => (l.key === key && !fired(l) ? { ...l, quantity: l.quantity + d } : l)).filter((l) => l.quantity > 0)); }
   function note(key: string, v: string) { setCart((p) => p.map((l) => (l.key === key ? { ...l, notes: v } : l))); }
@@ -121,7 +123,7 @@ export default function WaiterPage() {
   async function save(): Promise<Order | null> {
     if (!order) return null;
     const saved = await api.put<Order>(`/orders/${order.id}/cart`, {
-      items: cart.map((l) => ({ id: l.id, ...(l.menuItemId ? { menuItemId: l.menuItemId } : {}), quantity: l.quantity, modifiers: l.modifiers, notes: l.notes })),
+      items: cart.map((l) => ({ id: l.id, ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : {}), quantity: l.quantity, modifiers: l.modifiers, notes: l.notes })),
       waiterId: undefined,
     });
     setOrder(saved); setCart(toCart(saved)); return saved;
@@ -228,7 +230,7 @@ export default function WaiterPage() {
             {filtered.map((item) => (
               <button key={item.id} onClick={() => clickItem(item)} className="flex flex-col rounded-xl border border-white/10 bg-white/5 p-3 text-left hover:border-[#2ECC71]/50">
                 <span className="font-medium leading-tight">{item.name}</span>
-                <span className="mt-1 font-bold text-[#2ECC71]">{formatMoney(priceForType(item, mode))}</span>
+                <span className="mt-1 font-bold text-[#2ECC71]">{item.variants?.length ? `from ${formatMoney(Math.min(...item.variants.map((v) => v.priceCents)))}` : formatMoney(priceForType(item, mode))}</span>
               </button>
             ))}
           </div>
@@ -283,6 +285,19 @@ export default function WaiterPage() {
       {/* modifier picker */}
       <Modal open={!!picker} title={picker ? picker.item.name : ''} onClose={() => setPicker(null)}>
         {picker && <div className="space-y-4">
+          {picker.variants.length > 0 && (
+            <div>
+              <div className="label">Portion <span className="text-slate-400">(required)</span></div>
+              <div className="space-y-1.5">
+                {picker.variants.map((v) => (
+                  <label key={v.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                    <input type="radio" name="__variant" checked={pickSel['__variant']?.[0] === v.id} onChange={() => setPickSel((p) => ({ ...p, __variant: [v.id] }))} />
+                    <span className="flex-1">{v.name}</span><span className="font-semibold text-brand-600">{formatMoney(v.priceCents)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           {picker.groups.map((g) => { const single = g.maxSelect === 1; const sel = pickSel[g.id] ?? []; return (
             <div key={g.id}>
               <div className="label">{g.name} <span className="text-slate-400">(select {g.minSelect}–{g.maxSelect})</span></div>

@@ -7,6 +7,7 @@ import type {
   Category,
   Employee,
   MenuItem,
+  MenuItemVariant,
   ModifierGroup,
   Order,
   OrderItem,
@@ -37,6 +38,7 @@ interface CartLine {
   key: string;
   id?: string; // server OrderItem id once saved (enables reconcile + KOT status)
   menuItemId?: string;
+  variantId?: string; // chosen portion (only sent for new lines)
   name: string;
   unitPriceCents: number;
   modifiers: { name: string; priceCents: number }[];
@@ -135,7 +137,7 @@ export default function PosPage() {
   const [search, setSearch] = useState('');
 
   // modifier picker / open item / held / payment
-  const [picker, setPicker] = useState<{ item: MenuItem; groups: ModifierGroup[] } | null>(null);
+  const [picker, setPicker] = useState<{ item: MenuItem; groups: ModifierGroup[]; variants: MenuItemVariant[] } | null>(null);
   const [pickSel, setPickSel] = useState<Record<string, string[]>>({});
   const [openItem, setOpenItem] = useState<{ name: string; price: string } | null>(null);
   const [payOpen, setPayOpen] = useState(false);
@@ -481,25 +483,36 @@ export default function PosPage() {
 
   // ── Cart ───────────────────────────────────────────
   async function clickItem(item: MenuItem) {
-    if (item.modifierGroups && item.modifierGroups.length > 0) {
-      const detail = await api.get<{ modifierGroups: ModifierGroup[] }>(`/menu-items/${item.id}`);
+    const hasVariants = !!item.variants?.length;
+    const hasMods = !!item.modifierGroups?.length;
+    if (hasVariants || hasMods) {
+      const detail = await api.get<{ modifierGroups: ModifierGroup[]; variants: MenuItemVariant[] }>(`/menu-items/${item.id}`);
       setPickSel({});
-      setPicker({ item, groups: detail.modifierGroups });
+      setPicker({ item, groups: detail.modifierGroups ?? [], variants: detail.variants ?? [] });
     } else {
       addLine(item, []);
     }
   }
 
-  function addLine(item: MenuItem, mods: { name: string; priceCents: number }[]) {
+  function addLine(item: MenuItem, mods: { name: string; priceCents: number }[], variant?: MenuItemVariant) {
     setCart((prev) => {
       const modSig = mods.map((m) => m.name).sort().join(',');
-      // Merge only into an UNFIRED line with same item + modifiers + no note.
+      // Merge only into an UNFIRED line with same item + variant + modifiers + no note.
       const existing = prev.find(
-        (l) => !isFired(l) && l.menuItemId === item.id && !l.notes &&
+        (l) => !isFired(l) && l.menuItemId === item.id && !l.notes && l.variantId === variant?.id &&
           l.modifiers.map((m) => m.name).sort().join(',') === modSig,
       );
       if (existing) return prev.map((l) => (l.key === existing.key ? { ...l, quantity: l.quantity + 1 } : l));
-      return [...prev, { key: lineKey(item.id, mods), menuItemId: item.id, name: item.name, unitPriceCents: priceForType(item, orderType), modifiers: mods, quantity: 1, station: item.station }];
+      return [...prev, {
+        key: lineKey(item.id + (variant?.id ?? ''), mods),
+        menuItemId: item.id,
+        variantId: variant?.id,
+        name: variant ? `${item.name} (${variant.name})` : item.name,
+        unitPriceCents: variant ? variant.priceCents : priceForType(item, orderType),
+        modifiers: mods,
+        quantity: 1,
+        station: item.station,
+      }];
     });
   }
 
@@ -536,12 +549,19 @@ export default function PosPage() {
 
   function confirmPicker() {
     if (!picker) return;
+    // A portion is required when the item has variants.
+    let variant: MenuItemVariant | undefined;
+    if (picker.variants.length) {
+      const vid = pickSel['__variant']?.[0];
+      variant = picker.variants.find((v) => v.id === vid);
+      if (!variant) return flash('Choose a portion');
+    }
     const mods: { name: string; priceCents: number }[] = [];
     for (const g of picker.groups) for (const mid of pickSel[g.id] ?? []) {
       const m = g.modifiers.find((x) => x.id === mid);
       if (m) mods.push({ name: m.name, priceCents: m.priceCents });
     }
-    addLine(picker.item, mods);
+    addLine(picker.item, mods, variant);
     setPicker(null);
   }
 
@@ -556,7 +576,7 @@ export default function PosPage() {
     const saved = await api.put<Order>(`/orders/${order.id}/cart`, {
       items: cart.map((l) => ({
         id: l.id, // preserve fired items & reconcile
-        ...(l.menuItemId ? { menuItemId: l.menuItemId } : { name: l.name, unitPriceCents: l.unitPriceCents }),
+        ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : { name: l.name, unitPriceCents: l.unitPriceCents }),
         quantity: l.quantity,
         discountCents: l.discountCents || 0,
         modifiers: l.modifiers,
@@ -1044,8 +1064,12 @@ export default function PosPage() {
               {filteredItems.map((item) => (
                 <button key={item.id} onClick={() => clickItem(item)} className="flex flex-col items-start rounded-xl border border-white/10 bg-white/5 p-3 text-left transition-colors hover:border-[#2ECC71]/50 hover:bg-white/10">
                   <span className="font-semibold leading-tight">{item.name}</span>
-                  <span className="mt-2 font-bold text-[#2ECC71]">{formatMoney(priceForType(item, orderType))}</span>
-                  {item.modifierGroups && item.modifierGroups.length > 0 && <span className="mt-1 text-[10px] text-white/30">options</span>}
+                  <span className="mt-2 font-bold text-[#2ECC71]">
+                    {item.variants && item.variants.length > 0
+                      ? `from ${formatMoney(Math.min(...item.variants.map((v) => v.priceCents)))}`
+                      : formatMoney(priceForType(item, orderType))}
+                  </span>
+                  {((item.modifierGroups && item.modifierGroups.length > 0) || (item.variants && item.variants.length > 0)) && <span className="mt-1 text-[10px] text-white/30">{item.variants?.length ? 'portions' : 'options'}</span>}
                 </button>
               ))}
               {filteredItems.length === 0 && <p className="col-span-full py-10 text-center text-sm text-white/30">No items found</p>}
@@ -1323,6 +1347,20 @@ export default function PosPage() {
       <Modal open={!!picker} title={picker ? `Options · ${picker.item.name}` : ''} onClose={() => setPicker(null)}>
         {picker && (
           <div className="space-y-4">
+            {picker.variants.length > 0 && (
+              <div>
+                <div className="label">Portion <span className="text-slate-400">(required)</span></div>
+                <div className="space-y-1.5">
+                  {picker.variants.map((v) => (
+                    <label key={v.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                      <input type="radio" name="__variant" checked={pickSel['__variant']?.[0] === v.id} onChange={() => setPickSel((p) => ({ ...p, __variant: [v.id] }))} />
+                      <span className="flex-1">{v.name}</span>
+                      <span className="font-semibold text-brand-600">{formatMoney(v.priceCents)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             {picker.groups.map((g) => {
               const single = g.maxSelect === 1;
               const sel = pickSel[g.id] ?? [];
