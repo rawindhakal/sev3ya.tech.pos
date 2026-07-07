@@ -20,7 +20,8 @@ const toCart = (o: Order): Line[] => (o.items ?? []).filter((i) => !i.cancelledA
 
 export default function WaiterPage() {
   const [emp, setEmp] = useState<Employee | null>(null);
-  const [pin, setPin] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [pinErr, setPinErr] = useState('');
 
   const [step, setStep] = useState<'home' | 'table' | 'order'>('home');
@@ -52,13 +53,13 @@ export default function WaiterPage() {
   function flash(m: string) { setToast(m); setTimeout(() => setToast(null), 2000); }
 
   async function login() {
-    if (!/^\d{4,6}$/.test(pin)) return setPinErr('Enter your PIN');
+    if (!username.trim() || !password) return setPinErr('Enter your username and password');
     try {
-      const e = await api.post<Employee & { token?: string }>('/employees/login', { pin });
+      const e = await api.post<Employee & { token?: string }>('/employees/login', { username: username.trim(), password });
       setEmp(e); localStorage.setItem('cakezake-emp', JSON.stringify(e));
       if (e.token) localStorage.setItem('cakezake-token', e.token);
-      setPin(''); setPinErr('');
-    } catch { setPinErr('Invalid PIN'); setPin(''); }
+      setUsername(''); setPassword(''); setPinErr('');
+    } catch { setPinErr('Invalid username or password'); setPassword(''); }
   }
 
   const vatRate = 0.13;
@@ -141,23 +142,21 @@ export default function WaiterPage() {
   }
   function reset() { setStep('home'); setOrder(null); setTableName(null); setCart([]); setCartOpen(false); setActiveCat('all'); setSearch(''); }
 
-  // ── PIN gate ──
+  // ── Login gate ──
   if (!emp) {
     return (
       <div className="flex h-full items-center justify-center bg-[#1A1A1A] p-4 text-white">
-        <div className="w-72 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
+        <div className="w-80 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
           <div className="mb-1 text-3xl">🧑‍🍳</div>
           <div className="mb-1 font-bold">WAITER PANEL</div>
-          <p className="mb-4 text-xs text-white/40">Enter your PIN</p>
-          <div className="mb-3 flex justify-center gap-2">{[0, 1, 2, 3, 4, 5].map((i) => <span key={i} className={`h-3 w-3 rounded-full ${i < pin.length ? 'bg-[#2ECC71]' : 'bg-white/15'}`} />)}</div>
+          <p className="mb-4 text-xs text-white/40">Sign in with your username &amp; password</p>
           {pinErr && <p className="mb-2 text-xs text-[#E74C3C]">{pinErr}</p>}
-          <div className="grid grid-cols-3 gap-2">
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => <button key={d} onClick={() => setPin((p) => (p.length < 6 ? p + d : p))} className="rounded-lg bg-white/5 py-3 text-lg font-semibold hover:bg-white/10">{d}</button>)}
-            <button onClick={() => setPin((p) => p.slice(0, -1))} className="rounded-lg bg-white/5 py-3 hover:bg-white/10">⌫</button>
-            <button onClick={() => setPin((p) => (p.length < 6 ? p + '0' : p))} className="rounded-lg bg-white/5 py-3 text-lg font-semibold hover:bg-white/10">0</button>
-            <button onClick={login} className="rounded-lg bg-[#2ECC71] py-3 text-sm font-bold text-black">Enter</button>
+          <div className="space-y-2 text-left">
+            <input value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && login()} autoFocus autoComplete="username" placeholder="Username" className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-[#2ECC71]/60" />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && login()} type="password" autoComplete="current-password" placeholder="Password" className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-[#2ECC71]/60" />
           </div>
-          <p className="mt-4 text-[10px] text-white/25">Dev: Barista Sita 4444</p>
+          <button onClick={login} className="mt-3 w-full rounded-lg bg-[#2ECC71] py-2.5 text-sm font-bold text-black">Sign in</button>
+          <p className="mt-4 text-[10px] text-white/25">Dev — sita / barista123</p>
         </div>
       </div>
     );

@@ -3,9 +3,15 @@
 A native desktop shell (Electron) that runs the **POS billing terminal** for
 cashiers. It loads the same web `/pos` route, so it has the **exact same
 features** as the web POS — order modes, tables, KOT/BOT, split payment,
-day-end, etc. What a cashier can do is governed by their **PIN login role**
-(discounts/voids need permission or a manager override), and there is **no
-admin/back-office chrome** in the desktop window.
+day-end, etc. Cashiers sign in with a **username + password**; what they can do
+is governed by their **role** (discounts/voids need permission or a manager
+PIN override), and there is **no admin/back-office chrome** in the desktop
+window.
+
+The till is **offline-resilient**: it keeps rendering the menu/tables from a
+local cache during network blips, shows a live ONLINE/OFFLINE badge, and if the
+terminal server is unreachable at launch it shows a waiting screen and
+**auto-retries**, resuming the moment the server is back — no manual relaunch.
 
 ## Prerequisites
 
@@ -45,8 +51,8 @@ web URL by setting `POS_URL` before packaging, or ship a small config.
 ## How cashier-only scope works
 
 - The window opens directly to `/pos` and hides all application menus.
-- The POS PIN login identifies the cashier; the back-office pages, reports,
-  finance, inventory, etc. are simply **not part of this window**.
+- The username/password login identifies the cashier; the back-office pages,
+  reports, finance, inventory, etc. are simply **not part of this window**.
 - Permission-gated actions (discount, void, refund) still require the cashier's
   own permission or an on-screen **manager-PIN override**.
 

@@ -1,4 +1,5 @@
 import { PrismaClient, OrderType, PaymentMethod } from '@prisma/client';
+import { hashPassword } from '../src/common/password';
 
 const prisma = new PrismaClient();
 
@@ -180,14 +181,14 @@ async function main() {
     ],
   });
 
-  // Employees + role permissions (Phase 5). Dev PINs.
+  // Employees + role permissions (Phase 5). Dev usernames/passwords + quick PINs.
   await prisma.employee.deleteMany();
   await prisma.employee.createMany({
     data: [
-      { name: 'Admin', role: 'ADMIN', pin: '1111', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true, canManageStaff: true },
-      { name: 'Manager Gita', role: 'MANAGER', pin: '2222', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true },
-      { name: 'Cashier Ram', role: 'CASHIER', pin: '3333', canDiscount: true },
-      { name: 'Barista Sita', role: 'BARISTA', pin: '4444' },
+      { name: 'Admin', role: 'ADMIN', username: 'admin', passwordHash: hashPassword('admin123'), pin: '1111', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true, canManageStaff: true },
+      { name: 'Manager Gita', role: 'MANAGER', username: 'gita', passwordHash: hashPassword('manager123'), pin: '2222', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true },
+      { name: 'Cashier Ram', role: 'CASHIER', username: 'ram', passwordHash: hashPassword('cashier123'), pin: '3333', canDiscount: true },
+      { name: 'Barista Sita', role: 'BARISTA', username: 'sita', passwordHash: hashPassword('barista123'), pin: '4444' },
     ],
   });
 

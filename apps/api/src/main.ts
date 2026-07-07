@@ -20,7 +20,11 @@ async function bootstrap() {
   const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
     .split(',')
     .map((o) => o.trim());
-  app.enableCors({ origin: origins, credentials: true });
+  app.enableCors({
+    origin: origins,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+  });
 
   const port = process.env.PORT ?? 4000;
   await app.listen(port);

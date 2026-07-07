@@ -22,6 +22,8 @@ class CreateEmployeeDto {
   @IsString() @IsNotEmpty() name: string;
   @IsEnum(StaffRole) role: StaffRole;
   @Matches(/^\d{4,6}$/, { message: 'PIN must be 4–6 digits' }) pin: string;
+  @IsOptional() @IsString() @IsNotEmpty() username?: string;
+  @IsOptional() @IsString() password?: string;
   @IsOptional() @IsBoolean() canVoid?: boolean;
   @IsOptional() @IsBoolean() canDiscount?: boolean;
   @IsOptional() @IsBoolean() canManageInventory?: boolean;
@@ -32,6 +34,8 @@ class UpdateEmployeeDto {
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsEnum(StaffRole) role?: StaffRole;
   @IsOptional() @Matches(/^\d{4,6}$/) pin?: string;
+  @IsOptional() @IsString() @IsNotEmpty() username?: string;
+  @IsOptional() @IsString() password?: string;
   @IsOptional() @IsBoolean() canVoid?: boolean;
   @IsOptional() @IsBoolean() canDiscount?: boolean;
   @IsOptional() @IsBoolean() canManageInventory?: boolean;
@@ -39,7 +43,9 @@ class UpdateEmployeeDto {
   @IsOptional() @IsBoolean() canManageStaff?: boolean;
 }
 class LoginDto {
-  @Matches(/^\d{4,6}$/) pin: string;
+  @IsOptional() @Matches(/^\d{4,6}$/) pin?: string;
+  @IsOptional() @IsString() username?: string;
+  @IsOptional() @IsString() password?: string;
 }
 
 @Controller('employees')
@@ -53,7 +59,7 @@ export class EmployeesController {
 
   @Post('login')
   login(@Body() dto: LoginDto) {
-    return this.employees.login(dto.pin);
+    return this.employees.login(dto);
   }
 
   @Get('active-shifts')

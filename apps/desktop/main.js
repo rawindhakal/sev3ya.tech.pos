@@ -42,17 +42,28 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Show a friendly message if the web app isn't reachable yet.
-  win.webContents.on('did-fail-load', () => {
+  // If the terminal server isn't reachable (internet/LAN blip), show a waiting
+  // screen and keep auto-retrying so the till reconnects on its own the moment
+  // the server is back — no manual relaunch needed.
+  let retryTimer = null;
+  win.webContents.on('did-fail-load', (_e, code, _desc, url, isMainFrame) => {
+    if (!isMainFrame || code === -3 /* ERR_ABORTED */) return;
     win.loadURL(
       'data:text/html,' +
         encodeURIComponent(
           `<body style="background:#1A1A1A;color:#fff;font-family:sans-serif;display:flex;height:100vh;align-items:center;justify-content:center;text-align:center">
              <div><h2>🍰 CakeZake POS</h2>
-             <p>Could not reach the server at <code>${POS_URL}</code>.</p>
-             <p>Start the web app, then relaunch — or set <code>POS_URL</code>.</p></div></body>`,
+             <p>Waiting for the terminal server at <code>${POS_URL}</code>…</p>
+             <p style="opacity:.6">Reconnecting automatically. The till resumes as soon as the server is back.</p></div></body>`,
         ),
     );
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => win.loadURL(POS_URL), 4000);
+  });
+
+  // Clear the retry loop once a real page loads.
+  win.webContents.on('did-finish-load', () => {
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   });
 }
 

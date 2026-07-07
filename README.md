@@ -13,7 +13,7 @@ roastery, and a back-office admin — built as a pnpm monorepo.
 | -------------- | ------------------------------------------------------------- |
 | `apps/api`     | **NestJS 10 + Prisma 5 + PostgreSQL** — the backend & business logic |
 | `apps/web`     | **Next.js 14** (App Router + Tailwind) — POS terminal, KDS, waiter panel & back-office |
-| `apps/desktop` | **Electron** shell that runs the POS billing terminal natively (cashier till) |
+| `apps/desktop` | **Electron** shell that runs the POS billing terminal natively (cashier till, offline-resilient) |
 
 ## Feature modules
 
@@ -26,13 +26,18 @@ roastery, and a back-office admin — built as a pnpm monorepo.
 - **Waiter panel** — handheld order-taking; bills settle only at the main POS.
 - **Menu & modifiers**, **Inventory & recipes** (auto stock deduction on sale,
   stock-take, wastage, valuation), **Purchasing** (suppliers, PO → GRN, auto-PO).
-- **Employees & roles** (PIN clocking, permission matrix), **security**
-  (signed tokens, enforced void/refund, audit log).
+- **Employees & roles** (username/password login + quick-PIN overrides,
+  permission matrix), **security** (scrypt-hashed passwords, signed tokens,
+  enforced void/refund, audit log).
+- **Offline resilience** — the POS terminal keeps rendering from a local
+  read-through cache during network drops, shows a live ONLINE/OFFLINE badge,
+  and reconnects automatically. The Electron till auto-retries the server and
+  resumes the moment it is reachable again.
 - **CRM & loyalty** (tiers, RFM, points, credit), **Finance** (P&L, expenses,
   tax, AP aging, break-even), **Roastery** (green beans, roast shrinkage, cupping).
 - **Reports** (Z-report, hourly, menu-engineering BCG, payment/type splits).
-- **Multi-terminal**: each till has its own identity, cash drawer and
-  **session-based business day** (open at first login → count-out Z-report at day-end).
+- **Session-based business day** — the drawer opens at first login and runs
+  until day-end (count-out Z-report), independent of the wall clock.
 - **Admin control panel**: enable/disable modules, edit preferences, dark/light theme.
 
 ## Prerequisites
@@ -62,7 +67,10 @@ pnpm dev:web
 - POS terminal: **/pos** · Waiter: **/waiter** · Kitchen: **/kds**
 - API health: **http://localhost:4000/api/health**
 
-**Dev PINs** — Admin `1111` · Manager `2222` · Cashier `3333` · Barista `4444`.
+**Dev logins** (username / password) — `admin`/`admin123` · `gita`/`manager123`
+· `ram`/`cashier123` · `sita`/`barista123`. Each staff member also has a 4-digit
+**quick PIN** (Admin `1111` · Manager `2222` · Cashier `3333` · Barista `4444`)
+used only for on-screen manager overrides (approving a discount/void).
 
 ## Desktop billing app
 
@@ -91,7 +99,7 @@ POS_URL=http://localhost:3000 pnpm --filter desktop start   # KIOSK=1 for full-s
 
 ## Access & permissions
 
-The back-office requires a staff PIN sign-in; sections are gated by role
+The back-office requires a username/password sign-in; sections are gated by role
 permissions (reports/finance → *view reports*; inventory/purchasing → *manage
 inventory*; menu/staff/settings → *manage staff*). Sensitive actions (void,
 refund, discount) are enforced server-side and audited.

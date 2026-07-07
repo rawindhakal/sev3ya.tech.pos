@@ -27,6 +27,8 @@ const blank = {
   id: '',
   name: '',
   role: 'CASHIER' as StaffRole,
+  username: '',
+  password: '',
   pin: '',
   canVoid: false,
   canDiscount: false,
@@ -67,7 +69,7 @@ export default function EmployeesPage() {
     setModal(true);
   }
   function openEdit(e: Employee) {
-    setForm({ ...blank, ...e, pin: '' });
+    setForm({ ...blank, ...e, username: e.username ?? '', pin: '', password: '' });
     setModal(true);
   }
 
@@ -85,6 +87,8 @@ export default function EmployeesPage() {
         canManageStaff: form.canManageStaff,
       };
       if (form.pin) payload.pin = form.pin;
+      if (form.username.trim()) payload.username = form.username.trim();
+      if (form.password) payload.password = form.password;
       if (form.id) {
         await api.patch(`/employees/${form.id}`, payload);
       } else {
@@ -199,8 +203,18 @@ export default function EmployeesPage() {
               </select>
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Username</label>
+              <input className="input" autoComplete="off" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="e.g. ram" />
+            </div>
+            <div>
+              <label className="label">Password{form.id && ' — blank to keep'}</label>
+              <input className="input" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••" />
+            </div>
+          </div>
           <div>
-            <label className="label">PIN (4–6 digits){form.id && ' — leave blank to keep'}</label>
+            <label className="label">PIN — quick manager override (4–6 digits){form.id && ', leave blank to keep'}</label>
             <input className="input" inputMode="numeric" pattern="\d{4,6}" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} placeholder="••••" />
           </div>
           <div>

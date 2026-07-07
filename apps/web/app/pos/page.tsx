@@ -23,6 +23,8 @@ import Modal from '@/components/Modal';
 import Receipt, { ReceiptMode } from '@/components/Receipt';
 import DayReport, { DayReportData } from '@/components/DayReport';
 import PaymentPanel from '@/components/PaymentPanel';
+import ConnBadge from '@/components/ConnBadge';
+import { getStatus } from '@/lib/offline';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
 // an express settle path.
@@ -92,15 +94,12 @@ export default function PosPage() {
   const [waiters, setWaiters] = useState<Waiter[]>([]);
   const [now, setNow] = useState(new Date());
 
-  // Terminal session (PIN login — spec §2.1 Step 1)
+  // Terminal session (username + password login)
   const [emp, setEmp] = useState<Employee | null>(null);
-  const [pin, setPin] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [pinErr, setPinErr] = useState('');
 
-  // Physical terminal identity (multi-terminal — each till has its own day)
-  const [terminal, setTerminal] = useState<{ id: string; name: string } | null>(null);
-  const [terminals, setTerminals] = useState<{ id: string; name: string }[]>([]);
-  const [newTermName, setNewTermName] = useState('');
 
   // active order context
   const [mode, setMode] = useState<ModeKey | null>(null);
@@ -159,47 +158,29 @@ export default function PosPage() {
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
     api.get<Waiter[]>('/waiters').then(setWaiters).catch(() => {});
     const clock = setInterval(() => setNow(new Date()), 1000);
-    // Restore a previous terminal session + this device's till identity.
+    // Restore a previous terminal session.
     try {
       const saved = localStorage.getItem('cakezake-emp');
       if (saved) setEmp(JSON.parse(saved));
-      const t = localStorage.getItem('cakezake-terminal');
-      if (t) setTerminal(JSON.parse(t));
     } catch {
       /* ignore */
     }
-    api.get<{ id: string; name: string }[]>('/terminals').then(setTerminals).catch(() => {});
     return () => clearInterval(clock);
   }, []);
 
-  function pickTerminal(t: { id: string; name: string }) {
-    setTerminal(t);
-    localStorage.setItem('cakezake-terminal', JSON.stringify(t));
-    checkDrawer(t.id);
-  }
-  async function createTerminal() {
-    if (!newTermName.trim()) return;
-    try {
-      const t = await api.post<{ id: string; name: string }>('/terminals', { name: newTermName.trim() });
-      setNewTermName('');
-      pickTerminal(t);
-    } catch (e) {
-      alert((e as Error).message);
-    }
-  }
-
   async function login() {
-    if (!/^\d{4,6}$/.test(pin)) return setPinErr('Enter your 4–6 digit PIN');
+    if (!username.trim() || !password) return setPinErr('Enter your username and password');
     try {
-      const e = await api.post<Employee & { token?: string }>('/employees/login', { pin });
+      const e = await api.post<Employee & { token?: string }>('/employees/login', { username: username.trim(), password });
       setEmp(e);
       localStorage.setItem('cakezake-emp', JSON.stringify(e));
       if (e.token) localStorage.setItem('cakezake-token', e.token);
-      setPin('');
+      setUsername('');
+      setPassword('');
       setPinErr('');
     } catch {
-      setPinErr('Invalid PIN');
-      setPin('');
+      setPinErr('Invalid username or password');
+      setPassword('');
     }
   }
   function lock() {
@@ -209,25 +190,24 @@ export default function PosPage() {
     resetTerminal();
   }
 
-  // ── Cash drawer / business day (per terminal) ──────
-  async function checkDrawer(tid?: string) {
-    const terminalId = tid ?? terminal?.id;
+  // ── Cash drawer / business day ─────────────────────
+  async function checkDrawer() {
     try {
-      const r = await api.get<{ open: boolean; session?: { id: string; openingFloatCents: number }; expectedCents?: number; cashSalesCents?: number; payIn?: number; payOut?: number }>(`/cash-drawer/current${terminalId ? `?terminalId=${terminalId}` : ''}`);
+      const r = await api.get<{ open: boolean; session?: { id: string; openingFloatCents: number }; expectedCents?: number; cashSalesCents?: number; payIn?: number; payOut?: number }>('/cash-drawer/current');
       setDrawerOpen(r.open);
       setDrawerInfo(r);
     } catch {
       setDrawerOpen(true); // don't block the terminal on a fetch error
     }
   }
-  // At first login (with a terminal chosen), require the drawer to be open.
+  // At first login, require the drawer to be open to start the day.
   useEffect(() => {
-    if (emp && terminal) checkDrawer(terminal.id);
-  }, [emp, terminal]);
+    if (emp) checkDrawer();
+  }, [emp]);
 
   async function openDrawer() {
     try {
-      await api.post('/cash-drawer/open', { openingFloatCents: dollarsToCents(parseFloat(openFloat || '0')), openedBy: emp?.name, terminalId: terminal?.id });
+      await api.post('/cash-drawer/open', { openingFloatCents: dollarsToCents(parseFloat(openFloat || '0')), openedBy: emp?.name });
       setOpenFloat('');
       checkDrawer();
     } catch (e) {
@@ -239,7 +219,7 @@ export default function PosPage() {
     const sessionId = drawerInfo?.session?.id;
     setBusy(true);
     try {
-      await api.post('/cash-drawer/close', { countedCents: dollarsToCents(parseFloat(countRs || '0')), closedBy: emp?.name, terminalId: terminal?.id });
+      await api.post('/cash-drawer/close', { countedCents: dollarsToCents(parseFloat(countRs || '0')), closedBy: emp?.name });
       const rep = await api.get<DayReportData>(`/cash-drawer/report${sessionId ? `?sessionId=${sessionId}` : ''}`);
       setDayEndOpen(false);
       setCountRs('');
@@ -352,7 +332,6 @@ export default function PosPage() {
         guestCount,
         customerName: customer?.name || undefined,
         customerPhone: customer?.phone || undefined,
-        terminalId: terminal?.id,
       });
       setOrder(created);
       setTable(tbl);
@@ -619,8 +598,53 @@ export default function PosPage() {
     return res.order;
   }
 
+  // Offline KOT — fire the kitchen/bar ticket without the server. Prints the
+  // pending lines locally (station looked up from the cached menu for new lines),
+  // marks them fired, and queues the cart-save + KOT-fire to replay on reconnect.
+  // Only for an order that already exists on the server (created while online).
+  async function offlineKot(print: boolean) {
+    if (!order?.id) return flash('Cannot start a new order while offline');
+    const toFire = cart.filter((l) => !isFired(l));
+    if (!toFire.length) return flash('Nothing new to fire');
+    const stationFor = (l: CartLine) => l.station || items.find((m) => m.id === l.menuItemId)?.station || 'BILLING';
+
+    // Queue the persist + fire (FIFO: cart save first, then KOT), idempotent.
+    const cartBody = {
+      items: cart.map((l) => ({
+        id: l.id,
+        ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : { name: l.name, unitPriceCents: l.unitPriceCents }),
+        quantity: l.quantity,
+        discountCents: l.discountCents || 0,
+        modifiers: l.modifiers,
+        notes: l.notes,
+      })),
+      discountCents: totals.discountCents + totals.redeemCents,
+      waiterId: waiterId || undefined,
+      guestCount,
+    };
+    try { await api.putQueued(`/orders/${order.id}/cart`, cartBody); } catch { /* queued */ }
+    try { await api.postQueued(`/orders/${order.id}/kot`, {}); } catch { /* queued */ }
+
+    // Print locally, split by station.
+    if (print) {
+      const mk = (l: CartLine): OrderItem => ({ id: l.id ?? l.key, nameSnapshot: l.name, quantity: l.quantity, station: stationFor(l), modifiers: l.modifiers, notes: l.notes } as unknown as OrderItem);
+      const kitchen = toFire.filter((l) => stationFor(l) === 'KITCHEN').map(mk);
+      const bar = toFire.filter((l) => stationFor(l) === 'BAR').map(mk);
+      if (kitchen.length) await printTicket(order, 'KOT', kitchen);
+      if (bar.length) await printTicket(order, 'BOT', bar);
+    }
+    // Optimistically lock the fired lines.
+    setCart((prev) => prev.map((l) => (isFired(l) ? l : { ...l, kotStatus: 'FIRED', station: stationFor(l) })));
+    flash('KOT printed offline — will sync when back online');
+  }
+
   async function runAction(kind: 'draft' | 'kot' | 'kot_print' | 'bill' | 'bill_print' | 'pay') {
     if (cart.length === 0) return flash('Add at least one item first');
+    // Offline: KOT still works locally; billing/payment need the server.
+    if (getStatus() === 'offline') {
+      if (kind === 'kot' || kind === 'kot_print') { setBusy(true); try { await offlineKot(kind === 'kot_print'); } finally { setBusy(false); } return; }
+      return flash('Offline — KOT works, but billing & payment need the connection');
+    }
     setBusy(true);
     try {
       let current = await persistCart();
@@ -635,7 +659,12 @@ export default function PosPage() {
         case 'pay': await bill(); setOrder(current); setPayOpen(true); break;
       }
     } catch (e) {
-      alert((e as Error).message);
+      // A drop mid-action: fall back to offline KOT rather than losing the ticket.
+      if ((kind === 'kot' || kind === 'kot_print') && getStatus() === 'offline') {
+        await offlineKot(kind === 'kot_print');
+      } else {
+        alert((e as Error).message);
+      }
     } finally {
       setBusy(false);
     }
@@ -798,53 +827,37 @@ export default function PosPage() {
 
   const custLabel = order?.customerName ? `${order.customerName}${order.customerPhone ? ` · ${order.customerPhone}` : ''}` : null;
 
-  // ── PIN login gate (spec §2.1 Step 1) ──────────────
+  // ── Username + password login gate ──────────────
   if (!emp) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[#1A1A1A] text-white">
-        <div className="w-72 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
+        <div className="w-80 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
           <div className="mb-1 text-3xl">🍰</div>
           <div className="mb-1 font-bold tracking-wide">POS TERMINAL</div>
-          <p className="mb-4 text-xs text-white/40">Enter your PIN to sign in</p>
-          <div className="mb-4 flex justify-center gap-2">
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <span key={i} className={`h-3 w-3 rounded-full ${i < pin.length ? 'bg-[#2ECC71]' : 'bg-white/15'}`} />
-            ))}
-          </div>
+          <p className="mb-4 text-xs text-white/40">Sign in with your username &amp; password</p>
           {pinErr && <p className="mb-3 text-xs text-[#E74C3C]">{pinErr}</p>}
-          <div className="grid grid-cols-3 gap-2">
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => (
-              <button key={n} onClick={() => setPin((p) => (p.length < 6 ? p + n : p))} className="rounded-lg bg-white/5 py-3 text-lg font-semibold hover:bg-white/10">{n}</button>
-            ))}
-            <button onClick={() => setPin((p) => p.slice(0, -1))} className="rounded-lg bg-white/5 py-3 text-sm hover:bg-white/10">⌫</button>
-            <button onClick={() => setPin((p) => (p.length < 6 ? p + '0' : p))} className="rounded-lg bg-white/5 py-3 text-lg font-semibold hover:bg-white/10">0</button>
-            <button onClick={login} className="rounded-lg bg-[#2ECC71] py-3 text-sm font-bold text-black hover:bg-[#28b463]">Enter</button>
+          <div className="space-y-2 text-left">
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && login()}
+              autoFocus
+              autoComplete="username"
+              placeholder="Username"
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-[#2ECC71]/60"
+            />
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && login()}
+              type="password"
+              autoComplete="current-password"
+              placeholder="Password"
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-[#2ECC71]/60"
+            />
           </div>
-          <p className="mt-4 text-[10px] text-white/25">Dev PINs — Admin 1111 · Manager 2222 · Cashier 3333</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Terminal selection (which physical till is this device?) ──
-  if (!terminal) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center bg-[#1A1A1A] text-white">
-        <div className="w-80 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
-          <div className="mb-1 text-3xl">🖥️</div>
-          <div className="mb-1 font-bold tracking-wide">SELECT TERMINAL</div>
-          <p className="mb-4 text-xs text-white/40">Which till is this device? Each terminal runs its own cash drawer &amp; business day.</p>
-          {terminals.length > 0 && (
-            <div className="mb-4 space-y-2">
-              {terminals.map((t) => (
-                <button key={t.id} onClick={() => pickTerminal(t)} className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-left text-sm font-medium hover:border-[#2ECC71]/50">🖥️ {t.name}</button>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <input value={newTermName} onChange={(e) => setNewTermName(e.target.value)} placeholder="New terminal name" className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/25" />
-            <button onClick={createTerminal} className="rounded-lg bg-[#2ECC71] px-3 py-2 text-sm font-bold text-black">Add</button>
-          </div>
+          <button onClick={login} className="mt-3 w-full rounded-lg bg-[#2ECC71] py-2.5 text-sm font-bold text-black hover:bg-[#28b463]">Sign in</button>
+          <p className="mt-4 text-[10px] text-white/25">Dev — admin / admin123 · ram / cashier123</p>
         </div>
       </div>
     );
@@ -892,7 +905,7 @@ export default function PosPage() {
             ‹ Back
           </button>
           <span className="text-lg">🍰</span>
-          <span className="font-bold tracking-wide">POS · {terminal.name}</span>
+          <span className="font-bold tracking-wide">POS TERMINAL</span>
           <span className="text-white/40">·</span>
           <span className="text-white/60">{emp.name} ({emp.role})</span>
           <button onClick={() => { checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="rounded-md bg-[#E74C3C]/15 px-2 py-1 text-[11px] font-semibold text-[#E74C3C] hover:bg-[#E74C3C]/25" title="Close the business day">🌙 Day End</button>
@@ -911,9 +924,7 @@ export default function PosPage() {
               </button>
             ))}
           </nav>
-          <span className="flex items-center gap-1.5 text-[#2ECC71]">
-            <span className="h-2 w-2 rounded-full bg-[#2ECC71]" /> ONLINE
-          </span>
+          <ConnBadge />
           <span className="text-white/60 tabular-nums">
             {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>

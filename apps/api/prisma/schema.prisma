@@ -284,11 +284,13 @@ enum StaffRole {
 }
 
 model Employee {
-  id       String    @id @default(cuid())
-  name     String
-  role     StaffRole @default(CASHIER)
-  pin      String    // terminal clock-in / login PIN (dev: plaintext)
-  isActive Boolean   @default(true)
+  id           String    @id @default(cuid())
+  name         String
+  role         StaffRole @default(CASHIER)
+  username     String?   @unique // username + password login
+  passwordHash String?   // scrypt salt:hash
+  pin          String    // quick PIN for manager overrides / clock-in
+  isActive     Boolean   @default(true)
 
   // Granular permission matrix (#129, spec §3.1 Step 3).
   canVoid            Boolean @default(false)
@@ -688,4 +690,19 @@ model StockMovement {
 
   @@index([ingredientId])
   @@map("stock_movements")
+}
+
+// Idempotency store — lets the offline outbox safely replay a queued mutation
+// without creating duplicates. The client sends a stable Idempotency-Key header;
+// the first execution's response is cached and returned verbatim on any replay.
+model IdempotencyKey {
+  key        String   @id
+  method     String
+  path       String
+  statusCode Int
+  response   Json
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("idempotency_keys")
 }

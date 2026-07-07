@@ -93,6 +93,7 @@ export interface Employee {
   id: string;
   name: string;
   role: StaffRole;
+  username?: string | null;
   isActive: boolean;
   canVoid: boolean;
   canDiscount: boolean;
