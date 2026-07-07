@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import type { Features } from '@/lib/types';
+import type { Employee, Features } from '@/lib/types';
+import { ROUTE_PERM } from './AppShell';
 import ThemeToggle from './ThemeToggle';
 
-// `feature` maps a nav item to a toggle in admin settings; core items omit it.
+// `feature` maps a nav item to an admin toggle; permission comes from ROUTE_PERM.
 const NAV: { href: string; label: string; icon: string; feature?: keyof Features }[] = [
   { href: '/', label: 'Dashboard', icon: '📊' },
   { href: '/pos', label: 'New Order (POS)', icon: '🛒' },
@@ -28,15 +29,20 @@ const NAV: { href: string; label: string; icon: string; feature?: keyof Features
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLogout?: () => void }) {
   const pathname = usePathname();
   const [features, setFeatures] = useState<Features | null>(null);
 
   useEffect(() => {
     api.get<{ features?: Features }>('/settings').then((s) => setFeatures(s.features ?? null)).catch(() => {});
-  }, [pathname]); // re-read after visiting settings
+  }, [pathname]);
 
-  const visible = NAV.filter((i) => !i.feature || !features || features[i.feature]);
+  const visible = NAV.filter((i) => {
+    if (i.feature && features && !features[i.feature]) return false;
+    const perm = ROUTE_PERM[i.href];
+    if (perm && emp && !emp[perm]) return false; // hide sections the role can't use
+    return true;
+  });
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
@@ -67,6 +73,12 @@ export default function Sidebar() {
       </nav>
 
       <div className="space-y-2 border-t border-slate-100 px-4 py-4 dark:border-slate-700">
+        {emp && (
+          <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-700">
+            <span className="text-slate-600 dark:text-slate-200">👤 {emp.name} · {emp.role}</span>
+            <button onClick={onLogout} className="font-medium text-red-500 hover:underline">Sign out</button>
+          </div>
+        )}
         <ThemeToggle />
         <div className="text-center text-xs text-slate-400">v0.1 · sev3ya.tech</div>
       </div>
