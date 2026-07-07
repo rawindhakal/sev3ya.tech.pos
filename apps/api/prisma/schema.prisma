@@ -223,6 +223,9 @@ model Order {
   // Loyalty points redeemed against this order (#111).
   redeemedPoints Int @default(0)
 
+  // Which terminal/till rang this order (multi-terminal attribution).
+  terminalId String?
+
   // Void / refund audit trail (matrix #10).
   voidReason   String?
   refundReason String?
@@ -518,8 +521,19 @@ enum CashMovementType {
   PAY_OUT
 }
 
+// A physical POS terminal / till (multi-terminal support).
+model Terminal {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("terminals")
+}
+
 model CashDrawerSession {
   id                String    @id @default(cuid())
+  terminalId        String?   // which till this session belongs to
   openedAt          DateTime  @default(now())
   openingFloatCents Int       @default(0)
   openedBy          String?

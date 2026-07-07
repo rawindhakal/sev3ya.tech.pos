@@ -46,6 +46,7 @@ export class CreateOrderDto {
   @IsOptional() @IsInt() @Min(1) guestCount?: number;
   @IsOptional() @IsString() customerName?: string;
   @IsOptional() @IsString() customerPhone?: string;
+  @IsOptional() @IsString() terminalId?: string;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CartLineDto)
   items?: CartLineDto[];
 }

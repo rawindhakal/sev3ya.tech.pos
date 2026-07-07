@@ -10,20 +10,22 @@ import { PrismaService } from '../prisma/prisma.service';
 export class CashDrawerService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private openSession() {
+  // Each terminal has its own open session (independent business day).
+  private openSession(terminalId?: string) {
     return this.prisma.cashDrawerSession.findFirst({
-      where: { closedAt: null },
+      where: { closedAt: null, ...(terminalId ? { terminalId } : {}) },
       include: { movements: { orderBy: { createdAt: 'desc' } } },
     });
   }
 
   // Expected cash = opening float + cash sales during the session
-  //                 + pay-ins − pay-outs.
+  //                 + pay-ins − pay-outs. Cash sales are scoped to this terminal.
   private async computeExpected(session: {
     id: string;
     openedAt: Date;
     openingFloatCents: number;
     closedAt: Date | null;
+    terminalId: string | null;
   }) {
     const until = session.closedAt ?? new Date();
     const cashSales = await this.prisma.payment.aggregate({
@@ -31,6 +33,7 @@ export class CashDrawerService {
       where: {
         method: 'CASH',
         createdAt: { gte: session.openedAt, lte: until },
+        ...(session.terminalId ? { order: { terminalId: session.terminalId } } : {}),
       },
     });
     const movements = await this.prisma.cashMovement.groupBy({
@@ -49,19 +52,20 @@ export class CashDrawerService {
     return { cashSalesCents, payIn, payOut, expectedCents };
   }
 
-  async current() {
-    const session = await this.openSession();
+  async current(terminalId?: string) {
+    const session = await this.openSession(terminalId);
     if (!session) return { open: false as const, session: null };
     const breakdown = await this.computeExpected(session);
     return { open: true as const, session, ...breakdown };
   }
 
-  async open(dto: { openingFloatCents: number; openedBy?: string }) {
-    const existing = await this.openSession();
+  async open(dto: { openingFloatCents: number; openedBy?: string; terminalId?: string }) {
+    const existing = await this.openSession(dto.terminalId);
     if (existing)
-      throw new BadRequestException('A cash drawer session is already open');
+      throw new BadRequestException('A cash drawer session is already open for this terminal');
     return this.prisma.cashDrawerSession.create({
       data: {
+        terminalId: dto.terminalId ?? null,
         openingFloatCents: dto.openingFloatCents,
         openedBy: dto.openedBy,
         movements: {
@@ -80,17 +84,18 @@ export class CashDrawerService {
     type: 'PAY_IN' | 'PAY_OUT';
     amountCents: number;
     reason?: string;
+    terminalId?: string;
   }) {
-    const session = await this.openSession();
+    const session = await this.openSession(dto.terminalId);
     if (!session) throw new BadRequestException('No open cash drawer session');
     await this.prisma.cashMovement.create({
       data: { sessionId: session.id, type: dto.type, amountCents: dto.amountCents, reason: dto.reason },
     });
-    return this.current();
+    return this.current(dto.terminalId);
   }
 
-  async close(dto: { countedCents: number; closedBy?: string; notes?: string }) {
-    const session = await this.openSession();
+  async close(dto: { countedCents: number; closedBy?: string; notes?: string; terminalId?: string }) {
+    const session = await this.openSession(dto.terminalId);
     if (!session) throw new BadRequestException('No open cash drawer session');
     const { expectedCents } = await this.computeExpected(session);
     return this.prisma.cashDrawerSession.update({
@@ -126,14 +131,16 @@ export class CashDrawerService {
 
   // Daily Z-report for a drawer session's window (a "business day" =
   // terminal-open → close, not clock midnight).
-  async report(sessionId?: string) {
+  async report(sessionId?: string, terminalId?: string) {
     const session = sessionId
       ? await this.findOne(sessionId)
-      : await this.openSession();
+      : await this.openSession(terminalId);
     if (!session) throw new NotFoundException('No cash drawer session');
     const start = session.openedAt;
     const end = session.closedAt ?? new Date();
-    const paidWhere = { status: 'PAID' as const, paidAt: { gte: start, lte: end } };
+    // Scope the report to this terminal's own sales.
+    const term = session.terminalId ? { terminalId: session.terminalId } : {};
+    const paidWhere = { status: 'PAID' as const, paidAt: { gte: start, lte: end }, ...term };
 
     const [sales, byPayment, byType] = await Promise.all([
       this.prisma.order.aggregate({
@@ -145,7 +152,7 @@ export class CashDrawerService {
         by: ['method'],
         _sum: { amountCents: true },
         _count: true,
-        where: { createdAt: { gte: start, lte: end } },
+        where: { createdAt: { gte: start, lte: end }, ...(session.terminalId ? { order: { terminalId: session.terminalId } } : {}) },
       }),
       this.prisma.order.groupBy({
         by: ['type'],

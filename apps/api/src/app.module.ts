@@ -20,6 +20,7 @@ import { AuditModule } from './audit/audit.module';
 import { CrmModule } from './crm/crm.module';
 import { FinanceModule } from './finance/finance.module';
 import { RoasteryModule } from './roastery/roastery.module';
+import { TerminalsModule } from './terminals/terminals.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { RoasteryModule } from './roastery/roastery.module';
     CrmModule,
     FinanceModule,
     RoasteryModule,
+    TerminalsModule,
   ],
   controllers: [HealthController],
 })

@@ -115,6 +115,7 @@ export class OrdersService {
           guestCount: dto.guestCount ?? 1,
           customerName: dto.customerName ?? null,
           customerPhone: dto.customerPhone ?? null,
+          terminalId: dto.terminalId ?? null,
           seatedAt: isDineIn ? new Date() : null,
           subtotalCents: totals.subtotalCents,
           serviceChargeCents: totals.serviceChargeCents,

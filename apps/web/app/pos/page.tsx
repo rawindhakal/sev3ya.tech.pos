@@ -95,6 +95,11 @@ export default function PosPage() {
   const [pin, setPin] = useState('');
   const [pinErr, setPinErr] = useState('');
 
+  // Physical terminal identity (multi-terminal — each till has its own day)
+  const [terminal, setTerminal] = useState<{ id: string; name: string } | null>(null);
+  const [terminals, setTerminals] = useState<{ id: string; name: string }[]>([]);
+  const [newTermName, setNewTermName] = useState('');
+
   // active order context
   const [mode, setMode] = useState<ModeKey | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
@@ -152,15 +157,34 @@ export default function PosPage() {
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
     api.get<Waiter[]>('/waiters').then(setWaiters).catch(() => {});
     const clock = setInterval(() => setNow(new Date()), 1000);
-    // Restore a previous terminal session.
+    // Restore a previous terminal session + this device's till identity.
     try {
       const saved = localStorage.getItem('cakezake-emp');
       if (saved) setEmp(JSON.parse(saved));
+      const t = localStorage.getItem('cakezake-terminal');
+      if (t) setTerminal(JSON.parse(t));
     } catch {
       /* ignore */
     }
+    api.get<{ id: string; name: string }[]>('/terminals').then(setTerminals).catch(() => {});
     return () => clearInterval(clock);
   }, []);
+
+  function pickTerminal(t: { id: string; name: string }) {
+    setTerminal(t);
+    localStorage.setItem('cakezake-terminal', JSON.stringify(t));
+    checkDrawer(t.id);
+  }
+  async function createTerminal() {
+    if (!newTermName.trim()) return;
+    try {
+      const t = await api.post<{ id: string; name: string }>('/terminals', { name: newTermName.trim() });
+      setNewTermName('');
+      pickTerminal(t);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
 
   async function login() {
     if (!/^\d{4,6}$/.test(pin)) return setPinErr('Enter your 4–6 digit PIN');
@@ -183,24 +207,25 @@ export default function PosPage() {
     resetTerminal();
   }
 
-  // ── Cash drawer / business day ─────────────────────
-  async function checkDrawer() {
+  // ── Cash drawer / business day (per terminal) ──────
+  async function checkDrawer(tid?: string) {
+    const terminalId = tid ?? terminal?.id;
     try {
-      const r = await api.get<{ open: boolean; session?: { id: string; openingFloatCents: number }; expectedCents?: number; cashSalesCents?: number; payIn?: number; payOut?: number }>('/cash-drawer/current');
+      const r = await api.get<{ open: boolean; session?: { id: string; openingFloatCents: number }; expectedCents?: number; cashSalesCents?: number; payIn?: number; payOut?: number }>(`/cash-drawer/current${terminalId ? `?terminalId=${terminalId}` : ''}`);
       setDrawerOpen(r.open);
       setDrawerInfo(r);
     } catch {
       setDrawerOpen(true); // don't block the terminal on a fetch error
     }
   }
-  // At first login, if no drawer session is open, require opening the drawer.
+  // At first login (with a terminal chosen), require the drawer to be open.
   useEffect(() => {
-    if (emp) checkDrawer();
-  }, [emp]);
+    if (emp && terminal) checkDrawer(terminal.id);
+  }, [emp, terminal]);
 
   async function openDrawer() {
     try {
-      await api.post('/cash-drawer/open', { openingFloatCents: dollarsToCents(parseFloat(openFloat || '0')), openedBy: emp?.name });
+      await api.post('/cash-drawer/open', { openingFloatCents: dollarsToCents(parseFloat(openFloat || '0')), openedBy: emp?.name, terminalId: terminal?.id });
       setOpenFloat('');
       checkDrawer();
     } catch (e) {
@@ -212,7 +237,7 @@ export default function PosPage() {
     const sessionId = drawerInfo?.session?.id;
     setBusy(true);
     try {
-      await api.post('/cash-drawer/close', { countedCents: dollarsToCents(parseFloat(countRs || '0')), closedBy: emp?.name });
+      await api.post('/cash-drawer/close', { countedCents: dollarsToCents(parseFloat(countRs || '0')), closedBy: emp?.name, terminalId: terminal?.id });
       const rep = await api.get<DayReportData>(`/cash-drawer/report${sessionId ? `?sessionId=${sessionId}` : ''}`);
       setDayEndOpen(false);
       setCountRs('');
@@ -325,6 +350,7 @@ export default function PosPage() {
         guestCount,
         customerName: customer?.name || undefined,
         customerPhone: customer?.phone || undefined,
+        terminalId: terminal?.id,
       });
       setOrder(created);
       setTable(tbl);
@@ -780,6 +806,30 @@ export default function PosPage() {
     );
   }
 
+  // ── Terminal selection (which physical till is this device?) ──
+  if (!terminal) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-[#1A1A1A] text-white">
+        <div className="w-80 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
+          <div className="mb-1 text-3xl">🖥️</div>
+          <div className="mb-1 font-bold tracking-wide">SELECT TERMINAL</div>
+          <p className="mb-4 text-xs text-white/40">Which till is this device? Each terminal runs its own cash drawer &amp; business day.</p>
+          {terminals.length > 0 && (
+            <div className="mb-4 space-y-2">
+              {terminals.map((t) => (
+                <button key={t.id} onClick={() => pickTerminal(t)} className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-left text-sm font-medium hover:border-[#2ECC71]/50">🖥️ {t.name}</button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input value={newTermName} onChange={(e) => setNewTermName(e.target.value)} placeholder="New terminal name" className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/25" />
+            <button onClick={createTerminal} className="rounded-lg bg-[#2ECC71] px-3 py-2 text-sm font-bold text-black">Add</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Open-drawer gate (cash drawer at first login) ──
   if (drawerOpen === false) {
     return (
@@ -822,7 +872,7 @@ export default function PosPage() {
             ‹ Back
           </button>
           <span className="text-lg">🍰</span>
-          <span className="font-bold tracking-wide">POS TERMINAL</span>
+          <span className="font-bold tracking-wide">POS · {terminal.name}</span>
           <span className="text-white/40">·</span>
           <span className="text-white/60">{emp.name} ({emp.role})</span>
           <button onClick={() => { checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="rounded-md bg-[#E74C3C]/15 px-2 py-1 text-[11px] font-semibold text-[#E74C3C] hover:bg-[#E74C3C]/25" title="Close the business day">🌙 Day End</button>
