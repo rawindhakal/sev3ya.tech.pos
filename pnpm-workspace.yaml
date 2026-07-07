@@ -6,3 +6,5 @@ allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
   prisma: true
+  electron: true
+  esbuild: true
