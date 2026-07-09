@@ -11,7 +11,6 @@ const FEATURES: { key: keyof Features; col: string; label: string }[] = [
   { key: 'inventory', col: 'featInventory', label: 'Inventory & recipes' },
   { key: 'purchasing', col: 'featPurchasing', label: 'Purchasing & suppliers' },
   { key: 'roastery', col: 'featRoastery', label: 'Roastery' },
-  { key: 'modifiers', col: 'featModifiers', label: 'Modifiers / item options' },
   { key: 'crm', col: 'featCrm', label: 'Customers (CRM & loyalty)' },
   { key: 'finance', col: 'featFinance', label: 'Finance & P&L' },
   { key: 'kds', col: 'featKds', label: 'Kitchen display (KDS)' },

@@ -233,11 +233,6 @@ export default function MenuPage() {
               </p>
               <div className="mb-3 flex flex-wrap items-center gap-1.5">
                 <span className="badge bg-slate-100 text-slate-500">{item.category?.name}</span>
-                {(item.modifierGroups ?? []).map((g) => (
-                  <span key={g.id} className="badge bg-brand-50 text-brand-600">
-                    {g.name}
-                  </span>
-                ))}
               </div>
               <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
                 <button

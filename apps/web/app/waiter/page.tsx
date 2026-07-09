@@ -5,7 +5,7 @@
 // settled at the main POS counter.
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
-import type { Category, Employee, MenuItem, MenuItemVariant, ModifierGroup, Order, TableArea } from '@/lib/types';
+import type { Category, Employee, MenuItem, MenuItemVariant, Order, TableArea } from '@/lib/types';
 import { priceForType } from '@/lib/types';
 import Modal from '@/components/Modal';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
@@ -40,7 +40,7 @@ export default function WaiterPage() {
   const [billOpen, setBillOpen] = useState(false);
   const [custOpen, setCustOpen] = useState(false);
   const [cust, setCust] = useState({ name: '', phone: '' });
-  const [picker, setPicker] = useState<{ item: MenuItem; groups: ModifierGroup[]; variants: MenuItemVariant[] } | null>(null);
+  const [picker, setPicker] = useState<{ item: MenuItem; variants: MenuItemVariant[] } | null>(null);
   const [pickSel, setPickSel] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -97,9 +97,9 @@ export default function WaiterPage() {
   }
 
   async function clickItem(item: MenuItem) {
-    if (item.variants?.length || item.modifierGroups?.length) {
-      const detail = await api.get<{ modifierGroups: ModifierGroup[]; variants: MenuItemVariant[] }>(`/menu-items/${item.id}`);
-      setPickSel({}); setPicker({ item, groups: detail.modifierGroups ?? [], variants: detail.variants ?? [] });
+    if (item.variants?.length) {
+      const detail = await api.get<{ variants: MenuItemVariant[] }>(`/menu-items/${item.id}`);
+      setPickSel({}); setPicker({ item, variants: detail.variants ?? [] });
     } else addLine(item, []);
   }
   function addLine(item: MenuItem, mods: { name: string; priceCents: number }[], variant?: MenuItemVariant) {
@@ -115,9 +115,7 @@ export default function WaiterPage() {
     if (!picker) return;
     let variant: MenuItemVariant | undefined;
     if (picker.variants.length) { variant = picker.variants.find((v) => v.id === pickSel['__variant']?.[0]); if (!variant) return flash('Choose a portion'); }
-    const mods: { name: string; priceCents: number }[] = [];
-    for (const g of picker.groups) for (const mid of pickSel[g.id] ?? []) { const m = g.modifiers.find((x) => x.id === mid); if (m) mods.push({ name: m.name, priceCents: m.priceCents }); }
-    addLine(picker.item, mods, variant); setPicker(null);
+    addLine(picker.item, [], variant); setPicker(null);
   }
   function qty(key: string, d: number) { setCart((p) => p.map((l) => (l.key === key && !fired(l) ? { ...l, quantity: l.quantity + d } : l)).filter((l) => l.quantity > 0)); }
   function note(key: string, v: string) { setCart((p) => p.map((l) => (l.key === key ? { ...l, notes: v } : l))); }
@@ -284,7 +282,7 @@ export default function WaiterPage() {
         <div className="mt-3 rounded-lg bg-amber-50 p-2 text-center text-xs text-amber-700">Send the guest to the counter to settle this bill.</div>
       </Modal>
 
-      {/* modifier picker */}
+      {/* portion picker */}
       <Modal open={!!picker} title={picker ? picker.item.name : ''} onClose={() => setPicker(null)}>
         {picker && <div className="space-y-4">
           {picker.variants.length > 0 && (
@@ -300,25 +298,6 @@ export default function WaiterPage() {
               </div>
             </div>
           )}
-          {picker.groups.map((g) => { const single = g.maxSelect === 1; const sel = pickSel[g.id] ?? []; return (
-            <div key={g.id}>
-              <div className="label">{g.name} <span className="text-slate-400">(select {g.minSelect}–{g.maxSelect})</span></div>
-              <div className="space-y-1.5">
-                {g.modifiers.map((m) => (
-                  <label key={m.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                    <input type={single ? 'radio' : 'checkbox'} name={g.id} checked={sel.includes(m.id)} onChange={() => setPickSel((prev) => {
-                      const cur = prev[g.id] ?? [];
-                      if (single) return { ...prev, [g.id]: [m.id] };
-                      if (cur.includes(m.id)) return { ...prev, [g.id]: cur.filter((x) => x !== m.id) };
-                      if (cur.length >= g.maxSelect) return prev;
-                      return { ...prev, [g.id]: [...cur, m.id] };
-                    })} />
-                    <span className="flex-1">{m.name}</span>{m.priceCents > 0 && <span className="text-brand-600">+{formatMoney(m.priceCents)}</span>}
-                  </label>
-                ))}
-              </div>
-            </div>
-          ); })}
           <div className="flex justify-end gap-2"><button className="btn-ghost" onClick={() => setPicker(null)}>Cancel</button><button className="btn-primary" onClick={confirmPicker}>Add</button></div>
         </div>}
       </Modal>

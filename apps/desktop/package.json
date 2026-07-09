@@ -2,7 +2,7 @@
   "name": "desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "CakeZake POS — cashier billing desktop app (Electron)",
+  "description": "s3vyaPOS — cashier billing desktop app (Electron)",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -18,8 +18,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "tech.sev3ya.cakezake.pos",
-    "productName": "CakeZake POS",
+    "appId": "tech.s3vya.pos",
+    "productName": "s3vyaPOS",
     "files": ["main.js", "preload.js", "package.json"],
     "directories": { "output": "release" },
     "mac": { "target": "dmg", "category": "public.app-category.business" },

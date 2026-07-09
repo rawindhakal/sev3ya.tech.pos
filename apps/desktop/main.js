@@ -1,16 +1,16 @@
 'use strict';
 
-// CakeZake POS — desktop billing shell (Electron).
+// s3vyaPOS — desktop billing shell (Electron).
 // Loads the web POS terminal (cashier billing) in a native window. It is the
 // SAME app as the web /pos route, so it has the exact same features; the
-// cashier's PIN login scopes what they can do (no admin/back-office chrome).
+// cashier's login scopes what they can do (no admin/back-office chrome).
 
 const { app, BrowserWindow, Menu, shell } = require('electron');
 const path = require('path');
 
-// Where the running web app lives. Point this at your deployment (or leave the
-// default for a local dev server). Always opens straight to the POS terminal.
-const BASE_URL = (process.env.POS_URL || 'http://localhost:3000').replace(/\/$/, '');
+// Where the running web app lives. Defaults to the live production server;
+// override with POS_URL for local dev. Always opens straight to the POS terminal.
+const BASE_URL = (process.env.POS_URL || 'https://s3vya.tech').replace(/\/$/, '');
 const POS_URL = `${BASE_URL}/pos`;
 const KIOSK = process.env.KIOSK === '1';
 
@@ -21,7 +21,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     backgroundColor: '#1A1A1A',
-    title: 'CakeZake POS — Billing',
+    title: 's3vyaPOS — Billing',
     autoHideMenuBar: true,
     kiosk: KIOSK,
     webPreferences: {
@@ -52,7 +52,7 @@ function createWindow() {
       'data:text/html,' +
         encodeURIComponent(
           `<body style="background:#1A1A1A;color:#fff;font-family:sans-serif;display:flex;height:100vh;align-items:center;justify-content:center;text-align:center">
-             <div><h2>🍰 CakeZake POS</h2>
+             <div><h2>🍰 s3vyaPOS</h2>
              <p>Waiting for the terminal server at <code>${POS_URL}</code>…</p>
              <p style="opacity:.6">Reconnecting automatically. The till resumes as soon as the server is back.</p></div></body>`,
         ),

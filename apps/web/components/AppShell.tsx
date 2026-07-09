@@ -16,7 +16,6 @@ export const ROUTE_PERM: Record<string, keyof Employee> = {
   '/employees': 'canManageStaff',
   '/settings': 'canManageStaff',
   '/menu': 'canManageStaff',
-  '/modifiers': 'canManageStaff',
 };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

@@ -18,7 +18,6 @@ const NAV: { href: string; label: string; icon: string; feature?: keyof Features
   { href: '/orders', label: 'Orders / KOT', icon: '🧾' },
   { href: '/kds', label: 'Kitchen (KDS)', icon: '👨‍🍳', feature: 'kds' },
   { href: '/menu', label: 'Menu & Items', icon: '🍽️' },
-  { href: '/modifiers', label: 'Modifiers', icon: '➕', feature: 'modifiers' },
   { href: '/inventory', label: 'Inventory', icon: '📦', feature: 'inventory' },
   { href: '/purchasing', label: 'Purchasing', icon: '🚚', feature: 'purchasing' },
   { href: '/roastery', label: 'Roastery', icon: '🔥', feature: 'roastery' },
