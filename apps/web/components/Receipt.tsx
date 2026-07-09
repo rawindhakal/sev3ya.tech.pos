@@ -36,7 +36,7 @@ export default function Receipt({
       <div style={{ textAlign: 'center', marginBottom: 8 }}>
         {isBill ? (
           <>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{settings?.restaurantName ?? 'CakeZake'}</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{settings?.restaurantName ?? 's3vya'}</div>
             {settings?.address && <div style={{ fontSize: 11 }}>{settings.address}</div>}
             {settings?.phone && <div style={{ fontSize: 11 }}>Tel: {settings.phone}</div>}
             {settings?.taxId && <div style={{ fontSize: 11 }}>{settings.taxId}</div>}

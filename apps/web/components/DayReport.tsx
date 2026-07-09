@@ -30,7 +30,7 @@ export default function DayReport({ report, settings }: { report: DayReportData 
   return (
     <div id="print-area">
       <div style={{ textAlign: 'center', marginBottom: 8 }}>
-        <div style={{ fontSize: 18, fontWeight: 700 }}>{settings?.restaurantName ?? 'CakeZake'}</div>
+        <div style={{ fontSize: 18, fontWeight: 700 }}>{settings?.restaurantName ?? 's3vya'}</div>
         <div style={{ fontSize: 13, fontWeight: 700 }}>*** DAY-END (Z) REPORT ***</div>
       </div>
 

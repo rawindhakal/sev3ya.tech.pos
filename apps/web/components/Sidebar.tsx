@@ -49,7 +49,7 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
       <div className="flex items-center gap-2 px-6 py-5">
         <span className="text-2xl">🍰</span>
         <div>
-          <div className="text-lg font-bold leading-none text-brand-700">CakeZake</div>
+          <div className="text-lg font-bold leading-none text-brand-700">s3vyaPOS</div>
           <div className="text-xs font-medium text-slate-400">POS Platform</div>
         </div>
       </div>

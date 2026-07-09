@@ -4,6 +4,46 @@
 
 :root {
   color-scheme: light;
+  /* POS / full-screen terminal palette — light */
+  --pos-bg: #eef1f4;
+  --pos-card: #ffffff;
+  --pos-elevated: #ffffff;
+  --pos-inset: #e4e8ec;
+  --pos-line: rgba(15, 23, 42, 0.12);
+  --pos-surface: rgba(15, 23, 42, 0.045);
+  --pos-surface-strong: rgba(15, 23, 42, 0.07);
+  --pos-surface-hover: rgba(15, 23, 42, 0.10);
+  --pos-text: #1e293b;
+  --pos-text-80: rgba(30, 41, 59, 0.86);
+  --pos-text-70: rgba(30, 41, 59, 0.74);
+  --pos-text-60: rgba(30, 41, 59, 0.62);
+  --pos-text-50: rgba(30, 41, 59, 0.52);
+  --pos-text-40: rgba(30, 41, 59, 0.46);
+  --pos-text-30: rgba(30, 41, 59, 0.38);
+  --pos-text-25: rgba(30, 41, 59, 0.34);
+  --pos-placeholder: rgba(30, 41, 59, 0.40);
+}
+
+.dark {
+  color-scheme: dark;
+  /* POS / full-screen terminal palette — extra dark */
+  --pos-bg: #0b0d10;
+  --pos-card: #15181d;
+  --pos-elevated: #1c2027;
+  --pos-inset: #0e1013;
+  --pos-line: rgba(255, 255, 255, 0.09);
+  --pos-surface: rgba(255, 255, 255, 0.05);
+  --pos-surface-strong: rgba(255, 255, 255, 0.08);
+  --pos-surface-hover: rgba(255, 255, 255, 0.13);
+  --pos-text: #f8fafc;
+  --pos-text-80: rgba(248, 250, 252, 0.80);
+  --pos-text-70: rgba(248, 250, 252, 0.70);
+  --pos-text-60: rgba(248, 250, 252, 0.60);
+  --pos-text-50: rgba(248, 250, 252, 0.50);
+  --pos-text-40: rgba(248, 250, 252, 0.42);
+  --pos-text-30: rgba(248, 250, 252, 0.32);
+  --pos-text-25: rgba(248, 250, 252, 0.26);
+  --pos-placeholder: rgba(248, 250, 252, 0.28);
 }
 
 body {

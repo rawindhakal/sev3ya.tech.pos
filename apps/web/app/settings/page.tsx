@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import type { Features, Settings } from '@/lib/types';
+import Modal from '@/components/Modal';
 
 // UI feature key → backend column.
 const FEATURES: { key: keyof Features; col: string; label: string }[] = [
@@ -21,6 +22,26 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+
+  async function resetData() {
+    setResetting(true);
+    setResetMsg(null);
+    try {
+      const r = await api.post<{ cleared: Record<string, number> }>('/settings/reset-data', {});
+      const total = Object.values(r.cleared).reduce((a, b) => a + b, 0);
+      setResetMsg(`Done — cleared ${total} records. Your menu, staff, tables & settings were kept.`);
+      setResetOpen(false);
+      setConfirmText('');
+    } catch (e) {
+      setResetMsg((e as Error).message || 'Reset failed — admin permission required.');
+    } finally {
+      setResetting(false);
+    }
+  }
 
   useEffect(() => {
     api.get<Settings>('/settings').then(setForm).catch((e) => setError((e as Error).message));
@@ -101,7 +122,7 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div>
               <label className="label">Header line (above items)</label>
-              <input className="input" value={form.receiptHeader ?? ''} onChange={(e) => set('receiptHeader', e.target.value)} placeholder="Welcome to CakeZake!" />
+              <input className="input" value={form.receiptHeader ?? ''} onChange={(e) => set('receiptHeader', e.target.value)} placeholder="Welcome to s3vya!" />
             </div>
             <div>
               <label className="label">Footer line (bottom of bill)</label>
@@ -180,6 +201,49 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* ── Danger zone ── */}
+      <div className="mt-6 rounded-xl border border-red-200 bg-red-50/50 p-6 dark:border-red-900/40 dark:bg-red-950/20">
+        <h2 className="mb-1 text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
+        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+          <strong>Reset all data</strong> permanently deletes all orders, payments, KOTs, cash-drawer
+          sessions, reservations, stock movements and the audit log. Your menu, staff, tables,
+          suppliers and settings are kept. Use this once, before you start real trading.
+        </p>
+        {resetMsg && <p className="mb-3 text-xs font-medium text-slate-700 dark:text-slate-200">{resetMsg}</p>}
+        <button
+          type="button"
+          onClick={() => { setResetMsg(null); setConfirmText(''); setResetOpen(true); }}
+          className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:bg-slate-800 dark:text-red-400 dark:hover:bg-red-950/40"
+        >
+          🗑️ Reset all data…
+        </button>
+      </div>
+
+      <Modal open={resetOpen} title="Reset all data" onClose={() => setResetOpen(false)}>
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            This <strong>permanently</strong> deletes all sales &amp; operational data (orders,
+            payments, cash sessions, reservations, stock movements, audit log). It <strong>cannot be
+            undone</strong>. Your menu, staff, tables and settings will be kept.
+          </p>
+          <div>
+            <label className="label">Type <span className="font-mono text-red-600">RESET</span> to confirm</label>
+            <input className="input" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="RESET" autoFocus />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setResetOpen(false)} className="btn-ghost">Cancel</button>
+            <button
+              type="button"
+              disabled={confirmText !== 'RESET' || resetting}
+              onClick={resetData}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
+            >
+              {resetting ? 'Resetting…' : 'Permanently reset'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

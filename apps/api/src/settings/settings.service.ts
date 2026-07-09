@@ -54,6 +54,46 @@ export class SettingsService {
     return { vatRate: s.vatRate, serviceChargeRate: s.serviceChargeRate };
   }
 
+  // Danger zone: wipe all sales / operational data while KEEPING configuration
+  // (menu, staff, tables, suppliers, settings). For starting real trading with a
+  // clean slate. Deletes children before parents to satisfy FK constraints.
+  async resetData(actor?: { sub?: string; name?: string }) {
+    const cleared: Record<string, number> = {};
+    await this.prisma.$transaction(
+      async (tx) => {
+        cleared.payments = (await tx.payment.deleteMany()).count;
+        cleared.orderItems = (await tx.orderItem.deleteMany()).count;
+        cleared.cashMovements = (await tx.cashMovement.deleteMany()).count;
+        cleared.orders = (await tx.order.deleteMany()).count;
+        cleared.cashDrawerSessions = (await tx.cashDrawerSession.deleteMany()).count;
+        cleared.reservations = (await tx.reservation.deleteMany()).count;
+        cleared.shifts = (await tx.shift.deleteMany()).count;
+        cleared.stockMovements = (await tx.stockMovement.deleteMany()).count;
+        cleared.purchaseOrderLines = (await tx.purchaseOrderLine.deleteMany()).count;
+        cleared.purchaseOrders = (await tx.purchaseOrder.deleteMany()).count;
+        cleared.cuppingScores = (await tx.cuppingScore.deleteMany()).count;
+        cleared.roastBatches = (await tx.roastBatch.deleteMany()).count;
+        cleared.greenBeanBatches = (await tx.greenBeanBatch.deleteMany()).count;
+        cleared.expenses = (await tx.expense.deleteMany()).count;
+        cleared.auditLogs = (await tx.auditLog.deleteMany()).count;
+        cleared.idempotencyKeys = (await tx.idempotencyKey.deleteMany()).count;
+        // Free every table so the floor starts clean.
+        await tx.restaurantTable.updateMany({ data: { status: 'AVAILABLE' } });
+      },
+      { timeout: 30000 },
+    );
+    // Record the reset itself (audit was just cleared, so this is the first entry).
+    await this.prisma.auditLog.create({
+      data: {
+        employeeId: actor?.sub,
+        employeeName: actor?.name ?? 'system',
+        action: 'RESET_DATA',
+        detail: `Cleared sales data: ${JSON.stringify(cleared)}`,
+      },
+    });
+    return { ok: true, cleared };
+  }
+
   async update(data: {
     restaurantName?: string;
     address?: string;

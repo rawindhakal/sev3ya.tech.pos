@@ -8,6 +8,7 @@ import { api, formatMoney } from '@/lib/api';
 import type { Category, Employee, MenuItem, MenuItemVariant, ModifierGroup, Order, TableArea } from '@/lib/types';
 import { priceForType } from '@/lib/types';
 import Modal from '@/components/Modal';
+import ThemeToggleMini from '@/components/ThemeToggleMini';
 
 type Mode = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY';
 interface Line { key: string; id?: string; menuItemId?: string; variantId?: string; name: string; unitPriceCents: number; modifiers: { name: string; priceCents: number }[]; quantity: number; notes?: string; kotStatus?: string }
@@ -145,44 +146,46 @@ export default function WaiterPage() {
   // ── Login gate ──
   if (!emp) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#1A1A1A] p-4 text-white">
-        <div className="w-80 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
+      <div className="flex h-full items-center justify-center bg-[var(--pos-bg)] p-4 text-[var(--pos-text)]">
+        <div className="w-80 rounded-2xl border border-[var(--pos-line)] bg-[var(--pos-card)] p-6 text-center">
           <div className="mb-1 text-3xl">🧑‍🍳</div>
           <div className="mb-1 font-bold">WAITER PANEL</div>
-          <p className="mb-4 text-xs text-white/40">Sign in with your username &amp; password</p>
+          <p className="mb-4 text-xs text-[var(--pos-text-40)]">Sign in with your username &amp; password</p>
           {pinErr && <p className="mb-2 text-xs text-[#E74C3C]">{pinErr}</p>}
           <div className="space-y-2 text-left">
-            <input value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && login()} autoFocus autoComplete="username" placeholder="Username" className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-[#2ECC71]/60" />
-            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && login()} type="password" autoComplete="current-password" placeholder="Password" className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-[#2ECC71]/60" />
+            <input value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && login()} autoFocus autoComplete="username" placeholder="Username" className="w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2.5 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]/60" />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && login()} type="password" autoComplete="current-password" placeholder="Password" className="w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2.5 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]/60" />
           </div>
           <button onClick={login} className="mt-3 w-full rounded-lg bg-[#2ECC71] py-2.5 text-sm font-bold text-black">Sign in</button>
-          <p className="mt-4 text-[10px] text-white/25">Dev — sita / barista123</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#1A1A1A] text-white">
+    <div className="flex h-full flex-col bg-[var(--pos-bg)] text-[var(--pos-text)]">
       {toast && <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-medium text-black shadow-lg">{toast}</div>}
 
       {/* top bar */}
-      <div className="flex items-center justify-between border-b border-white/10 bg-[#111] px-4 py-2.5 text-sm">
+      <div className="flex items-center justify-between border-b border-[var(--pos-line)] bg-[var(--pos-inset)] px-4 py-2.5 text-sm">
         <div className="flex items-center gap-2">
-          {step !== 'home' && <button onClick={reset} className="rounded-md bg-white/5 px-2 py-1 text-xs">‹ Back</button>}
+          {step !== 'home' && <button onClick={reset} className="rounded-md bg-[var(--pos-surface)] px-2 py-1 text-xs">‹ Back</button>}
           <span className="font-bold">🧑‍🍳 Waiter</span>
-          <span className="text-white/50">· {emp.name}</span>
+          <span className="text-[var(--pos-text-50)]">· {emp.name}</span>
         </div>
-        <button onClick={() => { setEmp(null); localStorage.removeItem('cakezake-emp'); localStorage.removeItem('cakezake-token'); }} className="text-xs text-white/50">Sign out</button>
+        <div className="flex items-center gap-2">
+          <ThemeToggleMini />
+          <button onClick={() => { setEmp(null); localStorage.removeItem('cakezake-emp'); localStorage.removeItem('cakezake-token'); }} className="text-xs text-[var(--pos-text-50)]">Sign out</button>
+        </div>
       </div>
 
       {/* HOME */}
       {step === 'home' && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
-          <p className="text-white/50">Start an order</p>
+          <p className="text-[var(--pos-text-50)]">Start an order</p>
           <div className="grid w-full max-w-sm grid-cols-1 gap-3">
             {([['DINE_IN', '🍽️ Dine-In'], ['TAKEAWAY', '🥡 Takeaway'], ['DELIVERY', '🛵 Delivery']] as [Mode, string][]).map(([m, l]) => (
-              <button key={m} onClick={() => chooseMode(m)} className="rounded-xl border-2 border-white/10 bg-white/5 py-5 text-lg font-semibold hover:border-[#2ECC71]">{l}</button>
+              <button key={m} onClick={() => chooseMode(m)} className="rounded-xl border-2 border-[var(--pos-line)] bg-[var(--pos-surface)] py-5 text-lg font-semibold hover:border-[#2ECC71]">{l}</button>
             ))}
           </div>
         </div>
@@ -194,15 +197,15 @@ export default function WaiterPage() {
           <h2 className="mb-3 font-bold">Select a table</h2>
           {areas.map((a) => (
             <div key={a.area} className="mb-4">
-              <div className="mb-2 text-xs uppercase tracking-wider text-white/40">{a.area}</div>
+              <div className="mb-2 text-xs uppercase tracking-wider text-[var(--pos-text-40)]">{a.area}</div>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {a.tables.map((t) => {
                   const free = t.status === 'AVAILABLE'; const occ = t.status === 'OCCUPIED' && !!t.activeOrder;
                   return (
                     <button key={t.id} disabled={!free && !occ} onClick={() => (occ ? resumeTable(t) : start(t.id))}
-                      className={`aspect-square rounded-xl border-2 p-2 ${free ? 'border-[#2ECC71]/40 bg-[#2ECC71]/10' : occ ? 'border-[#F39C12]/50 bg-[#F39C12]/15' : 'border-white/10 bg-white/5 opacity-50'}`}>
+                      className={`aspect-square rounded-xl border-2 p-2 ${free ? 'border-[#2ECC71]/40 bg-[#2ECC71]/10' : occ ? 'border-[#F39C12]/50 bg-[#F39C12]/15' : 'border-[var(--pos-line)] bg-[var(--pos-surface)] opacity-50'}`}>
                       <div className="text-base font-bold">{t.name}</div>
-                      {occ ? <div className="text-[10px] text-[#F39C12]">{formatMoney(t.activeOrder!.totalCents)}</div> : <div className="text-[10px] text-white/40">{t.seats} seats</div>}
+                      {occ ? <div className="text-[10px] text-[#F39C12]">{formatMoney(t.activeOrder!.totalCents)}</div> : <div className="text-[10px] text-[var(--pos-text-40)]">{t.seats} seats</div>}
                     </button>
                   );
                 })}
@@ -215,26 +218,26 @@ export default function WaiterPage() {
       {/* ORDER */}
       {step === 'order' && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="border-b border-white/10 p-3">
+          <div className="border-b border-[var(--pos-line)] p-3">
             <div className="mb-2 flex items-center gap-2">
               <span className="rounded bg-[#2ECC71]/15 px-2 py-1 text-xs font-semibold text-[#2ECC71]">{tableName ? `Table ${tableName}` : mode.replace('_', ' ')}{order && ` · #${order.number}`}</span>
-              <input className="ml-auto w-40 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm" placeholder="🔍 Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <input className="ml-auto w-40 rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-1.5 text-sm" placeholder="🔍 Search" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <div className="flex gap-1.5 overflow-x-auto pb-1">
-              <button onClick={() => setActiveCat('all')} className={`whitespace-nowrap rounded-md px-3 py-1 text-xs ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-white/5'}`}>All</button>
-              {categories.map((c) => <button key={c.id} onClick={() => setActiveCat(c.id)} className={`whitespace-nowrap rounded-md px-3 py-1 text-xs ${activeCat === c.id ? 'bg-[#2ECC71] text-black' : 'bg-white/5'}`}>{c.name}</button>)}
+              <button onClick={() => setActiveCat('all')} className={`whitespace-nowrap rounded-md px-3 py-1 text-xs ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)]'}`}>All</button>
+              {categories.map((c) => <button key={c.id} onClick={() => setActiveCat(c.id)} className={`whitespace-nowrap rounded-md px-3 py-1 text-xs ${activeCat === c.id ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)]'}`}>{c.name}</button>)}
             </div>
           </div>
           <div className="grid flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-3 sm:grid-cols-3 lg:grid-cols-4">
             {filtered.map((item) => (
-              <button key={item.id} onClick={() => clickItem(item)} className="flex flex-col rounded-xl border border-white/10 bg-white/5 p-3 text-left hover:border-[#2ECC71]/50">
+              <button key={item.id} onClick={() => clickItem(item)} className="flex flex-col rounded-xl border border-[var(--pos-line)] bg-[var(--pos-surface)] p-3 text-left hover:border-[#2ECC71]/50">
                 <span className="font-medium leading-tight">{item.name}</span>
                 <span className="mt-1 font-bold text-[#2ECC71]">{item.variants?.length ? `from ${formatMoney(Math.min(...item.variants.map((v) => v.priceCents)))}` : formatMoney(priceForType(item, mode))}</span>
               </button>
             ))}
           </div>
           {/* bottom bar */}
-          <button onClick={() => setCartOpen(true)} className="flex items-center justify-between border-t border-white/10 bg-[#2ECC71] px-5 py-3 font-bold text-black">
+          <button onClick={() => setCartOpen(true)} className="flex items-center justify-between border-t border-[var(--pos-line)] bg-[#2ECC71] px-5 py-3 font-bold text-black">
             <span>🛒 {totals.count} item(s)</span><span>{formatMoney(totals.total)} · View cart ›</span>
           </button>
         </div>

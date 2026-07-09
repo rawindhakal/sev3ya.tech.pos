@@ -185,10 +185,10 @@ async function main() {
   await prisma.employee.deleteMany();
   await prisma.employee.createMany({
     data: [
-      { name: 'Admin', role: 'ADMIN', username: 'admin', passwordHash: hashPassword('admin123'), pin: '1111', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true, canManageStaff: true },
-      { name: 'Manager Gita', role: 'MANAGER', username: 'gita', passwordHash: hashPassword('manager123'), pin: '2222', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true },
-      { name: 'Cashier Ram', role: 'CASHIER', username: 'ram', passwordHash: hashPassword('cashier123'), pin: '3333', canDiscount: true },
-      { name: 'Barista Sita', role: 'BARISTA', username: 'sita', passwordHash: hashPassword('barista123'), pin: '4444' },
+      { name: 'Admin', role: 'ADMIN', username: 'admin', passwordHash: hashPassword(process.env.SEED_ADMIN_PASSWORD ?? 'admin123'), pin: '1111', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true, canManageStaff: true },
+      { name: 'Manager Gita', role: 'MANAGER', username: 'gita', passwordHash: hashPassword(process.env.SEED_MANAGER_PASSWORD ?? 'manager123'), pin: '2222', canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true },
+      { name: 'Cashier Ram', role: 'CASHIER', username: 'ram', passwordHash: hashPassword(process.env.SEED_CASHIER_PASSWORD ?? 'cashier123'), pin: '3333', canDiscount: true },
+      { name: 'Barista Sita', role: 'BARISTA', username: 'sita', passwordHash: hashPassword(process.env.SEED_BARISTA_PASSWORD ?? 'barista123'), pin: '4444' },
     ],
   });
 

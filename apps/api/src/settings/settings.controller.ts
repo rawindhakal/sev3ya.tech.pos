@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { SettingsService } from './settings.service';
+import { AuthGuard, CurrentEmployee } from '../common/auth.guard';
+import { TokenPayload } from '../common/token';
 
 class UpdateSettingsDto {
   @IsOptional() @IsString() restaurantName?: string;
@@ -35,5 +37,12 @@ export class SettingsController {
   @Patch()
   update(@Body() dto: UpdateSettingsDto) {
     return this.settings.update(dto);
+  }
+
+  // Danger zone — wipe all sales/operational data. Admin-only (manage staff).
+  @Post('reset-data')
+  @UseGuards(new AuthGuard('canManageStaff'))
+  resetData(@CurrentEmployee() emp: TokenPayload) {
+    return this.settings.resetData({ sub: emp?.sub, name: emp?.name });
   }
 }

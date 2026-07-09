@@ -36,7 +36,7 @@ export default function Login({ onLogin }: { onLogin: (e: Employee) => void }) {
     <div className="flex h-screen items-center justify-center bg-slate-50 p-4 dark:bg-[#0F172A]">
       <div className="w-80 rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="mb-1 text-3xl">🍰</div>
-        <div className="text-lg font-bold text-brand-700">CakeZake Back-Office</div>
+        <div className="text-lg font-bold text-brand-700">s3vyaPOS</div>
         <p className="mb-4 text-xs text-slate-400">Sign in with your username &amp; password</p>
         {err && <p className="mb-3 text-xs text-red-500">{err}</p>}
         <div className="space-y-2 text-left">
@@ -66,7 +66,6 @@ export default function Login({ onLogin }: { onLogin: (e: Employee) => void }) {
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <p className="mt-4 text-[10px] text-slate-400">admin / admin123 · gita / manager123</p>
       </div>
     </div>
   );

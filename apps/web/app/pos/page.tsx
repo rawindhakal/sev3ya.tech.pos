@@ -24,6 +24,7 @@ import Receipt, { ReceiptMode } from '@/components/Receipt';
 import DayReport, { DayReportData } from '@/components/DayReport';
 import PaymentPanel from '@/components/PaymentPanel';
 import ConnBadge from '@/components/ConnBadge';
+import ThemeToggleMini from '@/components/ThemeToggleMini';
 import { getStatus } from '@/lib/offline';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
@@ -830,11 +831,11 @@ export default function PosPage() {
   // ── Username + password login gate ──────────────
   if (!emp) {
     return (
-      <div className="flex h-full flex-col items-center justify-center bg-[#1A1A1A] text-white">
-        <div className="w-80 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
+      <div className="flex h-full flex-col items-center justify-center bg-[var(--pos-bg)] text-[var(--pos-text)]">
+        <div className="w-80 rounded-2xl border border-[var(--pos-line)] bg-[var(--pos-card)] p-6 text-center">
           <div className="mb-1 text-3xl">🍰</div>
           <div className="mb-1 font-bold tracking-wide">POS TERMINAL</div>
-          <p className="mb-4 text-xs text-white/40">Sign in with your username &amp; password</p>
+          <p className="mb-4 text-xs text-[var(--pos-text-40)]">Sign in with your username &amp; password</p>
           {pinErr && <p className="mb-3 text-xs text-[#E74C3C]">{pinErr}</p>}
           <div className="space-y-2 text-left">
             <input
@@ -844,7 +845,7 @@ export default function PosPage() {
               autoFocus
               autoComplete="username"
               placeholder="Username"
-              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-[#2ECC71]/60"
+              className="w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2.5 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]/60"
             />
             <input
               value={password}
@@ -853,11 +854,10 @@ export default function PosPage() {
               type="password"
               autoComplete="current-password"
               placeholder="Password"
-              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-[#2ECC71]/60"
+              className="w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2.5 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]/60"
             />
           </div>
           <button onClick={login} className="mt-3 w-full rounded-lg bg-[#2ECC71] py-2.5 text-sm font-bold text-black hover:bg-[#28b463]">Sign in</button>
-          <p className="mt-4 text-[10px] text-white/25">Dev — admin / admin123 · ram / cashier123</p>
         </div>
       </div>
     );
@@ -866,18 +866,18 @@ export default function PosPage() {
   // ── Open-drawer gate (cash drawer at first login) ──
   if (drawerOpen === false) {
     return (
-      <div className="flex h-full flex-col items-center justify-center bg-[#1A1A1A] text-white">
-        <div className="w-80 rounded-2xl border border-white/10 bg-[#202020] p-6 text-center">
+      <div className="flex h-full flex-col items-center justify-center bg-[var(--pos-bg)] text-[var(--pos-text)]">
+        <div className="w-80 rounded-2xl border border-[var(--pos-line)] bg-[var(--pos-card)] p-6 text-center">
           <div className="mb-1 text-3xl">💵</div>
           <div className="mb-1 font-bold tracking-wide">OPEN CASH DRAWER</div>
-          <p className="mb-4 text-xs text-white/40">Enter the opening cash balance to start the day. The business day runs until you close it (Day End).</p>
-          <label className="mb-1 block text-left text-xs uppercase tracking-wider text-white/40">Opening balance (Rs)</label>
+          <p className="mb-4 text-xs text-[var(--pos-text-40)]">Enter the opening cash balance to start the day. The business day runs until you close it (Day End).</p>
+          <label className="mb-1 block text-left text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Opening balance (Rs)</label>
           <input
             type="number" min="0" step="0.01" value={openFloat} onChange={(e) => setOpenFloat(e.target.value)}
-            className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-right text-lg text-white" placeholder="0.00" autoFocus
+            className="mb-4 w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-right text-lg text-[var(--pos-text)]" placeholder="0.00" autoFocus
           />
           <button onClick={openDrawer} className="w-full rounded-lg bg-[#2ECC71] py-3 font-bold text-black hover:bg-[#28b463]">Open drawer &amp; start day</button>
-          <button onClick={lock} className="mt-2 text-xs text-white/40 hover:text-white">Sign out</button>
+          <button onClick={lock} className="mt-2 text-xs text-[var(--pos-text-40)] hover:text-[var(--pos-text)]">Sign out</button>
         </div>
         <DayReport report={dayReport} settings={settings} />
       </div>
@@ -886,7 +886,7 @@ export default function PosPage() {
 
   // ── Render ─────────────────────────────────────────
   return (
-    <div className="flex h-full flex-col bg-[#1A1A1A] text-white">
+    <div className="flex h-full flex-col bg-[var(--pos-bg)] text-[var(--pos-text)]">
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-medium text-black shadow-lg">
           {toast}
@@ -894,22 +894,23 @@ export default function PosPage() {
       )}
 
       {/* Top bar */}
-      <div className="flex items-center justify-between border-b border-white/10 bg-[#111] px-5 py-2.5 text-sm">
+      <div className="flex items-center justify-between border-b border-[var(--pos-line)] bg-[var(--pos-inset)] px-5 py-2.5 text-sm">
         <div className="flex items-center gap-3">
           <button
             onClick={goBack}
             disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg bg-[var(--pos-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40"
             title={table ? 'Back to table floor (holds this bill)' : 'Back to order modes'}
           >
             ‹ Back
           </button>
           <span className="text-lg">🍰</span>
           <span className="font-bold tracking-wide">POS TERMINAL</span>
-          <span className="text-white/40">·</span>
-          <span className="text-white/60">{emp.name} ({emp.role})</span>
+          <span className="text-[var(--pos-text-40)]">·</span>
+          <span className="text-[var(--pos-text-60)]">{emp.name} ({emp.role})</span>
           <button onClick={() => { checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="rounded-md bg-[#E74C3C]/15 px-2 py-1 text-[11px] font-semibold text-[#E74C3C] hover:bg-[#E74C3C]/25" title="Close the business day">🌙 Day End</button>
-          <button onClick={lock} className="rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/60 hover:bg-white/10" title="Lock terminal">🔒 Lock</button>
+          <ThemeToggleMini />
+          <button onClick={lock} className="rounded-md bg-[var(--pos-surface)] px-2 py-1 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" title="Lock terminal">🔒 Lock</button>
         </div>
         <div className="flex items-center gap-4">
           <nav className="flex items-center gap-1 text-xs">
@@ -919,22 +920,22 @@ export default function PosPage() {
               { label: 'Orders', path: '/orders' },
               { label: 'Menu', path: '/menu' },
             ].map((l) => (
-              <button key={l.path} onClick={() => exitTo(l.path)} className="rounded-md px-2 py-1 text-white/50 hover:bg-white/10 hover:text-white">
+              <button key={l.path} onClick={() => exitTo(l.path)} className="rounded-md px-2 py-1 text-[var(--pos-text-50)] hover:bg-[var(--pos-surface-hover)] hover:text-[var(--pos-text)]">
                 {l.label}
               </button>
             ))}
           </nav>
           <ConnBadge />
-          <span className="text-white/60 tabular-nums">
+          <span className="text-[var(--pos-text-60)] tabular-nums">
             {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <button onClick={() => exitTo('/settings')} className="text-white/60 hover:text-white">⚙ Settings</button>
+          <button onClick={() => exitTo('/settings')} className="text-[var(--pos-text-60)] hover:text-[var(--pos-text)]">⚙ Settings</button>
         </div>
       </div>
 
       {/* Order modes */}
-      <div className="flex items-center gap-2 border-b border-white/10 bg-[#161616] px-4 py-2.5">
-        <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-white/40">Order Mode</span>
+      <div className="flex items-center gap-2 border-b border-[var(--pos-line)] bg-[var(--pos-bg)] px-4 py-2.5">
+        <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-[var(--pos-text-40)]">Order Mode</span>
         {MODES.map((m) => {
           const active = mode === m.key;
           return (
@@ -943,7 +944,7 @@ export default function PosPage() {
               disabled={busy}
               onClick={() => selectMode(m.key)}
               className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${
-                active ? 'bg-[#2ECC71] text-black' : 'bg-white/5 text-white/70 hover:bg-white/10'
+                active ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]'
               }`}
             >
               {m.icon} {m.label}
@@ -966,29 +967,29 @@ export default function PosPage() {
             {!manage && (
               <>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs uppercase tracking-wider text-white/40">Waiter</span>
-                  <select className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm" value={waiterId} onChange={(e) => setWaiterId(e.target.value)}>
+                  <span className="text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Waiter</span>
+                  <select className="rounded-md border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-1 text-sm" value={waiterId} onChange={(e) => setWaiterId(e.target.value)}>
                     <option value="" className="text-black">Unassigned</option>
                     {waiters.map((w) => <option key={w.id} value={w.id} className="text-black">{w.name}</option>)}
                   </select>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs uppercase tracking-wider text-white/40">Guests</span>
-                  <input type="number" min={1} className="w-16 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm" value={guestCount} onChange={(e) => setGuestCount(Math.max(1, Number(e.target.value)))} />
+                  <span className="text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Guests</span>
+                  <input type="number" min={1} className="w-16 rounded-md border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-1 text-sm" value={guestCount} onChange={(e) => setGuestCount(Math.max(1, Number(e.target.value)))} />
                 </div>
               </>
             )}
             <div className="ml-auto flex items-center gap-2">
-              <button onClick={() => setAddTableOpen(true)} className="rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10">+ Add Table</button>
-              <button onClick={() => setManage((v) => !v)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${manage ? 'bg-[#2ECC71] text-black' : 'bg-white/5 text-white/80 hover:bg-white/10'}`}>
+              <button onClick={() => setAddTableOpen(true)} className="rounded-lg bg-[var(--pos-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)]">+ Add Table</button>
+              <button onClick={() => setManage((v) => !v)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${manage ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)]'}`}>
                 {manage ? '✓ Done' : '✎ Manage'}
               </button>
-              <button onClick={resetTerminal} className="text-sm text-white/50 hover:text-white">← Modes</button>
+              <button onClick={resetTerminal} className="text-sm text-[var(--pos-text-50)] hover:text-[var(--pos-text)]">← Modes</button>
             </div>
           </div>
           {areas.map((a) => (
             <div key={a.area} className="mb-5">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">{a.area}</div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--pos-text-40)]">{a.area}</div>
               <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
                 {a.tables.map((t) => {
                   const free = t.status === 'AVAILABLE';
@@ -1000,12 +1001,12 @@ export default function PosPage() {
                       ? 'border-[#F39C12]/50 bg-[#F39C12]/15'
                       : t.status === 'RESERVED'
                         ? 'border-indigo-400/40 bg-indigo-400/10'
-                        : 'border-white/10 bg-white/5';
+                        : 'border-[var(--pos-line)] bg-[var(--pos-surface)]';
                   if (manage) {
                     return (
                       <div key={t.id} className={`relative flex flex-col items-center justify-center gap-1 rounded-xl border-2 p-2 ${cls}`}>
                         <span className="text-sm font-bold">{t.name} {t.isVip && '⭐'}</span>
-                        <span className="text-[9px] uppercase text-white/40">{t.status}</span>
+                        <span className="text-[9px] uppercase text-[var(--pos-text-40)]">{t.status}</span>
                         <div className="mt-1 flex flex-wrap justify-center gap-1">
                           <button onClick={() => tablePatch(t.id, { isVip: !t.isVip })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">VIP</button>
                           {t.status !== 'AVAILABLE' && <button onClick={() => tablePatch(t.id, { status: 'AVAILABLE' })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">Free</button>}
@@ -1027,9 +1028,9 @@ export default function PosPage() {
                       {occupied ? (
                         <span className="text-[10px] font-semibold text-[#F39C12]">{formatMoney(t.activeOrder!.totalCents)}</span>
                       ) : (
-                        <span className="text-[10px] text-white/50">{t.seats} seats</span>
+                        <span className="text-[10px] text-[var(--pos-text-50)]">{t.seats} seats</span>
                       )}
-                      <span className="mt-1 text-[9px] uppercase tracking-wide text-white/40">
+                      <span className="mt-1 text-[9px] uppercase tracking-wide text-[var(--pos-text-40)]">
                         {occupied ? `Open #${t.activeOrder!.number}` : t.status}
                       </span>
                     </button>
@@ -1041,64 +1042,64 @@ export default function PosPage() {
         </div>
       ) : !order ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
-          <div className="text-white/40">
+          <div className="text-[var(--pos-text-40)]">
             <div className="mb-2 text-5xl">🧾</div>
             <p className="text-lg font-medium">Select an order mode to begin</p>
-            <p className="text-sm text-white/30">Dine-In · Takeaway · Home Delivery · Quick-Bill</p>
+            <p className="text-sm text-[var(--pos-text-30)]">Dine-In · Takeaway · Home Delivery · Quick-Bill</p>
           </div>
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
           {/* Menu / grid area */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="border-b border-white/10 p-3">
+            <div className="border-b border-[var(--pos-line)] p-3">
               <div className="mb-2 flex gap-2">
                 <input
-                  className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-[#2ECC71]"
+                  className="flex-1 rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]"
                   placeholder="🔍 Search item by initials (e.g. CB → Chicken Burger)…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   autoFocus
                 />
-                <button className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/70 hover:bg-white/10" onClick={() => setOpenItem({ name: '', price: '' })}>
+                <button className="rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-xs text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]" onClick={() => setOpenItem({ name: '', price: '' })}>
                   + Custom
                 </button>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                <button onClick={() => setActiveCat('all')} className={`rounded-md px-3 py-1 text-xs font-medium ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-white/5 text-white/60'}`}>All</button>
+                <button onClick={() => setActiveCat('all')} className={`rounded-md px-3 py-1 text-xs font-medium ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>All</button>
                 {categories.map((c) => (
-                  <button key={c.id} onClick={() => setActiveCat(c.id)} className={`rounded-md px-3 py-1 text-xs font-medium ${activeCat === c.id ? 'bg-[#2ECC71] text-black' : 'bg-white/5 text-white/60'}`}>{c.name}</button>
+                  <button key={c.id} onClick={() => setActiveCat(c.id)} className={`rounded-md px-3 py-1 text-xs font-medium ${activeCat === c.id ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>{c.name}</button>
                 ))}
               </div>
             </div>
             <div className="grid flex-1 auto-rows-min grid-cols-2 gap-2.5 overflow-y-auto p-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredItems.map((item) => (
-                <button key={item.id} onClick={() => clickItem(item)} className="flex flex-col items-start rounded-xl border border-white/10 bg-white/5 p-3 text-left transition-colors hover:border-[#2ECC71]/50 hover:bg-white/10">
+                <button key={item.id} onClick={() => clickItem(item)} className="flex flex-col items-start rounded-xl border border-[var(--pos-line)] bg-[var(--pos-surface)] p-3 text-left transition-colors hover:border-[#2ECC71]/50 hover:bg-[var(--pos-surface-hover)]">
                   <span className="font-semibold leading-tight">{item.name}</span>
                   <span className="mt-2 font-bold text-[#2ECC71]">
                     {item.variants && item.variants.length > 0
                       ? `from ${formatMoney(Math.min(...item.variants.map((v) => v.priceCents)))}`
                       : formatMoney(priceForType(item, orderType))}
                   </span>
-                  {((item.modifierGroups && item.modifierGroups.length > 0) || (item.variants && item.variants.length > 0)) && <span className="mt-1 text-[10px] text-white/30">{item.variants?.length ? 'portions' : 'options'}</span>}
+                  {((item.modifierGroups && item.modifierGroups.length > 0) || (item.variants && item.variants.length > 0)) && <span className="mt-1 text-[10px] text-[var(--pos-text-30)]">{item.variants?.length ? 'portions' : 'options'}</span>}
                 </button>
               ))}
-              {filteredItems.length === 0 && <p className="col-span-full py-10 text-center text-sm text-white/30">No items found</p>}
+              {filteredItems.length === 0 && <p className="col-span-full py-10 text-center text-sm text-[var(--pos-text-30)]">No items found</p>}
             </div>
           </div>
 
           {/* Cart summary */}
-          <aside className="flex w-[400px] shrink-0 flex-col border-l border-white/10 bg-[#202020]">
-            <div className="border-b border-white/10 px-4 py-3">
+          <aside className="flex w-[400px] shrink-0 flex-col border-l border-[var(--pos-line)] bg-[var(--pos-card)]">
+            <div className="border-b border-[var(--pos-line)] px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-white/40">Active Cart {order && `· #${order.number}`}</div>
+                  <div className="text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Active Cart {order && `· #${order.number}`}</div>
                   <div className="font-bold">
                     {table ? `Table ${table.name}` : isQuick ? 'Quick Bill' : mode === 'DELIVERY' ? 'Home Delivery' : 'Takeaway'}
                   </div>
                 </div>
                 {orderType === 'DINE_IN' && (
-                  <select className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs" value={waiterId} onChange={(e) => setWaiterId(e.target.value)}>
+                  <select className="rounded-md border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-1 text-xs" value={waiterId} onChange={(e) => setWaiterId(e.target.value)}>
                     <option value="">No waiter</option>
                     {waiters.map((w) => <option key={w.id} value={w.id} className="text-black">{w.name}</option>)}
                   </select>
@@ -1106,46 +1107,46 @@ export default function PosPage() {
               </div>
               {table && (
                 <div className="mt-2 grid grid-cols-3 gap-2">
-                  <button onClick={() => { reloadAreas(); setTransferOpen(true); }} className="rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⇄ Transfer</button>
-                  <button onClick={() => { reloadAreas(); setMergeOpen(true); }} className="rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10">⧉ Merge</button>
-                  <button onClick={openMoveItems} disabled={busy || cart.length === 0} className="rounded-md bg-white/5 py-1.5 text-[11px] text-white/70 hover:bg-white/10 disabled:opacity-40">↦ Move items</button>
+                  <button onClick={() => { reloadAreas(); setTransferOpen(true); }} className="rounded-md bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]">⇄ Transfer</button>
+                  <button onClick={() => { reloadAreas(); setMergeOpen(true); }} className="rounded-md bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]">⧉ Merge</button>
+                  <button onClick={openMoveItems} disabled={busy || cart.length === 0} className="rounded-md bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40">↦ Move items</button>
                 </div>
               )}
               {/* Customer (attach at billing; enables loyalty + credit) */}
               <div className="mt-2 flex items-center gap-2">
                 {order?.customerName ? (
-                  <span className="flex-1 truncate rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/70">👤 {order.customerName}{order.customerPhone ? ` · ${order.customerPhone}` : ''}</span>
+                  <span className="flex-1 truncate rounded-md bg-[var(--pos-surface)] px-2 py-1 text-[11px] text-[var(--pos-text-70)]">👤 {order.customerName}{order.customerPhone ? ` · ${order.customerPhone}` : ''}</span>
                 ) : (
-                  <span className="flex-1 text-[11px] text-white/30">No customer attached</span>
+                  <span className="flex-1 text-[11px] text-[var(--pos-text-30)]">No customer attached</span>
                 )}
-                <button onClick={() => { setBillCust({ name: order?.customerName ?? '', phone: order?.customerPhone ?? '' }); setCustModal(true); }} className="rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/70 hover:bg-white/10">{order?.customerName ? 'Change' : '+ Customer'}</button>
+                <button onClick={() => { setBillCust({ name: order?.customerName ?? '', phone: order?.customerPhone ?? '' }); setCustModal(true); }} className="rounded-md bg-[var(--pos-surface)] px-2 py-1 text-[11px] text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]">{order?.customerName ? 'Change' : '+ Customer'}</button>
               </div>
             </div>
 
             {/* item table */}
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-white/10 px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-white/30">
+              <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-[var(--pos-line)] px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--pos-text-30)]">
                 <span>Item</span><span className="text-right">Unit</span><span className="text-right">Total</span>
               </div>
               {cart.length === 0 ? (
-                <p className="py-12 text-center text-sm text-white/30">Tap items to add them</p>
+                <p className="py-12 text-center text-sm text-[var(--pos-text-30)]">Tap items to add them</p>
               ) : (
                 cart.map((l) => {
                   const mod = l.modifiers.reduce((s, m) => s + m.priceCents, 0);
                   const fired = isFired(l);
                   return (
-                    <div key={l.key} className="border-b border-white/5 px-4 py-2.5">
+                    <div key={l.key} className="border-b border-[var(--pos-line)] px-4 py-2.5">
                       <div className="grid grid-cols-[1fr_auto_auto] items-start gap-2 text-sm">
                         <span className="font-medium">
                           {l.name}
-                          {l.station && l.station !== 'BILLING' && <span className="ml-1 text-[9px] text-white/30">{l.station === 'KITCHEN' ? 'KOT' : 'BOT'}</span>}
+                          {l.station && l.station !== 'BILLING' && <span className="ml-1 text-[9px] text-[var(--pos-text-30)]">{l.station === 'KITCHEN' ? 'KOT' : 'BOT'}</span>}
                           {fired && <span className="ml-1 rounded bg-[#F39C12]/20 px-1 text-[9px] text-[#F39C12]">fired</span>}
                         </span>
-                        <span className="text-right text-white/60">{formatMoney(l.unitPriceCents + mod)}</span>
+                        <span className="text-right text-[var(--pos-text-60)]">{formatMoney(l.unitPriceCents + mod)}</span>
                         <span className="text-right font-semibold">{formatMoney((l.unitPriceCents + mod) * l.quantity)}</span>
                       </div>
                       {l.modifiers.length > 0 && (
-                        <div className="mt-0.5 text-[11px] text-white/40">— {l.modifiers.map((m) => m.name).join(', ')}</div>
+                        <div className="mt-0.5 text-[11px] text-[var(--pos-text-40)]">— {l.modifiers.map((m) => m.name).join(', ')}</div>
                       )}
                       {/* Per-item note (e.g. "only 2 ice cubes") */}
                       {fired ? (
@@ -1156,7 +1157,7 @@ export default function PosPage() {
                             value={l.notes ?? ''}
                             onChange={(e) => setLineNote(l.key, e.target.value)}
                             placeholder="+ note (e.g. no ice)"
-                            className="min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white placeholder-white/25"
+                            className="min-w-0 flex-1 rounded border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-0.5 text-[11px] text-[var(--pos-text)] placeholder-[var(--pos-placeholder)]"
                           />
                           <input
                             type="number"
@@ -1166,7 +1167,7 @@ export default function PosPage() {
                             onChange={(e) => setLineDiscount(l.key, e.target.value)}
                             placeholder="disc Rs"
                             title={canDiscountNow ? 'Item discount (Rs)' : 'Needs manager approval'}
-                            className="w-16 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-[11px] text-amber-300 placeholder-white/25 disabled:opacity-40"
+                            className="w-16 rounded border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-0.5 text-right text-[11px] text-amber-300 placeholder-[var(--pos-placeholder)] disabled:opacity-40"
                           />
                         </div>
                       )}
@@ -1178,9 +1179,9 @@ export default function PosPage() {
                           <span className="text-sm font-semibold">Qty {l.quantity}</span>
                         ) : (
                           <>
-                            <button onClick={() => changeQty(l.key, -1)} className="h-6 w-6 rounded bg-white/10 text-white/80 hover:bg-white/20">−</button>
+                            <button onClick={() => changeQty(l.key, -1)} className="h-6 w-6 rounded bg-[var(--pos-surface-strong)] text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)]">−</button>
                             <span className="w-6 text-center text-sm font-semibold">{l.quantity}</span>
-                            <button onClick={() => changeQty(l.key, 1)} className="h-6 w-6 rounded bg-white/10 text-white/80 hover:bg-white/20">+</button>
+                            <button onClick={() => changeQty(l.key, 1)} className="h-6 w-6 rounded bg-[var(--pos-surface-strong)] text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)]">+</button>
                           </>
                         )}
                         <button onClick={() => cancelLine(l)} className="ml-auto rounded bg-[#E74C3C]/15 px-2 py-0.5 text-[10px] text-[#E74C3C] hover:bg-[#E74C3C]/25">Cancel</button>
@@ -1192,17 +1193,17 @@ export default function PosPage() {
             </div>
 
             {/* totals */}
-            <div className="border-t border-white/10 px-4 py-3">
-              {custLabel && <div className="mb-2 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-white/60">👤 {custLabel}</div>}
+            <div className="border-t border-[var(--pos-line)] px-4 py-3">
+              {custLabel && <div className="mb-2 rounded-lg bg-[var(--pos-surface)] px-3 py-1.5 text-xs text-[var(--pos-text-60)]">👤 {custLabel}</div>}
               <div className="space-y-1 text-sm">
-                <div className="flex justify-between text-white/50"><span>Sub-Total ({totals.count} items)</span><span>{formatMoney(totals.subtotal)}</span></div>
-                <div className="flex items-center justify-between text-white/50">
+                <div className="flex justify-between text-[var(--pos-text-50)]"><span>Sub-Total ({totals.count} items)</span><span>{formatMoney(totals.subtotal)}</span></div>
+                <div className="flex items-center justify-between text-[var(--pos-text-50)]">
                   <span className="flex items-center gap-1">
                     Discount
                     <button
                       disabled={!canDiscountNow}
                       onClick={() => setDiscountMode((m) => (m === 'rs' ? 'pct' : 'rs'))}
-                      className="rounded bg-white/10 px-1.5 text-[10px] text-white/70 disabled:opacity-40"
+                      className="rounded bg-[var(--pos-surface-strong)] px-1.5 text-[10px] text-[var(--pos-text-70)] disabled:opacity-40"
                     >
                       {discountMode === 'rs' ? 'Rs' : '%'}
                     </button>
@@ -1211,36 +1212,36 @@ export default function PosPage() {
                     )}
                   </span>
                   <div className="flex items-center gap-1">
-                    <input type="number" min={0} value={discount} disabled={!canDiscountNow} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={canDiscountNow ? '' : 'Needs manager approval'} className="w-16 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white disabled:opacity-40" />
-                    {discountMode === 'pct' && totals.discountCents > 0 && <span className="text-[10px] text-white/40">−{formatMoney(totals.discountCents)}</span>}
+                    <input type="number" min={0} value={discount} disabled={!canDiscountNow} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={canDiscountNow ? '' : 'Needs manager approval'} className="w-16 rounded border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-0.5 text-right text-sm text-[var(--pos-text)] disabled:opacity-40" />
+                    {discountMode === 'pct' && totals.discountCents > 0 && <span className="text-[10px] text-[var(--pos-text-40)]">−{formatMoney(totals.discountCents)}</span>}
                   </div>
                 </div>
                 {pointsAvail > 0 && (
                   <div className="flex items-center justify-between text-amber-300/80">
-                    <span>⭐ Redeem pts <span className="text-white/30">(of {pointsAvail})</span></span>
-                    <input type="number" min={0} max={pointsAvail} value={redeemPts} onChange={(e) => setRedeemPts(e.target.value)} placeholder="0" className="w-20 rounded border border-white/10 bg-white/5 px-2 py-0.5 text-right text-sm text-white" />
+                    <span>⭐ Redeem pts <span className="text-[var(--pos-text-30)]">(of {pointsAvail})</span></span>
+                    <input type="number" min={0} max={pointsAvail} value={redeemPts} onChange={(e) => setRedeemPts(e.target.value)} placeholder="0" className="w-20 rounded border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-0.5 text-right text-sm text-[var(--pos-text)]" />
                   </div>
                 )}
                 {totals.redeemCents > 0 && (
                   <div className="flex justify-between text-amber-300"><span>Points redeemed</span><span>−{formatMoney(totals.redeemCents)}</span></div>
                 )}
-                {serviceChargeRate > 0 && <div className="flex justify-between text-white/50"><span>Service ({Math.round(serviceChargeRate * 100)}%)</span><span>{formatMoney(totals.serviceCharge)}</span></div>}
-                <div className="flex justify-between text-white/50"><span>VAT ({Math.round(vatRate * 100)}%)</span><span>{formatMoney(totals.tax)}</span></div>
-                <div className="flex justify-between border-t border-white/10 pt-1.5 text-lg font-bold text-[#2ECC71]"><span>TOTAL DUE</span><span>{formatMoney(totals.total)}</span></div>
+                {serviceChargeRate > 0 && <div className="flex justify-between text-[var(--pos-text-50)]"><span>Service ({Math.round(serviceChargeRate * 100)}%)</span><span>{formatMoney(totals.serviceCharge)}</span></div>}
+                <div className="flex justify-between text-[var(--pos-text-50)]"><span>VAT ({Math.round(vatRate * 100)}%)</span><span>{formatMoney(totals.tax)}</span></div>
+                <div className="flex justify-between border-t border-[var(--pos-line)] pt-1.5 text-lg font-bold text-[#2ECC71]"><span>TOTAL DUE</span><span>{formatMoney(totals.total)}</span></div>
               </div>
 
               {/* actions */}
               <div className="mt-3 grid grid-cols-3 gap-2">
-                <button className="rounded-lg bg-white/10 py-2 text-xs font-semibold text-white/80 hover:bg-white/20 disabled:opacity-40" disabled={busy || !emp.canVoid} title={emp.canVoid ? '' : 'No void permission'} onClick={voidBasket}>Void Basket</button>
-                <button className="rounded-lg bg-white/10 py-2 text-xs font-semibold text-white/80 hover:bg-white/20 disabled:opacity-40" disabled={busy || isQuick} onClick={() => runAction('kot_print')}>Print KOT</button>
+                <button className="rounded-lg bg-[var(--pos-surface-strong)] py-2 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40" disabled={busy || !emp.canVoid} title={emp.canVoid ? '' : 'No void permission'} onClick={voidBasket}>Void Basket</button>
+                <button className="rounded-lg bg-[var(--pos-surface-strong)] py-2 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40" disabled={busy || isQuick} onClick={() => runAction('kot_print')}>Print KOT</button>
                 <button className="rounded-lg bg-[#2ECC71] py-2 text-xs font-bold text-black hover:bg-[#28b463] disabled:opacity-40" disabled={busy} onClick={() => runAction('pay')}>Proceed to Pay</button>
               </div>
               {!isQuick && (
                 <div className="mt-2 grid grid-cols-4 gap-2">
-                  <button className="rounded-lg bg-white/5 py-1.5 text-[11px] text-white/60 hover:bg-white/10" disabled={busy} onClick={() => runAction('draft')}>Hold</button>
-                  <button className="rounded-lg bg-white/5 py-1.5 text-[11px] text-white/60 hover:bg-white/10" disabled={busy} onClick={() => runAction('kot')}>KOT</button>
-                  <button className="rounded-lg bg-white/5 py-1.5 text-[11px] text-white/60 hover:bg-white/10" disabled={busy} onClick={() => runAction('bill')}>Bill</button>
-                  <button className="rounded-lg bg-white/5 py-1.5 text-[11px] text-white/60 hover:bg-white/10" disabled={busy} onClick={() => runAction('bill_print')}>Bill+Print</button>
+                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('draft')}>Hold</button>
+                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('kot')}>KOT</button>
+                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('bill')}>Bill</button>
+                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('bill_print')}>Bill+Print</button>
                 </div>
               )}
             </div>
@@ -1465,7 +1466,7 @@ export default function PosPage() {
             <div className="rounded-lg bg-slate-50 p-2"><div className="text-xs text-slate-500">Pay-ins</div><div className="font-bold">{formatMoney(drawerInfo?.payIn ?? 0)}</div></div>
             <div className="rounded-lg bg-slate-50 p-2"><div className="text-xs text-slate-500">Pay-outs</div><div className="font-bold">{formatMoney(drawerInfo?.payOut ?? 0)}</div></div>
           </div>
-          <div className="rounded-lg bg-slate-900 p-3 text-center text-white">
+          <div className="rounded-lg bg-slate-900 p-3 text-center text-[var(--pos-text)]">
             <div className="text-xs uppercase tracking-wide text-slate-400">Expected in drawer</div>
             <div className="text-2xl font-bold">{formatMoney(drawerInfo?.expectedCents ?? 0)}</div>
           </div>
