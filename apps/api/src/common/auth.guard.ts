@@ -26,6 +26,25 @@ export class AuthGuard implements CanActivate {
   }
 }
 
+// Requires a valid staff token with one of the given roles.
+// Usage: @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+@Injectable()
+export class RoleGuard implements CanActivate {
+  constructor(private readonly roles: string[]) {}
+
+  canActivate(ctx: ExecutionContext): boolean {
+    const req = ctx.switchToHttp().getRequest();
+    const header: string | undefined = req.headers['authorization'];
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
+    const payload = token ? verifyToken(token) : null;
+    if (!payload) throw new UnauthorizedException('Staff sign-in required');
+    if (!this.roles.includes(payload.role))
+      throw new ForbiddenException(`Requires ${this.roles.join(' or ')} role`);
+    req.employee = payload;
+    return true;
+  }
+}
+
 // Attaches the employee if a valid token is present, but never blocks. Lets a
 // handler/service apply permission logic conditionally (e.g. only when an order
 // actually has items to void).

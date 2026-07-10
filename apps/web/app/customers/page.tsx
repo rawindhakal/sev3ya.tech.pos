@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { Customer, CreditLedgerEntry, PaymentMethod } from '@/lib/types';
 import Modal from '@/components/Modal';
+import ManagerAuth from '@/components/ManagerAuth';
 
 const SETTLE_METHODS: PaymentMethod[] = ['CASH', 'FONEPAY', 'BANK', 'ESEWA', 'KHALTI', 'CARD'];
 
@@ -43,15 +44,32 @@ export default function CustomersPage() {
     setLedger(await api.get<{ customer: Customer; entries: CreditLedgerEntry[] }>(`/customers/${c.id}/ledger`));
   }
 
-  async function receivePayment() {
+  const [mgrOpen, setMgrOpen] = useState(false);
+
+  // Credit settlement is manager/admin-approved (server-enforced). If the
+  // signed-in user is already a manager their own token is used; otherwise a
+  // manager signs in via the approval dialog.
+  function receivePayment() {
     if (!ledger) return;
     const cents = dollarsToCents(parseFloat(payAmount || '0'));
     if (cents <= 0) return setPayErr('Enter the amount received');
+    let me: { role?: string } = {};
+    try { me = JSON.parse(localStorage.getItem('cakezake-emp') ?? '{}'); } catch {}
+    if (me.role === 'ADMIN' || me.role === 'MANAGER') {
+      void submitPayment(cents);
+    } else {
+      setMgrOpen(true);
+    }
+  }
+
+  async function submitPayment(cents: number, overrideToken?: string) {
+    if (!ledger) return;
     setPayBusy(true); setPayErr(null);
     try {
-      await api.post(`/customers/${ledger.customer.id}/settle-credit`, {
-        amountCents: cents, method: payMethod, note: payNote || undefined,
-      });
+      const path = `/customers/${ledger.customer.id}/settle-credit`;
+      const body = { amountCents: cents, method: payMethod, note: payNote || undefined };
+      if (overrideToken) await api.postAs(overrideToken, path, body);
+      else await api.post(path, body);
       await openLedger(ledger.customer); // refresh the statement
       load();
     } catch (e) {
@@ -203,6 +221,13 @@ export default function CustomersPage() {
                 <button className="btn-primary mt-2 w-full" disabled={payBusy} onClick={receivePayment}>
                   {payBusy ? 'Recording…' : `Record ${payMethod === 'CASH' ? 'cash ' : ''}payment`}
                 </button>
+                <ManagerAuth
+                  open={mgrOpen}
+                  title="Approve credit settlement"
+                  hint="Recording a credit payment needs a manager or admin sign-in."
+                  onApproved={({ token }) => void submitPayment(dollarsToCents(parseFloat(payAmount || '0')), token)}
+                  onClose={() => setMgrOpen(false)}
+                />
                 {payMethod === 'CASH' && <p className="mt-1.5 text-[11px] text-slate-400">Cash goes into the open drawer as a pay-in and shows on the day-end report.</p>}
               </div>
             )}

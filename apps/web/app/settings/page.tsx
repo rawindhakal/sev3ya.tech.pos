@@ -201,6 +201,9 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* ── IRD (CBMS Nepal) e-billing ── */}
+      {form && <IrdCard settings={form} onSaved={setForm} />}
+
       {/* ── Danger zone ── */}
       <div className="mt-6 rounded-xl border border-red-200 bg-red-50/50 p-6 dark:border-red-900/40 dark:bg-red-950/20">
         <h2 className="mb-1 text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
@@ -243,6 +246,70 @@ export default function SettingsPage() {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+// ── IRD (CBMS) credentials card ──────────────────────
+function IrdCard({ settings, onSaved }: { settings: Settings; onSaved: (s: Settings) => void }) {
+  const ird = settings.ird ?? { enabled: false, hasPassword: false };
+  const [enabled, setEnabled] = useState(ird.enabled);
+  const [username, setUsername] = useState(ird.username ?? '');
+  const [password, setPassword] = useState('');
+  const [pan, setPan] = useState(ird.sellerPan ?? '');
+  const [url, setUrl] = useState(ird.apiUrl ?? '');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setNote(null);
+    try {
+      const updated = await api.patch<Settings>('/settings', {
+        irdEnabled: enabled,
+        irdUsername: username || undefined,
+        ...(password ? { irdPassword: password } : {}),
+        irdSellerPan: pan || undefined,
+        irdApiUrl: url || undefined,
+      });
+      onSaved(updated);
+      setPassword('');
+      setNote('Saved ✓');
+    } catch (e) {
+      setNote((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card mt-6 p-6">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700">IRD Nepal — e-billing (CBMS)</h2>
+      <p className="mb-4 text-xs text-slate-400">
+        Credentials issued by IRD for the Central Billing Monitoring System. Invoices sync from
+        Reports → &quot;Sync to IRD&quot;. The password is stored server-side and never shown again.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div><label className="label">IRD username</label>
+          <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" /></div>
+        <div><label className="label">IRD password {ird.hasPassword && '— saved, blank to keep'}</label>
+          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder={ird.hasPassword ? '••••••••' : ''} /></div>
+        <div><label className="label">Seller PAN</label>
+          <input className="input" value={pan} onChange={(e) => setPan(e.target.value)} placeholder="e.g. 601234567" /></div>
+        <div><label className="label">API URL (blank = official CBMS)</label>
+          <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://cbapi.ird.gov.np/api/bill" /></div>
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <button type="button" onClick={() => setEnabled(!enabled)}
+          className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+          <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-brand-500' : 'bg-slate-300'}`}>
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </span>
+          <span className="text-slate-700">{enabled ? 'Sync enabled' : 'Sync disabled'}</span>
+        </button>
+        <button className="btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save IRD settings'}</button>
+        {note && <span className="text-xs font-medium text-slate-500">{note}</span>}
+      </div>
     </div>
   );
 }

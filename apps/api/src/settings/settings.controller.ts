@@ -25,6 +25,11 @@ class UpdateSettingsDto {
   @IsOptional() @IsBoolean() featKds?: boolean;
   @IsOptional() @IsObject() billTemplate?: object;
   @IsOptional() @IsObject() kotTemplate?: object;
+  @IsOptional() @IsBoolean() irdEnabled?: boolean;
+  @IsOptional() @IsString() irdUsername?: string;
+  @IsOptional() @IsString() irdPassword?: string;
+  @IsOptional() @IsString() irdSellerPan?: string;
+  @IsOptional() @IsString() irdApiUrl?: string;
 }
 
 @Controller('settings')

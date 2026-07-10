@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   IsEnum,
   IsInt,
@@ -7,6 +7,8 @@ import {
   Min,
 } from 'class-validator';
 import { CashDrawerService } from './cash-drawer.service';
+import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
+import { TokenPayload } from '../common/token';
 
 class OpenDto {
   @IsInt() @Min(0) openingFloatCents: number;
@@ -65,5 +67,15 @@ export class CashDrawerController {
   @Post('close')
   close(@Body() dto: CloseDto) {
     return this.drawer.close(dto);
+  }
+
+  // Admin can correct the opening balance of the open session at any time.
+  @Patch('opening-float')
+  @UseGuards(new RoleGuard(['ADMIN']))
+  adjustOpeningFloat(
+    @Body() dto: { openingFloatCents: number },
+    @CurrentEmployee() emp: TokenPayload,
+  ) {
+    return this.drawer.adjustOpeningFloat(Number(dto.openingFloatCents), emp);
   }
 }

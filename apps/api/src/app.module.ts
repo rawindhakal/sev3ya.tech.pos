@@ -23,6 +23,7 @@ import { CrmModule } from './crm/crm.module';
 import { FinanceModule } from './finance/finance.module';
 import { RoasteryModule } from './roastery/roastery.module';
 import { TerminalsModule } from './terminals/terminals.module';
+import { IrdModule } from './ird/ird.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { TerminalsModule } from './terminals/terminals.module';
     FinanceModule,
     RoasteryModule,
     TerminalsModule,
+    IrdModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor }],

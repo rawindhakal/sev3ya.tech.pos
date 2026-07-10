@@ -3,6 +3,7 @@
 // Printable end-of-day (Z) report for a cash-drawer session ("business day" =
 // terminal open → close). Prints via #print-area (body.print-receipt).
 import { formatMoney } from '@/lib/api';
+import { formatBsLong } from '@/lib/bs-date';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
 import type { PaymentMethod, Settings } from '@/lib/types';
 
@@ -33,6 +34,7 @@ export default function DayReport({ report, settings }: { report: DayReportData 
       <div style={{ textAlign: 'center', marginBottom: 8 }}>
         <div style={{ fontSize: 18, fontWeight: 700 }}>{settings?.restaurantName ?? 's3vya'}</div>
         <div style={{ fontSize: 13, fontWeight: 700 }}>*** DAY-END (Z) REPORT ***</div>
+        <div style={{ fontSize: 11 }}>{formatBsLong(new Date(session.openedAt))} BS</div>
       </div>
 
       <div style={{ fontSize: 12, borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '4px 0' }}>

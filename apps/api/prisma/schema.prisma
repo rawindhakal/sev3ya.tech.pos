@@ -237,6 +237,11 @@ model Order {
   // Loyalty points redeemed against this order (#111).
   redeemedPoints Int @default(0)
 
+  // IRD (CBMS) e-billing sync state for this invoice.
+  irdSyncedAt   DateTime?
+  irdSyncStatus String?   // SYNCED | FAILED
+  irdSyncMessage String?
+
   // Which terminal/till rang this order (multi-terminal attribution).
   terminalId String?
 
@@ -289,7 +294,6 @@ model Employee {
   role         StaffRole @default(CASHIER)
   username     String?   @unique // username + password login
   passwordHash String?   // scrypt salt:hash
-  pin          String    // quick PIN for manager overrides / clock-in
   isActive     Boolean   @default(true)
 
   // Granular permission matrix (#129, spec §3.1 Step 3).
@@ -543,6 +547,13 @@ model CafeSetting {
   // Printable ticket templates (visual editor under Settings → Printing).
   billTemplate      Json?
   kotTemplate       Json?
+
+  // IRD Nepal (CBMS e-billing) integration.
+  irdEnabled   Boolean @default(false)
+  irdUsername  String?
+  irdPassword  String?
+  irdSellerPan String?
+  irdApiUrl    String? // e.g. https://cbapi.ird.gov.np/api/bill
 
   // Module feature toggles — admin enables/disables sections app-wide.
   featReservations Boolean @default(true)

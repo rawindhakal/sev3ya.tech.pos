@@ -34,6 +34,25 @@ export default function CashDrawerPage() {
     return () => clearInterval(t);
   }, []);
 
+  // Only an admin may correct the opening balance mid-day (server-enforced too).
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    try { setIsAdmin(JSON.parse(localStorage.getItem('cakezake-emp') ?? '{}').role === 'ADMIN'); } catch {}
+  }, []);
+
+  async function adjustOpeningFloat() {
+    const current = ((state?.session?.openingFloatCents ?? 0) / 100).toFixed(2);
+    const v = prompt('New opening balance (Rs):', current);
+    if (v === null) return;
+    const cents = dollarsToCents(parseFloat(v) || 0);
+    try {
+      await api.patch('/cash-drawer/opening-float', { openingFloatCents: cents });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   async function openDrawer() {
     setBusy(true);
     try {
@@ -113,7 +132,17 @@ export default function CashDrawerPage() {
               <span className="badge bg-green-100 text-green-700">OPEN</span>
             </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Stat label="Opening float" value={formatMoney(s!.openingFloatCents)} />
+              <div>
+                <Stat label="Opening float" value={formatMoney(s!.openingFloatCents)} />
+                {isAdmin && (
+                  <button
+                    className="mt-1 text-[11px] text-brand-600 underline decoration-dotted hover:text-brand-700"
+                    onClick={adjustOpeningFloat}
+                  >
+                    ✏️ adjust
+                  </button>
+                )}
+              </div>
               <Stat label="Cash sales" value={formatMoney(state.cashSalesCents ?? 0)} />
               <Stat label="Pay-ins" value={formatMoney(state.payIn ?? 0)} />
               <Stat label="Pay-outs" value={formatMoney(state.payOut ?? 0)} />

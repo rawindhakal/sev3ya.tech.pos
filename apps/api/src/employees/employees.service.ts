@@ -40,18 +40,15 @@ export class EmployeesService {
   }
 
   create(dto: Prisma.EmployeeCreateInput & { password?: string }) {
-    if (!/^\d{4,6}$/.test(dto.pin))
-      throw new BadRequestException('PIN must be 4–6 digits');
+    if (!dto.username?.trim() || !dto.password)
+      throw new BadRequestException('Username and password are required');
     const { password, ...rest } = dto;
-    const data: Prisma.EmployeeCreateInput = { ...rest };
-    if (password) data.passwordHash = hashPassword(password);
+    const data: Prisma.EmployeeCreateInput = { ...rest, passwordHash: hashPassword(password) };
     return this.prisma.employee.create({ data, select: publicSelect });
   }
 
   async update(id: string, dto: Prisma.EmployeeUpdateInput & { password?: string }) {
     await this.get(id);
-    if (dto.pin && !/^\d{4,6}$/.test(dto.pin as string))
-      throw new BadRequestException('PIN must be 4–6 digits');
     const { password, ...rest } = dto;
     const data: Prisma.EmployeeUpdateInput = { ...rest };
     if (password) data.passwordHash = hashPassword(password);
@@ -73,29 +70,21 @@ export class EmployeesService {
     return e;
   }
 
-  // Login — accepts username+password (primary) or a quick PIN (manager
-  // overrides / clock-in). Returns the profile + permissions + signed token.
-  async login(creds: { pin?: string; username?: string; password?: string }) {
-    let emp;
-    if (creds.username && creds.password) {
-      const found = await this.prisma.employee.findFirst({
-        where: { username: creds.username, isActive: true },
-      });
-      if (!found || !verifyPassword(creds.password, found.passwordHash))
-        throw new UnauthorizedException('Invalid username or password');
-      emp = await this.prisma.employee.findUnique({
-        where: { id: found.id },
-        select: { ...publicSelect },
-      });
-    } else if (creds.pin) {
-      emp = await this.prisma.employee.findFirst({
-        where: { pin: creds.pin, isActive: true },
-        select: { ...publicSelect },
-      });
-      if (!emp) throw new UnauthorizedException('Invalid PIN');
-    } else {
-      throw new BadRequestException('Provide username + password or a PIN');
-    }
+  // Login — username + password only (the PIN system is retired). Returns the
+  // profile + permissions + signed token. Also used by the ManagerAuth override
+  // dialog (discounts, voids, credit settlement need an ADMIN/MANAGER sign-in).
+  async login(creds: { username?: string; password?: string }) {
+    if (!creds.username || !creds.password)
+      throw new BadRequestException('Provide username and password');
+    const found = await this.prisma.employee.findFirst({
+      where: { username: creds.username, isActive: true },
+    });
+    if (!found || !verifyPassword(creds.password, found.passwordHash))
+      throw new UnauthorizedException('Invalid username or password');
+    const emp = await this.prisma.employee.findUnique({
+      where: { id: found.id },
+      select: { ...publicSelect },
+    });
     if (!emp) throw new UnauthorizedException('Invalid credentials');
     // Whether the employee currently has an open shift.
     const openShift = await this.prisma.shift.findFirst({

@@ -37,6 +37,14 @@ export class SettingsService {
       wifiPassword: s.wifiPassword,
       billTemplate: s.billTemplate ?? null,
       kotTemplate: s.kotTemplate ?? null,
+      // IRD config — the password is write-only (never returned to clients).
+      ird: {
+        enabled: s.irdEnabled,
+        username: s.irdUsername,
+        sellerPan: s.irdSellerPan,
+        apiUrl: s.irdApiUrl,
+        hasPassword: !!s.irdPassword,
+      },
       features: {
         reservations: s.featReservations,
         inventory: s.featInventory,
@@ -116,6 +124,11 @@ export class SettingsService {
     featKds?: boolean;
     billTemplate?: object;
     kotTemplate?: object;
+    irdEnabled?: boolean;
+    irdUsername?: string;
+    irdPassword?: string;
+    irdSellerPan?: string;
+    irdApiUrl?: string;
   }) {
     await this.ensure();
     await this.prisma.cafeSetting.update({ where: { id: SINGLETON }, data });

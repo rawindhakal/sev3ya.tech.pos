@@ -238,6 +238,7 @@ export interface Settings {
   wifiPassword?: string | null;
   billTemplate?: Record<string, unknown> | null;
   kotTemplate?: Record<string, unknown> | null;
+  ird?: { enabled: boolean; username?: string | null; sellerPan?: string | null; apiUrl?: string | null; hasPassword: boolean };
 }
 
 export interface CreditLedgerEntry {

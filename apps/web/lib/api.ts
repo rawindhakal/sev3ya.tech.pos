@@ -80,6 +80,12 @@ async function queuedMutation<T>(method: string, path: string, body?: unknown): 
 
 export const api = {
   get: <T>(path: string) => cachedGet<T>(path),
+  // Perform a mutation as someone else (e.g. a manager override): the given
+  // token is sent instead of the logged-in user's.
+  postAs: <T>(token: string, path: string, body: unknown) =>
+    request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { Authorization: `Bearer ${token}` } }),
+  patchAs: <T>(token: string, path: string, body: unknown) =>
+    request<T>(path, { method: 'PATCH', body: JSON.stringify(body), headers: { Authorization: `Bearer ${token}` } }),
   post: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) =>

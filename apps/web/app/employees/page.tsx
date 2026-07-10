@@ -29,7 +29,6 @@ const blank = {
   role: 'CASHIER' as StaffRole,
   username: '',
   password: '',
-  pin: '',
   canVoid: false,
   canDiscount: false,
   canManageInventory: false,
@@ -69,7 +68,7 @@ export default function EmployeesPage() {
     setModal(true);
   }
   function openEdit(e: Employee) {
-    setForm({ ...blank, ...e, username: e.username ?? '', pin: '', password: '' });
+    setForm({ ...blank, ...e, username: e.username ?? '', password: '' });
     setModal(true);
   }
 
@@ -86,13 +85,12 @@ export default function EmployeesPage() {
         canViewReports: form.canViewReports,
         canManageStaff: form.canManageStaff,
       };
-      if (form.pin) payload.pin = form.pin;
       if (form.username.trim()) payload.username = form.username.trim();
       if (form.password) payload.password = form.password;
       if (form.id) {
         await api.patch(`/employees/${form.id}`, payload);
       } else {
-        if (!form.pin) throw new Error('A 4–6 digit PIN is required');
+        if (!form.username.trim() || !form.password) throw new Error('Username and password are required');
         await api.post('/employees', payload);
       }
       setModal(false);
@@ -206,16 +204,12 @@ export default function EmployeesPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Username</label>
-              <input className="input" autoComplete="off" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="e.g. ram" />
+              <input className="input" autoComplete="off" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="e.g. ram" required={!form.id} />
             </div>
             <div>
               <label className="label">Password{form.id && ' — blank to keep'}</label>
-              <input className="input" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••" />
+              <input className="input" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••" required={!form.id} />
             </div>
-          </div>
-          <div>
-            <label className="label">PIN — quick manager override (4–6 digits){form.id && ', leave blank to keep'}</label>
-            <input className="input" inputMode="numeric" pattern="\d{4,6}" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} placeholder="••••" />
           </div>
           <div>
             <label className="label">Permissions</label>

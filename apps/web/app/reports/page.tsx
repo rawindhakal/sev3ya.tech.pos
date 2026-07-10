@@ -247,6 +247,103 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
+
+      <IrdSection from={from} to={to} />
+    </div>
+  );
+}
+
+// ── IRD (CBMS Nepal) sales register + Tally export ────
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+
+interface IrdReport {
+  sellerPan: string | null;
+  irdEnabled: boolean;
+  totals: { invoices: number; taxableCents: number; vatCents: number; totalCents: number; synced: number; pending: number; failed: number };
+  rows: { sn: number; invoiceNumber: number; dateBs: string | null; buyerName: string; taxableCents: number; vatCents: number; totalCents: number; syncStatus: string }[];
+}
+
+function IrdSection({ from, to }: { from: string; to: string }) {
+  const [rep, setRep] = useState<IrdReport | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+
+  const loadIrd = useCallback(() => {
+    api.get<IrdReport>(`/ird/report?from=${from}&to=${to}`).then(setRep).catch(() => {});
+  }, [from, to]);
+  useEffect(loadIrd, [loadIrd]);
+
+  async function syncNow() {
+    setSyncing(true);
+    setMsg(null);
+    try {
+      const r = await api.post<{ attempted: number; synced: number; failed: number }>('/ird/sync', {});
+      setMsg(`Attempted ${r.attempted} · synced ${r.synced} · failed ${r.failed}`);
+      loadIrd();
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  if (!rep) return null;
+  const badge = (s: string) =>
+    s === 'SYNCED' ? 'bg-emerald-100 text-emerald-700' : s === 'FAILED' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500';
+
+  return (
+    <div className="mt-6 card p-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-slate-800">IRD sales register (CBMS)</h2>
+          <p className="text-xs text-slate-400">
+            Seller PAN: {rep.sellerPan || 'not set'} · {rep.totals.invoices} invoices · synced {rep.totals.synced} · pending {rep.totals.pending} · failed {rep.totals.failed}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <a className="btn-ghost" href={`${API_BASE}/ird/tally-xml?from=${from}&to=${to}`} download>📥 Tally XML</a>
+          <button className="btn-primary" disabled={syncing} onClick={syncNow} title={rep.irdEnabled ? 'Push unsynced invoices to IRD' : 'Enable + configure IRD in Settings first'}>
+            {syncing ? 'Syncing…' : '🔁 Sync to IRD'}
+          </button>
+        </div>
+      </div>
+      {msg && <p className="mb-3 text-xs font-medium text-slate-600">{msg}</p>}
+      <div className="max-h-80 overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+              <th className="p-2">SN</th><th className="p-2">Invoice</th><th className="p-2">Date (BS)</th><th className="p-2">Buyer</th>
+              <th className="p-2 text-right">Taxable</th><th className="p-2 text-right">VAT</th><th className="p-2 text-right">Total</th><th className="p-2">IRD</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {rep.rows.map((r) => (
+              <tr key={r.invoiceNumber}>
+                <td className="p-2 text-slate-400">{r.sn}</td>
+                <td className="p-2 font-medium text-slate-700">#{r.invoiceNumber}</td>
+                <td className="p-2 tabular-nums text-slate-600">{r.dateBs}</td>
+                <td className="p-2 text-slate-600">{r.buyerName}</td>
+                <td className="p-2 text-right text-slate-600">{formatMoney(r.taxableCents)}</td>
+                <td className="p-2 text-right text-slate-600">{formatMoney(r.vatCents)}</td>
+                <td className="p-2 text-right font-semibold text-slate-800">{formatMoney(r.totalCents)}</td>
+                <td className="p-2"><span className={`badge ${badge(r.syncStatus)}`}>{r.syncStatus}</span></td>
+              </tr>
+            ))}
+            {rep.rows.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-slate-400">No paid invoices in this range.</td></tr>}
+          </tbody>
+          {rep.rows.length > 0 && (
+            <tfoot>
+              <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                <td className="p-2" colSpan={4}>Totals</td>
+                <td className="p-2 text-right">{formatMoney(rep.totals.taxableCents)}</td>
+                <td className="p-2 text-right">{formatMoney(rep.totals.vatCents)}</td>
+                <td className="p-2 text-right">{formatMoney(rep.totals.totalCents)}</td>
+                <td className="p-2" />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
     </div>
   );
 }

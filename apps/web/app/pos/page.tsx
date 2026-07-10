@@ -25,6 +25,8 @@ import PaymentPanel from '@/components/PaymentPanel';
 import ConnBadge from '@/components/ConnBadge';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
 import AutoPrintAgent from '@/components/AutoPrintAgent';
+import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
+import { formatBsLong } from '@/lib/bs-date';
 import { getStatus } from '@/lib/offline';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
@@ -53,6 +55,12 @@ interface CartLine {
 }
 
 const isFired = (l: CartLine) => !!l.kotStatus && l.kotStatus !== 'PENDING';
+
+// "17m" / "1h 23m" — how long guests have been seated (table timer).
+function elapsedLabel(since: string | Date, now: Date): string {
+  const mins = Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / 60000));
+  return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
 
 // Rebuild the cart from a server order (drops cancelled items, carries ids so
 // re-saving reconciles instead of duplicating).
@@ -112,6 +120,13 @@ export default function PosPage() {
   const [discount, setDiscount] = useState('');
   const [discountMode, setDiscountMode] = useState<'rs' | 'pct'>('rs');
   const [discountApproved, setDiscountApproved] = useState(false); // manager override
+  // Manager username+password approval dialog (replaces the PIN system).
+  const [mgrAuth, setMgrAuth] = useState<{
+    title: string;
+    hint?: string;
+    permission?: 'canVoid' | 'canDiscount' | 'canManageStaff';
+    onApproved: (cred: ManagerCred) => void;
+  } | null>(null);
   const [redeemPts, setRedeemPts] = useState(''); // loyalty points to redeem
   const [isQuick, setIsQuick] = useState(false);
 
@@ -173,6 +188,10 @@ export default function PosPage() {
     if (!username.trim() || !password) return setPinErr('Enter your username and password');
     try {
       const e = await api.post<Employee & { token?: string }>('/employees/login', { username: username.trim(), password });
+      if (e.role === 'WAITER') {
+        setPassword('');
+        return setPinErr('Waiters use the Waiter Panel — the POS terminal is for cashiers and managers.');
+      }
       setEmp(e);
       localStorage.setItem('cakezake-emp', JSON.stringify(e));
       if (e.token) localStorage.setItem('cakezake-token', e.token);
@@ -510,19 +529,19 @@ export default function PosPage() {
     setCart((prev) => prev.map((l) => (l.key === key ? { ...l, discountCents: cents } : l)));
   }
 
-  // Discounts require the discount permission — or a one-off manager override.
+  // Discounts require the discount permission — or a one-off manager approval
+  // (username + password; the PIN system is retired).
   const canDiscountNow = !!emp?.canDiscount || discountApproved;
-  async function requestDiscountApproval() {
-    const pin = prompt('Manager PIN to authorise a discount:');
-    if (!pin) return;
-    try {
-      const m = await api.post<{ canDiscount?: boolean; name?: string }>('/employees/login', { pin });
-      if (!m.canDiscount) return alert('That user cannot authorise discounts.');
-      setDiscountApproved(true);
-      flash(`Discount authorised by ${m.name}`);
-    } catch {
-      alert('Invalid PIN');
-    }
+  function requestDiscountApproval() {
+    setMgrAuth({
+      title: 'Authorise discount',
+      hint: 'A manager or admin must sign in to allow discounts on this order.',
+      permission: 'canDiscount',
+      onApproved: ({ emp: m }) => {
+        setDiscountApproved(true);
+        flash(`Discount authorised by ${m.name}`);
+      },
+    });
   }
 
   function confirmPicker() {
@@ -678,24 +697,40 @@ export default function PosPage() {
     const reason = prompt(`Cancel "${l.name}"? Reason:`);
     if (reason === null) return;
     if (!reason.trim()) return flash('A reason is required to cancel an item');
-    setBusy(true);
-    try {
-      const res = await api.post<{ order: Order; cancelledItem: OrderItem; wasFired: boolean }>(
-        `/orders/${order.id}/items/${l.id}/cancel`,
-        { reason: reason.trim() },
-      );
-      setOrder(res.order);
-      setCart(orderToCart(res.order));
-      // If it had already been fired, tell the station via a cancellation ticket.
-      if (res.wasFired && l.station && l.station !== 'BILLING') {
-        await printTicket(res.order, 'CANCEL', [{ ...res.cancelledItem }]);
+
+    const run = async (overrideToken?: string) => {
+      setBusy(true);
+      try {
+        const path = `/orders/${order.id}/items/${l.id}/cancel`;
+        const body = { reason: reason.trim() };
+        const res = overrideToken
+          ? await api.postAs<{ order: Order; cancelledItem: OrderItem; wasFired: boolean }>(overrideToken, path, body)
+          : await api.post<{ order: Order; cancelledItem: OrderItem; wasFired: boolean }>(path, body);
+        setOrder(res.order);
+        setCart(orderToCart(res.order));
+        // If it had already been fired, tell the station via a cancellation ticket.
+        if (res.wasFired && l.station && l.station !== 'BILLING') {
+          await printTicket(res.order, 'CANCEL', [{ ...res.cancelledItem }]);
+        }
+        flash('Item cancelled');
+      } catch (e) {
+        const msg = (e as Error).message;
+        // Lacking the void permission → ask a manager to approve with their login.
+        if (!overrideToken && /permission|Requires|sign-in/i.test(msg)) {
+          setMgrAuth({
+            title: 'Approve cancellation',
+            hint: `Cancelling "${l.name}" (already sent to the kitchen) needs a manager.`,
+            permission: 'canVoid',
+            onApproved: ({ token }) => void run(token),
+          });
+        } else {
+          alert(msg);
+        }
+      } finally {
+        setBusy(false);
       }
-      flash('Item cancelled');
-    } catch (e) {
-      alert((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    };
+    await run();
   }
 
   // Attach / look up a customer while billing (also enables credit + points).
@@ -884,6 +919,14 @@ export default function PosPage() {
   return (
     <div className="flex h-full flex-col bg-[var(--pos-bg)] text-[var(--pos-text)]">
       <AutoPrintAgent />
+      <ManagerAuth
+        open={!!mgrAuth}
+        title={mgrAuth?.title}
+        hint={mgrAuth?.hint}
+        permission={mgrAuth?.permission}
+        onApproved={(cred) => mgrAuth?.onApproved(cred)}
+        onClose={() => setMgrAuth(null)}
+      />
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-medium text-black shadow-lg">
           {toast}
@@ -923,8 +966,8 @@ export default function PosPage() {
             ))}
           </nav>
           <ConnBadge />
-          <span className="text-[var(--pos-text-60)] tabular-nums">
-            {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          <span className="text-[var(--pos-text-60)] tabular-nums" title={now.toLocaleDateString()}>
+            {formatBsLong(now)} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
           <button onClick={() => exitTo('/settings')} className="text-[var(--pos-text-60)] hover:text-[var(--pos-text)]">⚙ Settings</button>
         </div>
@@ -1021,6 +1064,11 @@ export default function PosPage() {
                       className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border-2 ${cls} ${clickable ? 'hover:brightness-125' : 'cursor-not-allowed opacity-70'}`}
                     >
                       {t.isVip && <span className="absolute right-1 top-1 text-[10px]">⭐</span>}
+                      {occupied && t.activeOrder!.seatedAt && (
+                        <span className="absolute left-1 top-1 rounded bg-black/25 px-1 py-0.5 text-[9px] font-semibold tabular-nums text-[#F39C12]" title="Guest seated for">
+                          ⏱ {elapsedLabel(t.activeOrder!.seatedAt, now)}
+                        </span>
+                      )}
                       <span className="text-base font-bold">{t.name}</span>
                       {occupied ? (
                         <span className="text-[10px] font-semibold text-[#F39C12]">{formatMoney(t.activeOrder!.totalCents)}</span>

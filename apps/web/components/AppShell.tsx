@@ -51,6 +51,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setEmp(null);
   }
 
+  // Waiters are locked to the Waiter Panel — no back-office at all.
+  if (emp.role === 'WAITER') {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="text-5xl">🧑‍🍳</div>
+        <p className="text-lg font-medium text-slate-700 dark:text-slate-200">Hi {emp.name} — waiters work from the Waiter Panel</p>
+        <a href="/waiter" className="btn-primary">Open Waiter Panel →</a>
+        <button onClick={logout} className="text-xs text-slate-400 underline">Sign out</button>
+      </div>
+    );
+  }
+
   const perm = ROUTE_PERM[path];
   const denied = !!perm && !emp[perm];
 

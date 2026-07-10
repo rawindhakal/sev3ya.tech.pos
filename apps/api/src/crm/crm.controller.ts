@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { IsBoolean, IsEmail, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { CrmService } from './crm.service';
-import { SoftAuthGuard, CurrentEmployee } from '../common/auth.guard';
+import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
 import { TokenPayload } from '../common/token';
 
 class CreateCustomerDto {
@@ -61,8 +61,9 @@ export class CrmController {
   update(@Param('id') id: string, @Body() dto: UpdateCustomerDto) {
     return this.crm.update(id, dto);
   }
+  // Credit settlement is a money-handling override — manager/admin sign-in only.
   @Post(':id/settle-credit')
-  @UseGuards(SoftAuthGuard)
+  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
   settleCredit(
     @Param('id') id: string,
     @Body() dto: SettleCreditDto,

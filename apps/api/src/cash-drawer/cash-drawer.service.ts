@@ -59,6 +59,27 @@ export class CashDrawerService {
     return { open: true as const, session, ...breakdown };
   }
 
+  // Admin-only correction of the open session's opening float — audited.
+  async adjustOpeningFloat(openingFloatCents: number, actor?: { sub?: string; name?: string }) {
+    if (!Number.isFinite(openingFloatCents) || openingFloatCents < 0)
+      throw new BadRequestException('Opening balance must be zero or more');
+    const session = await this.openSession();
+    if (!session) throw new BadRequestException('No open cash drawer session');
+    const updated = await this.prisma.cashDrawerSession.update({
+      where: { id: session.id },
+      data: { openingFloatCents: Math.round(openingFloatCents) },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        employeeId: actor?.sub,
+        employeeName: actor?.name ?? 'admin',
+        action: 'OPENING_FLOAT_ADJUSTED',
+        detail: `Opening float ${session.openingFloatCents} → ${updated.openingFloatCents} (session ${session.id})`,
+      },
+    });
+    return this.current();
+  }
+
   async open(dto: { openingFloatCents: number; openedBy?: string; terminalId?: string }) {
     const existing = await this.openSession(dto.terminalId);
     if (existing)

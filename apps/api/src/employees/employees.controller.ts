@@ -13,7 +13,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  Matches,
 } from 'class-validator';
 import { StaffRole } from '@prisma/client';
 import { EmployeesService } from './employees.service';
@@ -21,9 +20,8 @@ import { EmployeesService } from './employees.service';
 class CreateEmployeeDto {
   @IsString() @IsNotEmpty() name: string;
   @IsEnum(StaffRole) role: StaffRole;
-  @Matches(/^\d{4,6}$/, { message: 'PIN must be 4–6 digits' }) pin: string;
-  @IsOptional() @IsString() @IsNotEmpty() username?: string;
-  @IsOptional() @IsString() password?: string;
+  @IsString() @IsNotEmpty() username: string;
+  @IsString() @IsNotEmpty() password: string;
   @IsOptional() @IsBoolean() canVoid?: boolean;
   @IsOptional() @IsBoolean() canDiscount?: boolean;
   @IsOptional() @IsBoolean() canManageInventory?: boolean;
@@ -33,7 +31,6 @@ class CreateEmployeeDto {
 class UpdateEmployeeDto {
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsEnum(StaffRole) role?: StaffRole;
-  @IsOptional() @Matches(/^\d{4,6}$/) pin?: string;
   @IsOptional() @IsString() @IsNotEmpty() username?: string;
   @IsOptional() @IsString() password?: string;
   @IsOptional() @IsBoolean() canVoid?: boolean;
@@ -43,9 +40,8 @@ class UpdateEmployeeDto {
   @IsOptional() @IsBoolean() canManageStaff?: boolean;
 }
 class LoginDto {
-  @IsOptional() @Matches(/^\d{4,6}$/) pin?: string;
-  @IsOptional() @IsString() username?: string;
-  @IsOptional() @IsString() password?: string;
+  @IsString() @IsNotEmpty() username: string;
+  @IsString() @IsNotEmpty() password: string;
 }
 
 @Controller('employees')

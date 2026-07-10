@@ -5,6 +5,7 @@
 // Modes: BILL (customer invoice), KOT (kitchen), BOT (bar), CANCEL (voided items).
 // Layout is driven by the editable templates under Settings → Printing.
 import { formatMoney } from '@/lib/api';
+import { formatBs } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf } from '@/lib/printing';
 import type { Order, OrderItem, Settings } from '@/lib/types';
 
@@ -63,7 +64,7 @@ export default function Receipt({
           <div>Customer: {order.customerName}{order.customerPhone ? ` (${order.customerPhone})` : ''}</div>
         )}
         {isBill && bt.showGuests && <div>Guests: {order.guestCount}</div>}
-        {(isBill || kt.showTime) && <div>{when}</div>}
+        {(isBill || kt.showTime) && <div>{when}{isBill && ` · BS ${formatBs(new Date())}`}</div>}
       </div>
 
       <table style={{ width: '100%', marginTop: 6 }}>

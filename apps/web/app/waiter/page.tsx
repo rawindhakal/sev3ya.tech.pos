@@ -14,6 +14,12 @@ type Mode = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY';
 interface Line { key: string; id?: string; menuItemId?: string; variantId?: string; name: string; unitPriceCents: number; modifiers: { name: string; priceCents: number }[]; quantity: number; notes?: string; kotStatus?: string }
 
 const fired = (l: Line) => !!l.kotStatus && l.kotStatus !== 'PENDING';
+
+// "17m" / "1h 23m" — how long the guests have been seated.
+function seatedFor(since: string): string {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 60000));
+  return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
 const toCart = (o: Order): Line[] => (o.items ?? []).filter((i) => !i.cancelledAt).map((it) => ({
   key: it.id, id: it.id, menuItemId: it.menuItemId ?? undefined, name: it.nameSnapshot, unitPriceCents: it.unitPriceCents,
   modifiers: (it.modifiers ?? []).map((m) => ({ name: m.name, priceCents: m.priceCents })), quantity: it.quantity, notes: it.notes ?? undefined, kotStatus: it.kotStatus,
@@ -203,7 +209,14 @@ export default function WaiterPage() {
                     <button key={t.id} disabled={!free && !occ} onClick={() => (occ ? resumeTable(t) : start(t.id))}
                       className={`aspect-square rounded-xl border-2 p-2 ${free ? 'border-[#2ECC71]/40 bg-[#2ECC71]/10' : occ ? 'border-[#F39C12]/50 bg-[#F39C12]/15' : 'border-[var(--pos-line)] bg-[var(--pos-surface)] opacity-50'}`}>
                       <div className="text-base font-bold">{t.name}</div>
-                      {occ ? <div className="text-[10px] text-[#F39C12]">{formatMoney(t.activeOrder!.totalCents)}</div> : <div className="text-[10px] text-[var(--pos-text-40)]">{t.seats} seats</div>}
+                      {occ ? (
+                        <>
+                          <div className="text-[10px] text-[#F39C12]">{formatMoney(t.activeOrder!.totalCents)}</div>
+                          {t.activeOrder!.seatedAt && (
+                            <div className="text-[9px] tabular-nums text-[var(--pos-text-50)]">⏱ {seatedFor(t.activeOrder!.seatedAt)}</div>
+                          )}
+                        </>
+                      ) : <div className="text-[10px] text-[var(--pos-text-40)]">{t.seats} seats</div>}
                     </button>
                   );
                 })}
