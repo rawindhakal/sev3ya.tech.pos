@@ -39,6 +39,12 @@ export class OrdersController {
     return this.orders.kotQueue();
   }
 
+  // Running (unsettled) orders for the POS temporary-tables rail.
+  @Get('active')
+  active() {
+    return this.orders.activeOrders();
+  }
+
   @Post('kot-queue/printed')
   markKotPrinted(@Body('itemIds') itemIds: string[]) {
     return this.orders.markKotPrinted(itemIds ?? []);

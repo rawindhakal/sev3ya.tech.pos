@@ -173,6 +173,23 @@ export class OrdersService {
     return order;
   }
 
+  // All running (unsettled) orders — powers the POS "temporary tables" rail so
+  // takeaway/delivery orders stay visible until payment is settled.
+  activeOrders() {
+    return this.prisma.order.findMany({
+      where: { status: { notIn: ['PAID', 'CANCELLED'] } },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true, number: true, type: true, status: true,
+        customerName: true, customerPhone: true,
+        totalCents: true, guestCount: true, createdAt: true, seatedAt: true,
+        table: { select: { id: true, name: true } },
+        waiter: { select: { name: true } },
+        _count: { select: { items: true } },
+      },
+    });
+  }
+
   // Reconcile the cart: keep already-fired items (preserving KOT status),
   // update quantities/notes on existing lines, add new lines as PENDING, and
   // delete only removed UNFIRED lines. Enables incremental KOT + item cancel.

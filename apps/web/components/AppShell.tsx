@@ -25,6 +25,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const fullscreen = path === '/pos' || path === '/kds' || path.startsWith('/waiter');
   const [emp, setEmp] = useState<Employee | null>(null);
   const [ready, setReady] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+
+  // Close the mobile drawer on navigation.
+  useEffect(() => { setNavOpen(false); }, [path]);
 
   useEffect(() => {
     try {
@@ -67,9 +71,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const denied = !!perm && !emp[perm];
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar emp={emp} onLogout={logout} />
-      <main className="flex-1 overflow-y-auto">
+    <div className="flex h-screen flex-col overflow-hidden md:flex-row">
+      {/* Mobile top bar with hamburger */}
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800 md:hidden">
+        <button onClick={() => setNavOpen(true)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-lg leading-none dark:border-slate-600" aria-label="Open menu">☰</button>
+        <span className="font-bold text-brand-700">🍰 s3vyaPOS</span>
+        <span className="text-xs text-slate-400">{emp.name}</span>
+      </div>
+
+      {/* Sidebar: static on desktop, slide-over drawer on mobile */}
+      <div className="hidden h-full md:block [&>aside]:h-full">
+        <Sidebar emp={emp} onLogout={logout} />
+      </div>
+      {navOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden">
+          <div className="h-full [&>aside]:h-full" onClick={() => setNavOpen(false)}>
+            <Sidebar emp={emp} onLogout={logout} />
+          </div>
+          <div className="flex-1 bg-black/50" onClick={() => setNavOpen(false)} />
+        </div>
+      )}
+
+      <main className="min-h-0 flex-1 overflow-y-auto">
         {denied ? (
           <div className="flex h-full flex-col items-center justify-center p-8 text-center text-slate-400">
             <div className="mb-2 text-5xl">🔒</div>

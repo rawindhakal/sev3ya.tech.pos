@@ -62,6 +62,23 @@ function elapsedLabel(since: string | Date, now: Date): string {
   return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
+// Lightweight running-order card (GET /orders/active).
+interface ActiveOrderCard {
+  id: string;
+  number: number;
+  type: OrderType;
+  status: string;
+  customerName?: string | null;
+  totalCents: number;
+  createdAt: string;
+  table?: { id: string; name: string } | null;
+  _count?: { items: number };
+}
+
+const ACTIVE_STATUS_LABEL: Record<string, string> = {
+  OPEN: 'NEW', SENT_TO_KITCHEN: 'KOT SENT', BILLED: 'BILLED',
+};
+
 // Rebuild the cart from a server order (drops cancelled items, carries ids so
 // re-saving reconciles instead of duplicating).
 function orderToCart(o: Order): CartLine[] {
@@ -120,6 +137,9 @@ export default function PosPage() {
   const [discount, setDiscount] = useState('');
   const [discountMode, setDiscountMode] = useState<'rs' | 'pct'>('rs');
   const [discountApproved, setDiscountApproved] = useState(false); // manager override
+  // Running (unsettled) orders — takeaway/delivery shown as temporary tables
+  // in the POS until payment is settled.
+  const [activeOrders, setActiveOrders] = useState<ActiveOrderCard[]>([]);
   // Manager username+password approval dialog (replaces the PIN system).
   const [mgrAuth, setMgrAuth] = useState<{
     title: string;
@@ -479,6 +499,64 @@ export default function PosPage() {
       setBusy(false);
     }
   }
+
+  // ── Running takeaway/delivery orders (temporary tables) ──
+  async function loadActiveOrders() {
+    try { setActiveOrders(await api.get<ActiveOrderCard[]>('/orders/active')); } catch { /* offline */ }
+  }
+  useEffect(() => {
+    if (!emp) return;
+    loadActiveOrders();
+    const iv = setInterval(loadActiveOrders, 12000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emp]);
+  useEffect(() => { if (!order && emp) loadActiveOrders(); /* refresh after settle/void */ // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order]);
+
+  async function resumeActive(id: string) {
+    setBusy(true);
+    try {
+      resume(await api.get<Order>(`/orders/${id}`));
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Takeaway/delivery orders still running — rendered like tables until settled.
+  const runningPickups = activeOrders.filter((o) => o.type !== 'DINE_IN');
+  const renderPickupRail = (compact = false) =>
+    runningPickups.length > 0 && (
+      <div className={compact ? '' : 'px-4 pb-4'}>
+        <div className="mb-2 text-xs uppercase tracking-wider text-[var(--pos-text-40)]">
+          🛍 Running Takeaway &amp; Delivery ({runningPickups.length})
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {runningPickups.map((o, i) => (
+            <button
+              key={o.id}
+              disabled={busy}
+              onClick={() => resumeActive(o.id)}
+              className="relative flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 border-[#9B59B6]/50 bg-[#9B59B6]/10 p-2.5 hover:brightness-125"
+            >
+              <span className="absolute left-1 top-1 rounded bg-black/25 px-1 py-0.5 text-[9px] font-semibold tabular-nums text-[#F39C12]">
+                ⏱ {elapsedLabel(o.createdAt, now)}
+              </span>
+              <span className="absolute right-1 top-1 text-[10px]">{o.type === 'DELIVERY' ? '🛵' : '🛍'}</span>
+              <span className="mt-3 max-w-full truncate text-sm font-bold">
+                {(o.customerName?.trim() || (o.type === 'DELIVERY' ? 'Delivery' : 'TakeAway'))}-{i + 1}
+              </span>
+              <span className="text-[10px] font-semibold text-[#F39C12]">{formatMoney(o.totalCents)}</span>
+              <span className="text-[9px] uppercase tracking-wide text-[var(--pos-text-40)]">
+                #{o.number} · {ACTIVE_STATUS_LABEL[o.status] ?? o.status}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
 
   // ── Cart ───────────────────────────────────────────
   async function clickItem(item: MenuItem) {
@@ -934,7 +1012,7 @@ export default function PosPage() {
       )}
 
       {/* Top bar */}
-      <div className="flex items-center justify-between border-b border-[var(--pos-line)] bg-[var(--pos-inset)] px-5 py-2.5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-b border-[var(--pos-line)] bg-[var(--pos-inset)] px-3 py-2 text-sm sm:px-5 sm:py-2.5">
         <div className="flex items-center gap-3">
           <button
             onClick={goBack}
@@ -953,7 +1031,7 @@ export default function PosPage() {
           <button onClick={lock} className="rounded-md bg-[var(--pos-surface)] px-2 py-1 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" title="Lock terminal">🔒 Lock</button>
         </div>
         <div className="flex items-center gap-4">
-          <nav className="flex items-center gap-1 text-xs">
+          <nav className="hidden items-center gap-1 text-xs lg:flex">
             {[
               { label: 'Dashboard', path: '/' },
               { label: 'Reservations', path: '/reservations' },
@@ -974,8 +1052,8 @@ export default function PosPage() {
       </div>
 
       {/* Order modes */}
-      <div className="flex items-center gap-2 border-b border-[var(--pos-line)] bg-[var(--pos-bg)] px-4 py-2.5">
-        <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-[var(--pos-text-40)]">Order Mode</span>
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--pos-line)] bg-[var(--pos-bg)] px-3 py-2 sm:px-4 sm:py-2.5">
+        <span className="mr-1 hidden text-xs font-semibold uppercase tracking-wider text-[var(--pos-text-40)] sm:inline">Order Mode</span>
         {MODES.map((m) => {
           const active = mode === m.key;
           return (
@@ -1030,7 +1108,7 @@ export default function PosPage() {
           {areas.map((a) => (
             <div key={a.area} className="mb-5">
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--pos-text-40)]">{a.area}</div>
-              <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 sm:gap-3">
                 {a.tables.map((t) => {
                   const free = t.status === 'AVAILABLE';
                   const occupied = t.status === 'OCCUPIED' && !!t.activeOrder;
@@ -1084,19 +1162,23 @@ export default function PosPage() {
               </div>
             </div>
           ))}
+          {renderPickupRail()}
         </div>
       ) : !order ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
-          <div className="text-[var(--pos-text-40)]">
-            <div className="mb-2 text-5xl">🧾</div>
-            <p className="text-lg font-medium">Select an order mode to begin</p>
-            <p className="text-sm text-[var(--pos-text-30)]">Dine-In · Takeaway · Home Delivery · Quick-Bill</p>
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          {runningPickups.length > 0 && <div className="p-4">{renderPickupRail(true)}</div>}
+          <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
+            <div className="text-[var(--pos-text-40)]">
+              <div className="mb-2 text-5xl">🧾</div>
+              <p className="text-lg font-medium">Select an order mode to begin</p>
+              <p className="text-sm text-[var(--pos-text-30)]">Dine-In · Takeaway · Home Delivery · Quick-Bill</p>
+            </div>
           </div>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           {/* Menu / grid area */}
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="border-b border-[var(--pos-line)] p-3">
               <div className="mb-2 flex gap-2">
                 <input
@@ -1134,7 +1216,7 @@ export default function PosPage() {
           </div>
 
           {/* Cart summary */}
-          <aside className="flex w-[400px] shrink-0 flex-col border-l border-[var(--pos-line)] bg-[var(--pos-card)]">
+          <aside className="flex max-h-[55%] w-full shrink-0 flex-col border-t border-[var(--pos-line)] bg-[var(--pos-card)] lg:max-h-none lg:w-[400px] lg:border-l lg:border-t-0">
             <div className="border-b border-[var(--pos-line)] px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
