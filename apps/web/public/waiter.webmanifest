@@ -1,0 +1,16 @@
+{
+  "name": "s3vyaPOS Waiter",
+  "short_name": "Waiter",
+  "description": "Handheld order-taking for waiters",
+  "start_url": "/waiter",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0d10",
+  "theme_color": "#16a34a",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

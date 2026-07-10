@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { api, formatMoney } from '@/lib/api';
-import type { Customer } from '@/lib/types';
+import { api, formatMoney, dollarsToCents } from '@/lib/api';
+import type { Customer, CreditLedgerEntry, PaymentMethod } from '@/lib/types';
 import Modal from '@/components/Modal';
+
+const SETTLE_METHODS: PaymentMethod[] = ['CASH', 'FONEPAY', 'BANK', 'ESEWA', 'KHALTI', 'CARD'];
 
 const TIER: Record<string, string> = {
   PLATINUM: 'bg-slate-800 text-white',
@@ -27,6 +29,37 @@ export default function CustomersPage() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<Customer | null>(null);
+
+  // Credit ledger modal state
+  const [ledger, setLedger] = useState<{ customer: Customer; entries: CreditLedgerEntry[] } | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('CASH');
+  const [payNote, setPayNote] = useState('');
+  const [payBusy, setPayBusy] = useState(false);
+  const [payErr, setPayErr] = useState<string | null>(null);
+
+  async function openLedger(c: Customer) {
+    setPayAmount(''); setPayNote(''); setPayMethod('CASH'); setPayErr(null);
+    setLedger(await api.get<{ customer: Customer; entries: CreditLedgerEntry[] }>(`/customers/${c.id}/ledger`));
+  }
+
+  async function receivePayment() {
+    if (!ledger) return;
+    const cents = dollarsToCents(parseFloat(payAmount || '0'));
+    if (cents <= 0) return setPayErr('Enter the amount received');
+    setPayBusy(true); setPayErr(null);
+    try {
+      await api.post(`/customers/${ledger.customer.id}/settle-credit`, {
+        amountCents: cents, method: payMethod, note: payNote || undefined,
+      });
+      await openLedger(ledger.customer); // refresh the statement
+      load();
+    } catch (e) {
+      setPayErr((e as Error).message);
+    } finally {
+      setPayBusy(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -81,7 +114,7 @@ export default function CustomersPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
-              <th className="p-3 font-semibold">Customer</th><th className="p-3 font-semibold">Tier</th><th className="p-3 font-semibold">Segment</th><th className="p-3 font-semibold">Points</th><th className="p-3 font-semibold">Spend</th><th className="p-3 font-semibold">Visits</th><th className="p-3 font-semibold">Last visit</th>
+              <th className="p-3 font-semibold">Customer</th><th className="p-3 font-semibold">Tier</th><th className="p-3 font-semibold">Segment</th><th className="p-3 font-semibold">Points</th><th className="p-3 font-semibold">Spend</th><th className="p-3 font-semibold">Credit due</th><th className="p-3 font-semibold">Visits</th><th className="p-3 font-semibold">Last visit</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -92,11 +125,16 @@ export default function CustomersPage() {
                 <td className="p-3"><span className={`badge ${SEG[c.segment] ?? 'bg-slate-100 text-slate-500'}`}>{c.segment}</span></td>
                 <td className="p-3 font-semibold text-brand-700">{c.loyaltyPoints.toLocaleString()}</td>
                 <td className="p-3 text-slate-600">{formatMoney(c.totalSpentCents)}</td>
+                <td className="p-3" onClick={(e) => { e.stopPropagation(); openLedger(c); }}>
+                  {(c.creditBalanceCents ?? 0) > 0
+                    ? <span className="badge bg-red-100 font-semibold text-red-600 hover:bg-red-200" title="Open ledger">{formatMoney(c.creditBalanceCents!)}</span>
+                    : <span className="text-xs text-slate-300 underline decoration-dotted hover:text-slate-500" title="Open ledger">ledger</span>}
+                </td>
                 <td className="p-3 text-slate-500">{c.visitCount}</td>
                 <td className="p-3 text-slate-400">{c.lastVisitAt ? new Date(c.lastVisitAt).toLocaleDateString() : '—'}</td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">No customers yet — they&apos;re created automatically from takeaway/delivery orders.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-slate-400">No customers yet — they&apos;re created automatically from takeaway/delivery orders.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -126,8 +164,71 @@ export default function CustomersPage() {
                 {(detail.orders ?? []).length === 0 && <p className="text-slate-400">No paid orders.</p>}
               </div>
             </div>
-            <div className="flex justify-end border-t border-slate-100 pt-3">
+            {(detail.creditBalanceCents ?? 0) > 0 && (
+              <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900/40 dark:bg-red-950/20">
+                <span className="font-medium text-red-700 dark:text-red-400">Credit due: {formatMoney(detail.creditBalanceCents!)}</span>
+                <button className="btn-ghost text-xs" onClick={() => { setDetail(null); openLedger(detail); }}>Open ledger →</button>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-slate-100 pt-3">
+              <button className="btn-ghost text-xs" onClick={() => { setDetail(null); openLedger(detail); }}>📒 Credit ledger</button>
               <button className="btn-danger text-xs" onClick={() => gdprDelete(detail)}>🗑 GDPR delete</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Credit ledger & receive payment ── */}
+      <Modal open={!!ledger} title={ledger ? `Credit ledger · ${ledger.customer.name}` : ''} onClose={() => setLedger(null)}>
+        {ledger && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 p-3 dark:bg-slate-700/40">
+              <span className="text-sm text-slate-500">Outstanding balance</span>
+              <span className={`text-lg font-bold ${(ledger.customer.creditBalanceCents ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {formatMoney(ledger.customer.creditBalanceCents ?? 0)}
+              </span>
+            </div>
+
+            {(ledger.customer.creditBalanceCents ?? 0) > 0 && (
+              <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-600">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Receive payment</h3>
+                {payErr && <p className="mb-2 text-xs text-red-500">{payErr}</p>}
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="input" inputMode="decimal" placeholder="Amount (Rs)" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                  <select className="input" value={payMethod} onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}>
+                    {SETTLE_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <input className="input mt-2" placeholder="Note (optional)" value={payNote} onChange={(e) => setPayNote(e.target.value)} />
+                <button className="btn-primary mt-2 w-full" disabled={payBusy} onClick={receivePayment}>
+                  {payBusy ? 'Recording…' : `Record ${payMethod === 'CASH' ? 'cash ' : ''}payment`}
+                </button>
+                {payMethod === 'CASH' && <p className="mt-1.5 text-[11px] text-slate-400">Cash goes into the open drawer as a pay-in and shows on the day-end report.</p>}
+              </div>
+            )}
+
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Statement</h3>
+              <div className="max-h-64 overflow-y-auto text-sm">
+                {ledger.entries.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between border-b border-slate-50 py-1.5 dark:border-slate-700">
+                    <div>
+                      <span className={`badge ${e.type === 'CHARGE' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                        {e.type === 'CHARGE' ? 'Credit sale' : `Paid ${e.method ?? ''}`}
+                      </span>
+                      <span className="ml-2 text-xs text-slate-400">{new Date(e.createdAt).toLocaleString()}</span>
+                      {e.note && <div className="text-xs italic text-slate-400">{e.note}</div>}
+                    </div>
+                    <div className="text-right">
+                      <div className={`font-semibold ${e.type === 'CHARGE' ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {e.type === 'CHARGE' ? '+' : '−'}{formatMoney(e.amountCents)}
+                      </div>
+                      <div className="text-[11px] text-slate-400">bal {formatMoney(e.balanceAfterCents)}</div>
+                    </div>
+                  </div>
+                ))}
+                {ledger.entries.length === 0 && <p className="py-4 text-center text-slate-400">No credit activity yet.</p>}
+              </div>
             </div>
           </div>
         )}

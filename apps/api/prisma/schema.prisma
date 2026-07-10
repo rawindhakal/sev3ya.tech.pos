@@ -335,10 +335,37 @@ model Customer {
   lastVisitAt     DateTime?
   optIn           Boolean   @default(true) // marketing opt-in (#125 GDPR)
   orders          Order[]
+  creditLedger    CreditLedgerEntry[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   @@map("customers")
+}
+
+enum CreditEntryType {
+  CHARGE  // sale put on the customer's account (CREDIT tender)
+  PAYMENT // customer paid down their balance
+}
+
+// Full ledger for the customer credit facility (house accounts). Every CREDIT
+// sale writes a CHARGE, every settlement writes a PAYMENT with the tender used,
+// and balanceAfterCents snapshots the running balance for a printable ledger.
+model CreditLedgerEntry {
+  id                String          @id @default(cuid())
+  customerId        String
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type              CreditEntryType
+  amountCents       Int
+  method            PaymentMethod?  // how a PAYMENT was received (CASH shows in drawer)
+  orderId           String?         // the sale behind a CHARGE
+  note              String?
+  balanceAfterCents Int
+  createdBy         String?
+  createdAt         DateTime        @default(now())
+
+  @@index([customerId, createdAt])
+  @@index([createdAt])
+  @@map("credit_ledger_entries")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -456,6 +483,7 @@ model OrderItem {
   modifiers  Json?
   kotStatus  KotStatus   @default(PENDING)
   station    PrepStation @default(BILLING) // snapshot of the item's prep station
+  kotPrintedAt DateTime? // set once a physical KOT/BOT ticket has been printed
   discountCents Int      @default(0) // item-wise discount (needs manager perm)
   notes      String?
 
@@ -511,6 +539,10 @@ model CafeSetting {
   receiptHeader     String?
   receiptFooter     String?
   wifiPassword      String?
+
+  // Printable ticket templates (visual editor under Settings → Printing).
+  billTemplate      Json?
+  kotTemplate       Json?
 
   // Module feature toggles — admin enables/disables sections app-wide.
   featReservations Boolean @default(true)

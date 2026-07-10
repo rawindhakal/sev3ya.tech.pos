@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { SettingsService } from './settings.service';
 import { AuthGuard, CurrentEmployee } from '../common/auth.guard';
 import { TokenPayload } from '../common/token';
@@ -23,6 +23,8 @@ class UpdateSettingsDto {
   @IsOptional() @IsBoolean() featCrm?: boolean;
   @IsOptional() @IsBoolean() featFinance?: boolean;
   @IsOptional() @IsBoolean() featKds?: boolean;
+  @IsOptional() @IsObject() billTemplate?: object;
+  @IsOptional() @IsObject() kotTemplate?: object;
 }
 
 @Controller('settings')

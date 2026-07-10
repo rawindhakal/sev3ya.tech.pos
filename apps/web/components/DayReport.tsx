@@ -12,6 +12,7 @@ export interface DayReportData {
   byPayment: { method: PaymentMethod; amountCents: number; count: number }[];
   byType: { type: string; totalCents: number; count: number }[];
   cash: { openingFloatCents: number; cashSalesCents: number; payInCents: number; payOutCents: number; expectedCents: number; countedCents?: number | null; varianceCents?: number | null };
+  credit?: { chargedCents: number; chargedCount: number; paidCents: number; paidByMethod: { method: PaymentMethod | null; amountCents: number; count: number }[] };
 }
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
@@ -25,7 +26,7 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 
 export default function DayReport({ report, settings }: { report: DayReportData | null; settings: Settings | null }) {
   if (!report) return null;
-  const { session, sales, byPayment, byType, cash } = report;
+  const { session, sales, byPayment, byType, cash, credit } = report;
 
   return (
     <div id="print-area">
@@ -58,6 +59,17 @@ export default function DayReport({ report, settings }: { report: DayReportData 
         <div style={{ fontWeight: 700 }}>By order type</div>
         {byType.map((t) => <Row key={t.type} label={`${t.type.replace('_', ' ')} (${t.count})`} value={formatMoney(t.totalCents)} />)}
       </div>
+
+      {credit && (credit.chargedCents > 0 || credit.paidCents > 0) && (
+        <div style={{ fontSize: 12, marginTop: 6, borderTop: '1px dashed #000', paddingTop: 4 }}>
+          <div style={{ fontWeight: 700 }}>Credit facility</div>
+          {credit.chargedCents > 0 && <Row label={`Credit sales (${credit.chargedCount})`} value={formatMoney(credit.chargedCents)} />}
+          {credit.paidByMethod.map((m) => (
+            <Row key={m.method ?? 'x'} label={`Credit paid — ${PAYMENT_METHOD_LABEL[m.method as PaymentMethod] ?? m.method ?? ''} (${m.count})`} value={formatMoney(m.amountCents)} />
+          ))}
+          {credit.paidCents > 0 && <Row label="Total credit paid" value={formatMoney(credit.paidCents)} bold />}
+        </div>
+      )}
 
       <div style={{ fontSize: 12, marginTop: 6, borderTop: '1px dashed #000', paddingTop: 4 }}>
         <div style={{ fontWeight: 700 }}>Cash reconciliation</div>

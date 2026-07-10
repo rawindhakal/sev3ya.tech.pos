@@ -83,7 +83,30 @@ export class FinanceService {
     // Break-even: revenue needed to cover fixed (non-COGS) expenses.
     const breakEvenRevenueCents = marginRatio > 0 ? Math.round(totalExpenses / marginRatio) : 0;
 
+    // Accounts receivable — the customer credit facility on the books.
+    const [arTotal, creditCharged, creditPaid] = await Promise.all([
+      this.prisma.customer.aggregate({
+        _sum: { creditBalanceCents: true },
+        _count: true,
+        where: { creditBalanceCents: { gt: 0 } },
+      }),
+      this.prisma.creditLedgerEntry.aggregate({
+        _sum: { amountCents: true },
+        where: { type: 'CHARGE', createdAt: { gte: start, lte: end } },
+      }),
+      this.prisma.creditLedgerEntry.aggregate({
+        _sum: { amountCents: true },
+        where: { type: 'PAYMENT', createdAt: { gte: start, lte: end } },
+      }),
+    ]);
+
     return {
+      receivables: {
+        outstandingCents: num(arTotal._sum.creditBalanceCents),
+        debtors: num(arTotal._count),
+        chargedInPeriodCents: num(creditCharged._sum.amountCents),
+        paidInPeriodCents: num(creditPaid._sum.amountCents),
+      },
       range: { from: start, to: end },
       grossSalesCents: gross,
       vatCollectedCents: vat,

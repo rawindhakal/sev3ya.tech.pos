@@ -24,6 +24,7 @@ import DayReport, { DayReportData } from '@/components/DayReport';
 import PaymentPanel from '@/components/PaymentPanel';
 import ConnBadge from '@/components/ConnBadge';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
+import AutoPrintAgent from '@/components/AutoPrintAgent';
 import { getStatus } from '@/lib/offline';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
@@ -585,6 +586,9 @@ export default function PosPage() {
     if (print) {
       const kitchen = res.fired.filter((i) => i.station === 'KITCHEN');
       const bar = res.fired.filter((i) => i.station === 'BAR');
+      // Acknowledge before the dialog so the desktop auto-printer never doubles.
+      const ids = [...kitchen, ...bar].map((i) => i.id);
+      if (ids.length) api.post('/orders/kot-queue/printed', { itemIds: ids }).catch(() => {});
       if (kitchen.length) await printTicket(res.order, 'KOT', kitchen);
       if (bar.length) await printTicket(res.order, 'BOT', bar);
     }
@@ -879,6 +883,7 @@ export default function PosPage() {
   // ── Render ─────────────────────────────────────────
   return (
     <div className="flex h-full flex-col bg-[var(--pos-bg)] text-[var(--pos-text)]">
+      <AutoPrintAgent />
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-medium text-black shadow-lg">
           {toast}

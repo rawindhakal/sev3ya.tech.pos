@@ -5,7 +5,7 @@
 // SAME app as the web /pos route, so it has the exact same features; the
 // cashier's login scopes what they can do (no admin/back-office chrome).
 
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
 
 // Where the running web app lives. Defaults to the live production server;
@@ -66,6 +66,43 @@ function createWindow() {
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   });
 }
+
+// ── Printing bridge ──────────────────────────────────
+// List OS printers for the Settings → Printing page.
+ipcMain.handle('printers:list', async (event) => {
+  const printers = await event.sender.getPrintersAsync();
+  return printers.map((p) => ({ name: p.name, displayName: p.displayName, isDefault: p.isDefault }));
+});
+
+// Print ticket HTML silently to a chosen printer (thermal-receipt style).
+// A hidden window renders the HTML, prints, then closes.
+ipcMain.handle('print:html', async (_event, { html, printerName, widthMm = 80 }) => {
+  const worker = new BrowserWindow({
+    show: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  try {
+    await worker.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    const micronsWide = Math.round(widthMm * 1000);
+    await new Promise((resolve, reject) => {
+      worker.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+          deviceName: printerName || undefined,
+          margins: { marginType: 'none' },
+          pageSize: { width: micronsWide, height: 297000 }, // receipt roll
+        },
+        (success, reason) => (success ? resolve() : reject(new Error(reason || 'print failed'))),
+      );
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  } finally {
+    worker.destroy();
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();

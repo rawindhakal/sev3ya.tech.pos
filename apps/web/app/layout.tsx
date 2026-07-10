@@ -5,6 +5,12 @@ import AppShell from '@/components/AppShell';
 export const metadata: Metadata = {
   title: 's3vyaPOS',
   description: 'Scalable restaurant point-of-sale platform',
+  manifest: '/manifest.webmanifest',
+  icons: { icon: '/icons/icon-192.png', apple: '/icons/icon-192.png' },
+};
+
+export const viewport = {
+  themeColor: '#16a34a',
 };
 
 // Apply the saved theme before first paint so there is no flash and full-screen

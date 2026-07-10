@@ -33,6 +33,17 @@ export class OrdersController {
     return this.orders.findAll({ status, today: today === '1' || today === 'true' });
   }
 
+  // Fired-but-unprinted KOT/BOT items — polled by the desktop auto-printer.
+  @Get('kot-queue')
+  kotQueue() {
+    return this.orders.kotQueue();
+  }
+
+  @Post('kot-queue/printed')
+  markKotPrinted(@Body('itemIds') itemIds: string[]) {
+    return this.orders.markKotPrinted(itemIds ?? []);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.orders.findOne(id);

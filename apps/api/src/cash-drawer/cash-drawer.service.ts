@@ -164,6 +164,25 @@ export class CashDrawerService {
     const b = await this.computeExpected(session);
     const n = (v: unknown) => (v == null ? 0 : Number(v));
 
+    // Credit-facility activity inside this business day: new credit charged
+    // (sales put on account) and credit paid back, split by tender. A CASH
+    // settlement is also a PAY_IN movement, so it already sits in expectedCents.
+    const ledgerWindow = { createdAt: { gte: start, lte: end } };
+    const [creditCharged, creditPaidByMethod] = await Promise.all([
+      this.prisma.creditLedgerEntry.aggregate({
+        _sum: { amountCents: true },
+        _count: true,
+        where: { type: 'CHARGE', ...ledgerWindow },
+      }),
+      this.prisma.creditLedgerEntry.groupBy({
+        by: ['method'],
+        _sum: { amountCents: true },
+        _count: true,
+        where: { type: 'PAYMENT', ...ledgerWindow },
+      }),
+    ]);
+    const creditPaidCents = creditPaidByMethod.reduce((s, m) => s + n(m._sum.amountCents), 0);
+
     return {
       session: {
         id: session.id,
@@ -193,6 +212,16 @@ export class CashDrawerService {
         expectedCents: b.expectedCents,
         countedCents: session.countedCents,
         varianceCents: session.varianceCents,
+      },
+      credit: {
+        chargedCents: n(creditCharged._sum.amountCents),
+        chargedCount: n(creditCharged._count),
+        paidCents: creditPaidCents,
+        paidByMethod: creditPaidByMethod.map((m) => ({
+          method: m.method,
+          amountCents: n(m._sum.amountCents),
+          count: n(m._count),
+        })),
       },
     };
   }

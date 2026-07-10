@@ -82,17 +82,88 @@ export class CrmService {
   }
 
   // Add to a customer's outstanding credit (CREDIT tender / house account).
-  async addCredit(tx: Prisma.TransactionClient, customerId: string, amountCents: number) {
+  // Writes a CHARGE ledger entry so the account has a full audit trail.
+  async addCredit(tx: Prisma.TransactionClient, customerId: string, amountCents: number, orderId?: string) {
     if (amountCents <= 0) return;
-    await tx.customer.update({ where: { id: customerId }, data: { creditBalanceCents: { increment: amountCents } } });
+    const c = await tx.customer.update({
+      where: { id: customerId },
+      data: { creditBalanceCents: { increment: amountCents } },
+    });
+    await tx.creditLedgerEntry.create({
+      data: {
+        customerId,
+        type: 'CHARGE',
+        amountCents,
+        orderId,
+        balanceAfterCents: c.creditBalanceCents,
+      },
+    });
   }
 
-  // Settle (pay down) a customer's credit balance.
-  async settleCredit(id: string, amountCents: number) {
+  // Settle (pay down) a customer's credit balance. Records a PAYMENT ledger
+  // entry with the tender used; a CASH settlement also drops a PAY_IN into the
+  // open cash-drawer session so the money shows up in the counter balance and
+  // the day-end report.
+  async settleCredit(
+    id: string,
+    amountCents: number,
+    method: 'CASH' | 'FONEPAY' | 'BANK' | 'ESEWA' | 'KHALTI' | 'CARD' = 'CASH',
+    note?: string,
+    actorName?: string,
+  ) {
+    if (!amountCents || amountCents <= 0) throw new BadRequestException('Amount must be positive');
     const c = await this.prisma.customer.findUnique({ where: { id } });
     if (!c) throw new NotFoundException(`Customer ${id} not found`);
+    if (c.creditBalanceCents <= 0) throw new BadRequestException('No outstanding credit');
     const pay = Math.min(amountCents, c.creditBalanceCents);
-    return this.prisma.customer.update({ where: { id }, data: { creditBalanceCents: { decrement: pay } } });
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.customer.update({
+        where: { id },
+        data: { creditBalanceCents: { decrement: pay } },
+      });
+      await tx.creditLedgerEntry.create({
+        data: {
+          customerId: id,
+          type: 'PAYMENT',
+          amountCents: pay,
+          method,
+          note,
+          createdBy: actorName,
+          balanceAfterCents: updated.creditBalanceCents,
+        },
+      });
+      // Cash received at the counter goes into the open drawer session.
+      if (method === 'CASH') {
+        const session = await tx.cashDrawerSession.findFirst({
+          where: { closedAt: null },
+          orderBy: { openedAt: 'desc' },
+        });
+        if (session) {
+          await tx.cashMovement.create({
+            data: {
+              sessionId: session.id,
+              type: 'PAY_IN',
+              amountCents: pay,
+              reason: `Credit paid — ${c.name}`,
+            },
+          });
+        }
+      }
+      return { ...updated, paidCents: pay };
+    });
+  }
+
+  // Full credit ledger for one customer (statement view).
+  async ledger(id: string) {
+    const c = await this.prisma.customer.findUnique({ where: { id } });
+    if (!c) throw new NotFoundException(`Customer ${id} not found`);
+    const entries = await this.prisma.creditLedgerEntry.findMany({
+      where: { customerId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return { customer: decorate(c), entries };
   }
 
   async findAll(search?: string) {

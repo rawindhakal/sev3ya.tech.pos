@@ -9,6 +9,7 @@ interface PnL {
   netSalesCents: number; cogsCents: number; grossProfitCents: number; grossMarginPct: number;
   expensesByCategory: { category: string; amountCents: number }[]; totalExpensesCents: number;
   netProfitCents: number; orders: number; breakEvenRevenueCents: number;
+  receivables?: { outstandingCents: number; debtors: number; chargedInPeriodCents: number; paidInPeriodCents: number };
 }
 interface Expense { id: string; category: string; amountCents: number; description?: string | null; incurredAt: string }
 interface AP { rows: { number: number; supplier: string; amountCents: number; ageDays: number; bucket: string }[]; buckets: Record<string, number>; totalCents: number }
@@ -93,6 +94,13 @@ export default function FinancePage() {
         <div className="card p-4"><div className="text-xl font-bold text-slate-900">{formatMoney(pnl.grossProfitCents)}</div><div className="text-xs text-slate-500">Gross profit ({pnl.grossMarginPct}%)</div></div>
         <div className={`card p-4 ${pnl.netProfitCents >= 0 ? '' : 'border-red-300 bg-red-50'}`}><div className={`text-xl font-bold ${pnl.netProfitCents >= 0 ? 'text-green-700' : 'text-red-600'}`}>{formatMoney(pnl.netProfitCents)}</div><div className="text-xs text-slate-500">Net profit</div></div>
         <div className="card p-4"><div className="text-xl font-bold text-slate-900">{formatMoney(pnl.breakEvenRevenueCents)}</div><div className="text-xs text-slate-500">Break-even revenue</div></div>
+        {pnl.receivables && (
+          <div className={`card p-4 ${pnl.receivables.outstandingCents > 0 ? 'border-amber-300' : ''}`}>
+            <div className="text-xl font-bold text-amber-600">{formatMoney(pnl.receivables.outstandingCents)}</div>
+            <div className="text-xs text-slate-500">Credit outstanding · {pnl.receivables.debtors} customer{pnl.receivables.debtors === 1 ? '' : 's'}</div>
+            <div className="mt-1 text-[11px] text-slate-400">period: +{formatMoney(pnl.receivables.chargedInPeriodCents)} charged · −{formatMoney(pnl.receivables.paidInPeriodCents)} paid</div>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

@@ -283,6 +283,55 @@ export class OrdersService {
     return { order: updated, fired: pending };
   }
 
+  // ── KOT print queue ────────────────────────────────
+  // Fired kitchen/bar items that no physical ticket has been printed for yet.
+  // The desktop till polls this and auto-prints (e.g. KOTs fired by waiters),
+  // then acknowledges via markKotPrinted so nothing prints twice.
+  async kotQueue() {
+    const items = await this.prisma.orderItem.findMany({
+      where: {
+        kotStatus: { not: 'PENDING' },
+        kotPrintedAt: null,
+        cancelledAt: null,
+        station: { in: ['KITCHEN', 'BAR'] },
+        order: { status: { in: ['SENT_TO_KITCHEN', 'BILLED', 'OPEN'] } },
+      },
+      include: {
+        order: {
+          select: {
+            id: true, number: true, type: true, notes: true, kotFiredAt: true,
+            table: { select: { name: true } },
+            waiter: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
+    return items.map((i) => ({
+      id: i.id,
+      orderId: i.orderId,
+      orderNumber: i.order.number,
+      orderType: i.order.type,
+      table: i.order.table?.name ?? null,
+      waiter: i.order.waiter?.name ?? null,
+      name: i.nameSnapshot,
+      quantity: i.quantity,
+      station: i.station,
+      notes: i.notes,
+      modifiers: i.modifiers,
+      firedAt: i.order.kotFiredAt,
+    }));
+  }
+
+  // Acknowledge that tickets for these items came out of the printer.
+  markKotPrinted(itemIds: string[]) {
+    if (!itemIds?.length) return { updated: 0 };
+    return this.prisma.orderItem
+      .updateMany({ where: { id: { in: itemIds }, kotPrintedAt: null }, data: { kotPrintedAt: new Date() } })
+      .then((r) => ({ updated: r.count }));
+  }
+
   async bill(id: string) {
     const order = await this.findOne(id);
     if (order.items.filter((i) => !i.cancelledAt).length === 0)
@@ -337,7 +386,7 @@ export class OrdersService {
       const creditCents = dto.payments.filter((p) => p.method === 'CREDIT').reduce((s, p) => s + p.amountCents, 0);
       if (creditCents > 0) {
         const withCust = await tx.order.findUniqueOrThrow({ where: { id }, select: { customerId: true } });
-        if (withCust.customerId) await this.crm.addCredit(tx, withCust.customerId, creditCents);
+        if (withCust.customerId) await this.crm.addCredit(tx, withCust.customerId, creditCents, id);
       }
       // Return the fresh row so redeemedPoints / customerId are reflected.
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });

@@ -16,6 +16,7 @@ export const ROUTE_PERM: Record<string, keyof Employee> = {
   '/employees': 'canManageStaff',
   '/settings': 'canManageStaff',
   '/menu': 'canManageStaff',
+  '/printing': 'canManageStaff',
 };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -33,6 +34,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       /* ignore */
     }
     setReady(true);
+    // PWA: register the service worker so the app is installable (e.g. the
+    // waiter panel on a phone) and the shell survives network blips.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   }, []);
 
   if (fullscreen) return <main className="h-screen overflow-hidden">{children}</main>;

@@ -236,6 +236,21 @@ export interface Settings {
   receiptHeader?: string | null;
   receiptFooter?: string | null;
   wifiPassword?: string | null;
+  billTemplate?: Record<string, unknown> | null;
+  kotTemplate?: Record<string, unknown> | null;
+}
+
+export interface CreditLedgerEntry {
+  id: string;
+  customerId: string;
+  type: 'CHARGE' | 'PAYMENT';
+  amountCents: number;
+  method?: PaymentMethod | null;
+  orderId?: string | null;
+  note?: string | null;
+  balanceAfterCents: number;
+  createdBy?: string | null;
+  createdAt: string;
 }
 
 export interface CashMovement {

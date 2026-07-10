@@ -7,9 +7,12 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
-import { IsBoolean, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { CrmService } from './crm.service';
+import { SoftAuthGuard, CurrentEmployee } from '../common/auth.guard';
+import { TokenPayload } from '../common/token';
 
 class CreateCustomerDto {
   @IsString() @IsNotEmpty() name: string;
@@ -22,6 +25,12 @@ class UpdateCustomerDto {
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsBoolean() optIn?: boolean;
   @IsOptional() @IsString() birthday?: string;
+}
+class SettleCreditDto {
+  @IsInt() @Min(1) amountCents: number;
+  @IsOptional() @IsIn(['CASH', 'FONEPAY', 'BANK', 'ESEWA', 'KHALTI', 'CARD'])
+  method?: 'CASH' | 'FONEPAY' | 'BANK' | 'ESEWA' | 'KHALTI' | 'CARD';
+  @IsOptional() @IsString() note?: string;
 }
 
 @Controller('customers')
@@ -53,8 +62,18 @@ export class CrmController {
     return this.crm.update(id, dto);
   }
   @Post(':id/settle-credit')
-  settleCredit(@Param('id') id: string, @Body('amountCents') amountCents: number) {
-    return this.crm.settleCredit(id, amountCents);
+  @UseGuards(SoftAuthGuard)
+  settleCredit(
+    @Param('id') id: string,
+    @Body() dto: SettleCreditDto,
+    @CurrentEmployee() emp?: TokenPayload,
+  ) {
+    return this.crm.settleCredit(id, dto.amountCents, dto.method ?? 'CASH', dto.note, emp?.name);
+  }
+
+  @Get(':id/ledger')
+  ledger(@Param('id') id: string) {
+    return this.crm.ledger(id);
   }
 
   @Delete(':id')
