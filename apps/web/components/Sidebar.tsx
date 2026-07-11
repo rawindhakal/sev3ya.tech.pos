@@ -45,6 +45,7 @@ const NAV: NavNode[] = [
     label: 'Finance', icon: '💰', feature: 'finance',
     children: [
       { href: '/reports', label: 'Reports' },
+      { href: '/mis', label: 'MIS Reports' },
       { href: '/finance', label: 'P&L & Expenses' },
       { href: '/accounting', label: 'Accounting' },
       { href: '/cash-drawer', label: 'Cash Drawer' },

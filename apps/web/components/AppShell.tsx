@@ -11,6 +11,7 @@ export const ROUTE_PERM: Record<string, keyof Employee> = {
   '/reports': 'canViewReports',
   '/finance': 'canViewReports',
   '/accounting': 'canViewReports',
+  '/mis': 'canViewReports',
   '/inventory': 'canManageInventory',
   '/purchasing': 'canManageInventory',
   '/employees': 'canManageStaff',
