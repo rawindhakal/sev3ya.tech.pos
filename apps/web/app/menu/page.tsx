@@ -171,7 +171,23 @@ export default function MenuPage() {
   }
 
   // ── CSV import / export ──────────────────────────
-  const CSV_COLS = ['name', 'category', 'description', 'price', 'takeawayPrice', 'deliveryPrice', 'station', 'available'];
+  // Portions/variants travel in one column encoded as "name:price|name:price"
+  // (prices in rupees) — e.g. "30ml:250|60ml:450".
+  const CSV_COLS = ['name', 'category', 'description', 'price', 'takeawayPrice', 'deliveryPrice', 'station', 'available', 'variants'];
+
+  const encodeVariants = (i: MenuItem) =>
+    (i.variants ?? []).map((v) => `${v.name}:${(v.priceCents / 100).toFixed(2)}`).join('|');
+
+  function parseVariants(raw: string): { name: string; priceCents: number; sortOrder: number }[] {
+    if (!raw.trim()) return [];
+    return raw.split('|').map((part, idx) => {
+      const cut = part.lastIndexOf(':');
+      const name = (cut > 0 ? part.slice(0, cut) : part).trim();
+      const price = cut > 0 ? parseFloat(part.slice(cut + 1)) || 0 : 0;
+      return { name, priceCents: dollarsToCents(price), sortOrder: idx };
+    }).filter((v) => v.name);
+  }
+
   function exportItemsCsv() {
     downloadCsv('menu-items.csv', toCsv(CSV_COLS, items.map((i) => [
       i.name,
@@ -182,7 +198,18 @@ export default function MenuPage() {
       i.deliveryPriceCents != null ? (i.deliveryPriceCents / 100).toFixed(2) : '',
       i.station ?? 'BILLING',
       i.isAvailable ? 'yes' : 'no',
+      encodeVariants(i),
     ])));
+  }
+
+  // A fill-in-ready template with example rows (one shows portions/variants).
+  function downloadTemplate() {
+    downloadCsv('menu-items-template.csv', toCsv(CSV_COLS, [
+      ['Cappuccino', 'Hot Coffee', 'Rich espresso with steamed milk', '180.00', '170.00', '190.00', 'BAR', 'yes', ''],
+      ['Chicken Momo', 'Food', 'Steamed dumplings (10 pcs)', '250.00', '', '', 'KITCHEN', 'yes', ''],
+      ['Whiskey', 'Bar', 'Premium blend — choose a portion', '0.00', '', '', 'BAR', 'yes', '30ml:250.00|60ml:450.00'],
+      ['Birthday Cake 1kg', 'Bakery', '', '1200.00', '', '', 'BILLING', 'yes', '0.5kg:650.00|1kg:1200.00|2kg:2300.00'],
+    ]));
   }
 
   async function importItemsCsv(file: File) {
@@ -219,7 +246,7 @@ export default function MenuPage() {
             station: ['KITCHEN', 'BAR', 'BILLING'].includes(station) ? station : 'BILLING',
             categoryId,
             isAvailable: !/^(no|false|0)$/i.test(get('available') || 'yes'),
-            variants: [],
+            variants: parseVariants(get('variants')),
           });
           created++;
         } catch { failed++; }
@@ -257,6 +284,7 @@ export default function MenuPage() {
           <p className="text-sm text-slate-500">Manage your categories and menu items</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button className="btn-ghost" onClick={downloadTemplate} title="Blank CSV template with example rows (incl. portions)">📄 Template</button>
           <button className="btn-ghost" onClick={exportItemsCsv} disabled={items.length === 0}>⬇ Export CSV</button>
           <label className="btn-ghost cursor-pointer">
             ⬆ Import CSV
