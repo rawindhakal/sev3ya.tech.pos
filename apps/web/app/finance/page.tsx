@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { downloadCsv, toCsv } from '@/lib/csv';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import Modal from '@/components/Modal';
 
@@ -85,6 +86,24 @@ export default function FinancePage() {
           <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} />
           <span className="text-slate-400">→</span>
           <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} />
+          <button
+            className="btn-ghost"
+            onClick={() => {
+              const rs = (c: number) => (c / 100).toFixed(2);
+              downloadCsv(`pnl-${from}-to-${to}.csv`, toCsv(['Head', 'Amount'], [
+                ['Gross sales', rs(pnl.grossSalesCents)],
+                ['VAT collected', rs(pnl.vatCollectedCents)],
+                ['Discounts', rs(pnl.discountsCents)],
+                ['Net sales', rs(pnl.netSalesCents)],
+                ['COGS', rs(pnl.cogsCents)],
+                ['Gross profit', rs(pnl.grossProfitCents)],
+                ...pnl.expensesByCategory.map((e) => [`Expense — ${e.category}`, rs(e.amountCents)] as [string, string]),
+                ['Total expenses', rs(pnl.totalExpensesCents)],
+                ['Net profit', rs(pnl.netProfitCents)],
+                ['Credit outstanding', rs(pnl.receivables?.outstandingCents ?? 0)],
+              ]));
+            }}
+          >⬇ CSV</button>
         </div>
       </header>
 

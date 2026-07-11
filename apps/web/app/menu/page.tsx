@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { Category, MenuItem } from '@/lib/types';
+import { toCsv, downloadCsv, parseCsv } from '@/lib/csv';
 import Modal from '@/components/Modal';
 
 type ItemForm = {
@@ -150,6 +151,88 @@ export default function MenuPage() {
     }
   }
 
+  // ── Category rename / delete ─────────────────────
+  async function renameCategory(c: Category) {
+    const name = prompt('Rename category:', c.name);
+    if (!name?.trim() || name.trim() === c.name) return;
+    try {
+      await api.patch(`/categories/${c.id}`, { name: name.trim() });
+      load();
+    } catch (e) { alert((e as Error).message); }
+  }
+  async function deleteCategory(c: Category) {
+    const n = c._count?.items ?? 0;
+    if (!confirm(`Delete category "${c.name}"${n ? ` and its ${n} item(s)` : ''}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/categories/${c.id}`);
+      setActiveCat('all');
+      load();
+    } catch (e) { alert((e as Error).message); }
+  }
+
+  // ── CSV import / export ──────────────────────────
+  const CSV_COLS = ['name', 'category', 'description', 'price', 'takeawayPrice', 'deliveryPrice', 'station', 'available'];
+  function exportItemsCsv() {
+    downloadCsv('menu-items.csv', toCsv(CSV_COLS, items.map((i) => [
+      i.name,
+      i.category?.name ?? '',
+      i.description ?? '',
+      (i.priceCents / 100).toFixed(2),
+      i.takeawayPriceCents != null ? (i.takeawayPriceCents / 100).toFixed(2) : '',
+      i.deliveryPriceCents != null ? (i.deliveryPriceCents / 100).toFixed(2) : '',
+      i.station ?? 'BILLING',
+      i.isAvailable ? 'yes' : 'no',
+    ])));
+  }
+
+  async function importItemsCsv(file: File) {
+    setSaving(true);
+    try {
+      const rows = parseCsv(await file.text());
+      if (rows.length < 2) throw new Error('CSV needs a header row + at least one item');
+      const header = rows[0].map((h) => h.trim().toLowerCase());
+      const idx = (n: string) => header.indexOf(n.toLowerCase());
+      if (idx('name') < 0 || idx('price') < 0) throw new Error('CSV must have "name" and "price" columns (use the export as a template)');
+      const catByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+      let created = 0, failed = 0;
+      for (const r of rows.slice(1)) {
+        const get = (n: string) => (idx(n) >= 0 ? (r[idx(n)] ?? '').trim() : '');
+        const name = get('name');
+        if (!name) continue;
+        try {
+          // Find or create the category.
+          const catName = get('category') || 'Uncategorised';
+          let categoryId = catByName.get(catName.toLowerCase());
+          if (!categoryId) {
+            const c = await api.post<Category>('/categories', { name: catName, sortOrder: categories.length + catByName.size });
+            categoryId = c.id;
+            catByName.set(catName.toLowerCase(), c.id);
+          }
+          const money = (v: string) => (v === '' ? null : dollarsToCents(parseFloat(v) || 0));
+          const station = get('station').toUpperCase();
+          await api.post('/menu-items', {
+            name,
+            description: get('description') || undefined,
+            priceCents: money(get('price')) ?? 0,
+            takeawayPriceCents: money(get('takeawayPrice')),
+            deliveryPriceCents: money(get('deliveryPrice')),
+            station: ['KITCHEN', 'BAR', 'BILLING'].includes(station) ? station : 'BILLING',
+            categoryId,
+            isAvailable: !/^(no|false|0)$/i.test(get('available') || 'yes'),
+            variants: [],
+          });
+          created++;
+        } catch { failed++; }
+      }
+      alert(`Import finished — ${created} item(s) created${failed ? `, ${failed} failed` : ''}.`);
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function createCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!newCatName.trim()) return;
@@ -173,7 +256,13 @@ export default function MenuPage() {
           <h1 className="text-2xl font-bold text-slate-900">Menu & Items</h1>
           <p className="text-sm text-slate-500">Manage your categories and menu items</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-ghost" onClick={exportItemsCsv} disabled={items.length === 0}>⬇ Export CSV</button>
+          <label className="btn-ghost cursor-pointer">
+            ⬆ Import CSV
+            <input type="file" accept=".csv,text/csv" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) importItemsCsv(f); e.target.value = ''; }} />
+          </label>
           <button className="btn-ghost" onClick={() => setCatModal(true)}>
             + Category
           </button>
@@ -200,15 +289,22 @@ export default function MenuPage() {
           All ({items.length})
         </button>
         {categories.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => setActiveCat(c.id)}
-            className={`badge px-3 py-1.5 ${
-              activeCat === c.id ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'
-            }`}
-          >
-            {c.name} ({c._count?.items ?? 0})
-          </button>
+          <span key={c.id} className="inline-flex items-center">
+            <button
+              onClick={() => setActiveCat(c.id)}
+              className={`badge px-3 py-1.5 ${
+                activeCat === c.id ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'
+              }`}
+            >
+              {c.name} ({c._count?.items ?? 0})
+            </button>
+            {activeCat === c.id && (
+              <span className="ml-1 flex gap-0.5">
+                <button title="Rename category" onClick={() => renameCategory(c)} className="rounded px-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-600">✏️</button>
+                <button title="Delete category" onClick={() => deleteCategory(c)} className="rounded px-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600">🗑</button>
+              </span>
+            )}
+          </span>
         ))}
       </div>
 

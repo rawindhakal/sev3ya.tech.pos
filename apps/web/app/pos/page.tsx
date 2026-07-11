@@ -27,6 +27,7 @@ import ThemeToggleMini from '@/components/ThemeToggleMini';
 import AutoPrintAgent from '@/components/AutoPrintAgent';
 import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
 import { formatBsLong } from '@/lib/bs-date';
+import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea } from '@/lib/printing';
 import { getStatus } from '@/lib/offline';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
@@ -263,13 +264,17 @@ export default function PosPage() {
       const rep = await api.get<DayReportData>(`/cash-drawer/report${sessionId ? `?sessionId=${sessionId}` : ''}`);
       setDayEndOpen(false);
       setCountRs('');
-      // Print the Z-report.
+      // Print the Z-report (silently on the desktop's bill printer).
       setReceipt(null);
       setDayReport(rep);
-      setTimeout(() => {
-        document.body.classList.add('print-receipt');
-        window.print();
-        document.body.classList.remove('print-receipt');
+      setTimeout(async () => {
+        const tpl = billTemplateOf(settings);
+        const ok = await silentPrintArea({ printer: getPrinterPrefs().bill, widthMm: tpl.paperWidthMm, fontSize: tpl.fontSize });
+        if (!ok) {
+          document.body.classList.add('print-receipt');
+          window.print();
+          document.body.classList.remove('print-receipt');
+        }
         setTimeout(() => setDayReport(null), 300);
       }, 200);
       setDrawerOpen(false);
@@ -661,17 +666,24 @@ export default function PosPage() {
     return saved;
   }
 
-  // Print one ticket (blocks until the print dialog returns).
-  function printTicket(o: Order, m: ReceiptMode, tItems?: OrderItem[]) {
-    return new Promise<void>((resolve) => {
-      setReceipt({ order: o, mode: m, items: tItems });
-      setTimeout(() => {
-        document.body.classList.add('print-receipt');
-        window.print();
-        document.body.classList.remove('print-receipt');
-        setTimeout(resolve, 200);
-      }, 150);
-    });
+  // Print one ticket. In the desktop app this prints silently to the printer
+  // chosen under Settings → Printing (bill printer for bills, KOT/BOT printers
+  // for kitchen tickets) — no dialog. In the browser it falls back to the
+  // normal print dialog.
+  async function printTicket(o: Order, m: ReceiptMode, tItems?: OrderItem[]) {
+    setReceipt({ order: o, mode: m, items: tItems });
+    await new Promise((r) => setTimeout(r, 150)); // let the ticket render
+    const prefs = getPrinterPrefs();
+    const tpl = m === 'BILL' ? billTemplateOf(settings) : kotTemplateOf(settings);
+    const printer = m === 'BILL' ? prefs.bill : m === 'BOT' ? prefs.bot || prefs.kot : prefs.kot;
+    if (await silentPrintArea({ printer, widthMm: tpl.paperWidthMm, fontSize: tpl.fontSize })) {
+      await new Promise((r) => setTimeout(r, 120));
+      return;
+    }
+    document.body.classList.add('print-receipt');
+    window.print();
+    document.body.classList.remove('print-receipt');
+    await new Promise((r) => setTimeout(r, 200));
   }
 
   // Fire incremental KOT — the API returns only the just-fired items; print a

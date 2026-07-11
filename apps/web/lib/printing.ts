@@ -132,6 +132,31 @@ export interface KotQueueItem {
 const esc = (s: unknown) =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// Silently print whatever is currently rendered in #print-area (Receipt /
+// DayReport) through the desktop shell — no printer dialog. The components use
+// inline styles, so the captured markup is self-contained. Returns false when
+// not in the desktop shell (caller falls back to window.print()).
+export async function silentPrintArea(opts: { printer?: string; widthMm?: number; fontSize?: number }): Promise<boolean> {
+  if (typeof window === 'undefined' || !window.cakezakeDesktop?.printHtml) return false;
+  const el = document.getElementById('print-area');
+  if (!el) return false;
+  const w = opts.widthMm ?? 80;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    @page { margin: 0; }
+    body { font-family: ui-monospace, Menlo, monospace; color: #000; background: #fff;
+           width: ${w - 6}mm; margin: 0 auto; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
+    #print-area { display: block !important; }
+    table { border-collapse: collapse; }
+    th, td { padding: 1px 0; }
+  </style></head><body>${el.outerHTML}</body></html>`;
+  try {
+    const res = await window.cakezakeDesktop.printHtml!({ html, printerName: opts.printer, widthMm: w });
+    return !!res?.ok;
+  } catch {
+    return false;
+  }
+}
+
 // Standalone, self-contained ticket HTML for silent printing in the desktop
 // shell (thermal-receipt style, monospace, no external assets).
 export function kotTicketHtml(opts: {

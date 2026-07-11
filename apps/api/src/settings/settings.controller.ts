@@ -12,6 +12,7 @@ class UpdateSettingsDto {
   // Rates as fractions: 0.13 = 13%. Capped at 100%.
   @IsOptional() @IsNumber() @Min(0) @Max(1) vatRate?: number;
   @IsOptional() @IsNumber() @Min(0) @Max(1) serviceChargeRate?: number;
+  @IsOptional() @IsBoolean() pricesIncludeVat?: boolean;
   @IsOptional() @IsString() receiptHeader?: string;
   @IsOptional() @IsString() receiptFooter?: string;
   @IsOptional() @IsString() wifiPassword?: string;

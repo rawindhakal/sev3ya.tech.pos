@@ -24,6 +24,7 @@ import { FinanceModule } from './finance/finance.module';
 import { RoasteryModule } from './roastery/roastery.module';
 import { TerminalsModule } from './terminals/terminals.module';
 import { IrdModule } from './ird/ird.module';
+import { AccountingModule } from './accounting/accounting.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { IrdModule } from './ird/ird.module';
     RoasteryModule,
     TerminalsModule,
     IrdModule,
+    AccountingModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor }],

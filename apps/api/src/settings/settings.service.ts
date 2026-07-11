@@ -28,6 +28,7 @@ export class SettingsService {
       currency: envSettings.currency,
       vatRate: s.vatRate,
       serviceChargeRate: s.serviceChargeRate,
+      pricesIncludeVat: s.pricesIncludeVat,
       restaurantName: s.restaurantName,
       address: s.address,
       phone: s.phone,
@@ -61,7 +62,7 @@ export class SettingsService {
   // Rates used by the order money math (single source of truth).
   async getRates() {
     const s = await this.ensure();
-    return { vatRate: s.vatRate, serviceChargeRate: s.serviceChargeRate };
+    return { vatRate: s.vatRate, serviceChargeRate: s.serviceChargeRate, pricesIncludeVat: s.pricesIncludeVat };
   }
 
   // Danger zone: wipe all sales / operational data while KEEPING configuration
@@ -111,6 +112,7 @@ export class SettingsService {
     taxId?: string;
     vatRate?: number;
     serviceChargeRate?: number;
+    pricesIncludeVat?: boolean;
     receiptHeader?: string;
     receiptFooter?: string;
     wifiPassword?: string;

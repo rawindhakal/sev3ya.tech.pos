@@ -21,11 +21,11 @@ const NAV: { href: string; label: string; icon: string; feature?: keyof Features
   { href: '/printing', label: 'Printing', icon: '🖨️' },
   { href: '/inventory', label: 'Inventory', icon: '📦', feature: 'inventory' },
   { href: '/purchasing', label: 'Purchasing', icon: '🚚', feature: 'purchasing' },
-  { href: '/roastery', label: 'Roastery', icon: '🔥', feature: 'roastery' },
   { href: '/employees', label: 'Employees', icon: '👥' },
   { href: '/cash-drawer', label: 'Cash Drawer', icon: '💵' },
   { href: '/reports', label: 'Reports', icon: '📈' },
   { href: '/finance', label: 'Finance', icon: '💰', feature: 'finance' },
+  { href: '/accounting', label: 'Accounting', icon: '📒', feature: 'finance' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 

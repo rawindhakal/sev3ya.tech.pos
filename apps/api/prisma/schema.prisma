@@ -540,6 +540,8 @@ model CafeSetting {
   // Configurable tax rates (matrix #7), stored as fractions (0.13 = 13%).
   vatRate           Float    @default(0.13)
   serviceChargeRate Float    @default(0)
+  // When true, menu prices already include VAT (tax is back-calculated).
+  pricesIncludeVat  Boolean  @default(false)
   receiptHeader     String?
   receiptFooter     String?
   wifiPassword      String?

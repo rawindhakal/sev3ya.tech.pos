@@ -18,6 +18,8 @@ export interface TotalsOptions {
   discountCents?: number;
   vatRate?: number;
   serviceChargeRate?: number;
+  // Menu prices already include VAT → tax is extracted, not added on top.
+  pricesIncludeVat?: boolean;
 }
 
 // Single source of truth for money math. All values in integer cents.
@@ -45,8 +47,17 @@ export function computeTotals(
   }
   const taxable = Math.max(0, subtotalCents - discountCents);
   const serviceChargeCents = Math.round(taxable * serviceChargeRate);
-  const taxCents = Math.round((taxable + serviceChargeCents) * vatRate);
-  const totalCents = taxable + serviceChargeCents + taxCents;
+  let taxCents: number;
+  let totalCents: number;
+  if (opts.pricesIncludeVat) {
+    // Prices carry VAT: the customer pays the menu price; VAT is the embedded
+    // portion → tax = gross × r / (1 + r).
+    totalCents = taxable + serviceChargeCents;
+    taxCents = Math.round((totalCents * vatRate) / (1 + vatRate));
+  } else {
+    taxCents = Math.round((taxable + serviceChargeCents) * vatRate);
+    totalCents = taxable + serviceChargeCents + taxCents;
+  }
   return {
     itemCount,
     subtotalCents,

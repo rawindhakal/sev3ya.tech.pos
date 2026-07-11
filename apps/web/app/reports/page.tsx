@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
+import { downloadCsv, toCsv } from '@/lib/csv';
 
 interface Report {
   range: { from: string; to: string };
@@ -109,6 +110,32 @@ export default function ReportsPage() {
           <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} />
           <span className="text-slate-400">→</span>
           <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} />
+          <button
+            className="btn-ghost"
+            onClick={() => {
+              if (!data) return;
+              const rs = (c: number) => (c / 100).toFixed(2);
+              const rows: (string | number)[][] = [
+                ['SUMMARY', '', '', ''],
+                ['Orders', data.summary.orders, 'Guests', data.summary.guests],
+                ['Gross sales', rs(data.summary.grossCents), 'Avg ticket', rs(data.summary.avgTicketCents)],
+                ['VAT', rs(data.summary.taxCents), 'Discounts', rs(data.summary.discountCents)],
+                ['', '', '', ''],
+                ['BY PAYMENT', 'Count', 'Amount', ''],
+                ...data.byPayment.map((p) => [p.method, p.count, rs(p.amountCents), '']),
+                ['', '', '', ''],
+                ['BY TYPE', 'Count', 'Amount', ''],
+                ...data.byType.map((t) => [t.type, t.count, rs(t.totalCents), '']),
+                ['', '', '', ''],
+                ['MENU PERFORMANCE', 'Qty', 'Revenue', 'Margin %'],
+                ...data.menuPerformance.map((m) => [m.name, m.qty, rs(m.revenueCents), m.marginPct]),
+                ['', '', '', ''],
+                ['BY HOUR', 'Orders', 'Revenue', ''],
+                ...data.byHour.map((h) => [`${h.hour}:00`, h.orders, rs(h.revenueCents), '']),
+              ];
+              downloadCsv(`sales-report-${from}-to-${to}.csv`, toCsv(['A', 'B', 'C', 'D'], rows));
+            }}
+          >⬇ CSV</button>
           <button onClick={() => window.print()} className="btn-ghost">🖨 Print</button>
         </div>
       </header>
@@ -301,6 +328,13 @@ function IrdSection({ from, to }: { from: string; to: string }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            className="btn-ghost"
+            onClick={() => rep && downloadCsv(`ird-sales-register-${from}-to-${to}.csv`, toCsv(
+              ['SN', 'Invoice', 'Date (BS)', 'Buyer', 'Taxable', 'VAT', 'Total', 'IRD status'],
+              rep.rows.map((r) => [r.sn, r.invoiceNumber, r.dateBs ?? '', r.buyerName, (r.taxableCents / 100).toFixed(2), (r.vatCents / 100).toFixed(2), (r.totalCents / 100).toFixed(2), r.syncStatus]),
+            ))}
+          >⬇ CSV</button>
           <a className="btn-ghost" href={`${API_BASE}/ird/tally-xml?from=${from}&to=${to}`} download>📥 Tally XML</a>
           <button className="btn-primary" disabled={syncing} onClick={syncNow} title={rep.irdEnabled ? 'Push unsynced invoices to IRD' : 'Enable + configure IRD in Settings first'}>
             {syncing ? 'Syncing…' : '🔁 Sync to IRD'}

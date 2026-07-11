@@ -10,9 +10,9 @@ import type { Employee } from '@/lib/types';
 export const ROUTE_PERM: Record<string, keyof Employee> = {
   '/reports': 'canViewReports',
   '/finance': 'canViewReports',
+  '/accounting': 'canViewReports',
   '/inventory': 'canManageInventory',
   '/purchasing': 'canManageInventory',
-  '/roastery': 'canManageInventory',
   '/employees': 'canManageStaff',
   '/settings': 'canManageStaff',
   '/menu': 'canManageStaff',

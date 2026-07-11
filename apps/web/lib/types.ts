@@ -227,6 +227,7 @@ export interface Features {
 export interface Settings {
   vatRate: number;
   serviceChargeRate: number;
+  pricesIncludeVat?: boolean;
   currency: string;
   restaurantName: string;
   features?: Features;

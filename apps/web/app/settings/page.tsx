@@ -10,7 +10,6 @@ const FEATURES: { key: keyof Features; col: string; label: string }[] = [
   { key: 'reservations', col: 'featReservations', label: 'Reservations & waitlist' },
   { key: 'inventory', col: 'featInventory', label: 'Inventory & recipes' },
   { key: 'purchasing', col: 'featPurchasing', label: 'Purchasing & suppliers' },
-  { key: 'roastery', col: 'featRoastery', label: 'Roastery' },
   { key: 'crm', col: 'featCrm', label: 'Customers (CRM & loyalty)' },
   { key: 'finance', col: 'featFinance', label: 'Finance & P&L' },
   { key: 'kds', col: 'featKds', label: 'Kitchen display (KDS)' },
@@ -162,8 +161,31 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={async () => {
+                const next = !form.pricesIncludeVat;
+                setForm({ ...form, pricesIncludeVat: next });
+                try { await api.patch('/settings', { pricesIncludeVat: next }); } catch (err) { alert((err as Error).message); setForm({ ...form, pricesIncludeVat: !next }); }
+              }}
+              className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm hover:bg-slate-50"
+            >
+              <span>
+                <span className="font-medium text-slate-700">Menu prices include VAT</span>
+                <span className="block text-xs text-slate-400">
+                  {form.pricesIncludeVat
+                    ? 'ON — customers pay the menu price; VAT is extracted from it on the bill.'
+                    : 'OFF — VAT is added on top of the menu price at billing.'}
+                </span>
+              </span>
+              <span className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${form.pricesIncludeVat ? 'bg-brand-500' : 'bg-slate-300'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.pricesIncludeVat ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </span>
+            </button>
+          </div>
           <p className="mt-2 text-xs text-slate-400">
-            Applied to every new order: service charge on the discounted subtotal, then VAT on top. Currency (<strong>{form.currency}</strong>) is set in <code>apps/api/.env</code>.
+            Applied to every new order: service charge on the discounted subtotal, then VAT. Currency (<strong>{form.currency}</strong>) is set in <code>apps/api/.env</code>.
           </p>
         </div>
 
