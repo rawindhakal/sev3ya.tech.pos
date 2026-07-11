@@ -24,6 +24,8 @@ export default function SettingsPage() {
   const [confirmText, setConfirmText] = useState('');
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
+  // RestroX-style settings hub: left sub-nav, one section at a time.
+  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'danger'>('details');
 
   async function resetData() {
     setResetting(true);
@@ -88,14 +90,69 @@ export default function SettingsPage() {
 
   const set = (k: keyof Settings, v: string) => setForm({ ...form, [k]: v });
 
-  return (
-    <div className="mx-auto max-w-2xl p-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-        <p className="text-sm text-slate-500">Receipt branding &amp; outlet details</p>
-      </header>
+  const NAV: { group: string; items: ({ id: typeof section; label: string } | { href: string; label: string })[] }[] = [
+    {
+      group: 'General Setting',
+      items: [
+        { id: 'details', label: 'Restaurant Details' },
+        { id: 'modules', label: 'Modules' },
+        { href: '/employees', label: 'Users & Roles' },
+        { href: '/reports', label: 'Activity Log' },
+      ],
+    },
+    {
+      group: 'Order Setting',
+      items: [
+        { id: 'tax', label: 'Tax & Charges' },
+        { id: 'invoice', label: 'Invoice Setting' },
+        { href: '/printing', label: 'KOT & Printer' },
+        { id: 'ird', label: 'IRD Nepal (CBMS)' },
+      ],
+    },
+    {
+      group: 'Dangerous Area',
+      items: [{ id: 'danger', label: 'Reset Restaurant' }],
+    },
+  ];
 
+  return (
+    <div className="flex h-full flex-col md:flex-row">
+      {/* Settings sub-navigation (RestroX-style) */}
+      <aside className="w-full shrink-0 border-b border-slate-200 p-4 dark:border-slate-700 md:w-64 md:border-b-0 md:border-r">
+        <h1 className="mb-4 text-lg font-bold text-slate-900">Settings</h1>
+        {NAV.map((g) => (
+          <div key={g.group} className="mb-4">
+            <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wider ${g.group === 'Dangerous Area' ? 'text-red-400' : 'text-slate-400'}`}>{g.group}</div>
+            <div className="space-y-0.5">
+              {g.items.map((it) =>
+                'href' in it ? (
+                  <a key={it.label} href={it.href} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-600 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700/50">
+                    {it.label}
+                    <svg className="h-3.5 w-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M7 7h10v10" /></svg>
+                  </a>
+                ) : (
+                  <button
+                    key={it.label}
+                    onClick={() => setSection(it.id)}
+                    className={`block w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                      section === it.id
+                        ? it.id === 'danger' ? 'bg-red-50 font-medium text-red-600 dark:bg-red-950/30' : 'bg-brand-50 font-medium text-brand-700 dark:bg-brand-500/10'
+                        : it.id === 'danger' ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20' : 'text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                    }`}
+                  >
+                    {it.label}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>
+        ))}
+      </aside>
+
+      <main className="min-w-0 max-w-2xl flex-1 overflow-y-auto p-4 sm:p-6">
+      {['details', 'tax', 'invoice'].includes(section) && (
       <form onSubmit={save} className="card space-y-5 p-6">
+        {section === 'details' && (
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="label">Restaurant name</label>
@@ -114,9 +171,11 @@ export default function SettingsPage() {
             <input className="input" value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} placeholder="Thamel, Kathmandu" />
           </div>
         </div>
+        )}
 
-        <div className="border-t border-slate-100 pt-5">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">Receipt template</h2>
+        {section === 'invoice' && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Invoice / receipt lines</h2>
           <div className="space-y-4">
             <div>
               <label className="label">Header line (above items)</label>
@@ -128,12 +187,15 @@ export default function SettingsPage() {
             </div>
             <div>
               <label className="label">WiFi password (printed on bill)</label>
-              <input className="input" value={form.wifiPassword ?? ''} onChange={(e) => set('wifiPassword', e.target.value)} placeholder="cakezake123" />
+              <input className="input" value={form.wifiPassword ?? ''} onChange={(e) => set('wifiPassword', e.target.value)} placeholder="guest-wifi-123" />
             </div>
+            <p className="text-xs text-slate-400">Ticket layout, fields and printers are under <a className="text-brand-600 underline" href="/printing">KOT &amp; Printer</a>.</p>
           </div>
         </div>
+        )}
 
-        <div className="border-t border-slate-100 pt-5">
+        {section === 'tax' && (
+        <div>
           <h2 className="mb-3 text-sm font-semibold text-slate-700">Taxes &amp; charges</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -188,17 +250,19 @@ export default function SettingsPage() {
             Applied to every new order: service charge on the discounted subtotal, then VAT. Currency (<strong>{form.currency}</strong>) is set in <code>apps/api/.env</code>.
           </p>
         </div>
+        )}
 
         <div className="flex items-center gap-3">
           <button type="submit" className="btn-primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Save settings'}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
           {saved && <span className="text-sm text-emerald-600">✓ Saved</span>}
         </div>
       </form>
+      )}
 
       {/* Feature toggles — enable/disable whole modules app-wide */}
-      {form.features && (
+      {section === 'modules' && form.features && (
         <div className="card mt-6 p-6">
           <h2 className="mb-1 text-sm font-semibold text-slate-700">Modules</h2>
           <p className="mb-4 text-xs text-slate-400">Turn sections on or off. Disabled modules are hidden from the sidebar for everyone.</p>
@@ -224,10 +288,11 @@ export default function SettingsPage() {
       )}
 
       {/* ── IRD (CBMS Nepal) e-billing ── */}
-      {form && <IrdCard settings={form} onSaved={setForm} />}
+      {section === 'ird' && form && <IrdCard settings={form} onSaved={setForm} />}
 
       {/* ── Danger zone ── */}
-      <div className="mt-6 rounded-xl border border-red-200 bg-red-50/50 p-6 dark:border-red-900/40 dark:bg-red-950/20">
+      {section === 'danger' && (
+      <div className="rounded-xl border border-red-200 bg-red-50/50 p-6 dark:border-red-900/40 dark:bg-red-950/20">
         <h2 className="mb-1 text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
         <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
           <strong>Reset all data</strong> permanently deletes all orders, payments, KOTs, cash-drawer
@@ -240,9 +305,10 @@ export default function SettingsPage() {
           onClick={() => { setResetMsg(null); setConfirmText(''); setResetOpen(true); }}
           className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:bg-slate-800 dark:text-red-400 dark:hover:bg-red-950/40"
         >
-          🗑️ Reset all data…
+          Reset all data…
         </button>
       </div>
+      )}
 
       <Modal open={resetOpen} title="Reset all data" onClose={() => setResetOpen(false)}>
         <div className="space-y-4">
@@ -268,6 +334,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </Modal>
+      </main>
     </div>
   );
 }
