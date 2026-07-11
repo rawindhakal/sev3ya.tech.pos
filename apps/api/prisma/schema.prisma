@@ -751,3 +751,59 @@ model IdempotencyKey {
   @@index([createdAt])
   @@map("idempotency_keys")
 }
+
+// ─────────────────────────────────────────────────────────────
+// DOUBLE-ENTRY ACCOUNTING (chart of accounts + manual journals)
+// ─────────────────────────────────────────────────────────────
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+// Chart of accounts. System accounts are seeded and undeletable; their ledger
+// views also merge live POS activity (cash/bank/sales/VAT/debtors).
+model LedgerAccount {
+  id        String      @id @default(cuid())
+  code      String      @unique // e.g. "1000"
+  name      String
+  type      AccountType
+  group     String?     // e.g. "Current Assets", "Indirect Expenses"
+  isSystem  Boolean     @default(false)
+  isActive  Boolean     @default(true)
+  lines     JournalLine[]
+  createdAt DateTime    @default(now())
+
+  @@map("ledger_accounts")
+}
+
+// A manual voucher (Journal / Payment / Receipt / Contra). Lines must balance.
+model JournalEntry {
+  id        String        @id @default(cuid())
+  number    Int           @default(autoincrement())
+  type      String        @default("JOURNAL")
+  date      DateTime      @default(now())
+  narration String?
+  createdBy String?
+  lines     JournalLine[]
+  createdAt DateTime      @default(now())
+
+  @@index([date])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id        String        @id @default(cuid())
+  entryId   String
+  entry     JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId String
+  account   LedgerAccount @relation(fields: [accountId], references: [id])
+  drCents   Int           @default(0)
+  crCents   Int           @default(0)
+
+  @@index([accountId])
+  @@map("journal_lines")
+}
