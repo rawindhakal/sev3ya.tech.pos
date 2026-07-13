@@ -13,6 +13,8 @@ import { AuditService } from '../audit/audit.service';
 // Never leak the PIN / password hash to clients.
 const publicSelect = {
   id: true,
+  deviceUserId: true,
+  monthlySalaryCents: true,
   name: true,
   role: true,
   username: true,

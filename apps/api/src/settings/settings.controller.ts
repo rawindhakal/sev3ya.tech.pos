@@ -31,6 +31,8 @@ class UpdateSettingsDto {
   @IsOptional() @IsString() irdPassword?: string;
   @IsOptional() @IsString() irdSellerPan?: string;
   @IsOptional() @IsString() irdApiUrl?: string;
+  @IsOptional() @IsString() zkDeviceIp?: string;
+  @IsOptional() @IsNumber() zkDevicePort?: number;
 }
 
 @Controller('settings')

@@ -295,6 +295,11 @@ model Employee {
   username     String?   @unique // username + password login
   passwordHash String?   // scrypt salt:hash
   isActive     Boolean   @default(true)
+  // ZKTeco fingerprint device user ID (maps scans → this employee).
+  deviceUserId String?   @unique
+  // Payroll: fixed monthly salary in paisa (pro-rated by attendance).
+  monthlySalaryCents Int @default(0)
+  attendance   AttendanceLog[]
 
   // Granular permission matrix (#129, spec §3.1 Step 3).
   canVoid            Boolean @default(false)
@@ -557,6 +562,10 @@ model CafeSetting {
   irdSellerPan String?
   irdApiUrl    String? // e.g. https://cbapi.ird.gov.np/api/bill
 
+  // ZKTeco attendance device on the local network (TCP port 4370).
+  zkDeviceIp   String?
+  zkDevicePort Int     @default(4370)
+
   // Module feature toggles — admin enables/disables sections app-wide.
   featReservations Boolean @default(true)
   featInventory    Boolean @default(true)
@@ -806,4 +815,22 @@ model JournalLine {
 
   @@index([accountId])
   @@map("journal_lines")
+}
+
+
+// Fingerprint punches pulled from the ZKTeco device (or added manually).
+// (deviceUserId, at) is unique so re-syncing never duplicates records.
+model AttendanceLog {
+  id           String    @id @default(cuid())
+  employeeId   String?
+  employee     Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  deviceUserId String
+  at           DateTime
+  source       String    @default("DEVICE") // DEVICE | MANUAL
+  createdAt    DateTime  @default(now())
+
+  @@unique([deviceUserId, at])
+  @@index([employeeId, at])
+  @@index([at])
+  @@map("attendance_logs")
 }

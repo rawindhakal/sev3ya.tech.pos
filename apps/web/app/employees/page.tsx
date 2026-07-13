@@ -29,6 +29,8 @@ const blank = {
   role: 'CASHIER' as StaffRole,
   username: '',
   password: '',
+  deviceUserId: '',
+  monthlySalary: '',
   canVoid: false,
   canDiscount: false,
   canManageInventory: false,
@@ -68,7 +70,7 @@ export default function EmployeesPage() {
     setModal(true);
   }
   function openEdit(e: Employee) {
-    setForm({ ...blank, ...e, username: e.username ?? '', password: '' });
+    setForm({ ...blank, ...e, username: e.username ?? '', password: '', deviceUserId: (e as any).deviceUserId ?? '', monthlySalary: (e as any).monthlySalaryCents ? String((e as any).monthlySalaryCents / 100) : '' });
     setModal(true);
   }
 
@@ -86,6 +88,8 @@ export default function EmployeesPage() {
         canManageStaff: form.canManageStaff,
       };
       if (form.username.trim()) payload.username = form.username.trim();
+      payload.deviceUserId = form.deviceUserId.trim() || undefined;
+      payload.monthlySalaryCents = Math.round((parseFloat(form.monthlySalary) || 0) * 100);
       if (form.password) payload.password = form.password;
       if (form.id) {
         await api.patch(`/employees/${form.id}`, payload);
@@ -209,6 +213,16 @@ export default function EmployeesPage() {
             <div>
               <label className="label">Password{form.id && ' — blank to keep'}</label>
               <input className="input" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••" required={!form.id} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Fingerprint device ID</label>
+              <input className="input" value={form.deviceUserId} onChange={(e) => setForm({ ...form, deviceUserId: e.target.value })} placeholder="ZKTeco user ID e.g. 7" />
+            </div>
+            <div>
+              <label className="label">Monthly salary (Rs)</label>
+              <input className="input" inputMode="decimal" value={form.monthlySalary} onChange={(e) => setForm({ ...form, monthlySalary: e.target.value })} placeholder="25000" />
             </div>
           </div>
           <div>

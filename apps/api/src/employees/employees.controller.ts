@@ -10,14 +10,18 @@ import {
 import {
   IsBoolean,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Min,
 } from 'class-validator';
 import { StaffRole } from '@prisma/client';
 import { EmployeesService } from './employees.service';
 
 class CreateEmployeeDto {
+  @IsOptional() @IsString() deviceUserId?: string;
+  @IsOptional() @IsInt() @Min(0) monthlySalaryCents?: number;
   @IsString() @IsNotEmpty() name: string;
   @IsEnum(StaffRole) role: StaffRole;
   @IsString() @IsNotEmpty() username: string;
@@ -29,6 +33,8 @@ class CreateEmployeeDto {
   @IsOptional() @IsBoolean() canManageStaff?: boolean;
 }
 class UpdateEmployeeDto {
+  @IsOptional() @IsString() deviceUserId?: string;
+  @IsOptional() @IsInt() @Min(0) monthlySalaryCents?: number;
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsEnum(StaffRole) role?: StaffRole;
   @IsOptional() @IsString() @IsNotEmpty() username?: string;
