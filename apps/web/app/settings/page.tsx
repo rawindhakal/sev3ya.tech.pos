@@ -25,7 +25,7 @@ export default function SettingsPage() {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   // RestroX-style settings hub: left sub-nav, one section at a time.
-  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'danger'>('details');
+  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'desktop' | 'danger'>('details');
 
   async function resetData() {
     setResetting(true);
@@ -96,6 +96,7 @@ export default function SettingsPage() {
       items: [
         { id: 'details', label: 'Restaurant Details' },
         { id: 'modules', label: 'Modules' },
+        { id: 'desktop', label: 'Desktop Application' },
         { href: '/employees', label: 'Users & Roles' },
         { href: '/reports', label: 'Activity Log' },
       ],
@@ -289,6 +290,48 @@ export default function SettingsPage() {
 
       {/* ── IRD (CBMS Nepal) e-billing ── */}
       {section === 'ird' && form && <IrdCard settings={form} onSaved={setForm} />}
+
+      {/* ── Desktop application downloads ── */}
+      {section === 'desktop' && (
+      <div className="card space-y-5 p-6">
+        <div>
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">s3vyaPOS Desktop (cashier till)</h2>
+          <p className="text-xs text-slate-400">
+            The native till app connects to s3vya.tech out of the box and adds what a browser can&apos;t:
+            <strong> silent KOT/bill printing</strong> to your chosen printers, <strong>auto-printing of waiter KOTs</strong>,
+            and the <strong>ZKTeco fingerprint bridge</strong> that syncs attendance punches to the cloud every 5 minutes.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <a href="https://s3vya.tech/downloads/s3vyaPOS-Setup-0.1.0.exe" download
+            className="group flex items-center gap-4 rounded-xl border border-slate-200 p-4 transition-colors hover:border-brand-400 hover:bg-brand-50/40 dark:border-slate-600">
+            <svg className="h-9 w-9 shrink-0 text-slate-500 group-hover:text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 5.5 10.5 4.5v7H3z" /><path d="M12.5 4.2 21 3v8.5h-8.5z" /><path d="M3 13h7.5v7L3 18.5z" /><path d="M12.5 13H21v8l-8.5-1.2z" />
+            </svg>
+            <span>
+              <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Download for Windows</span>
+              <span className="block text-xs text-slate-400">.exe installer · 64-bit · ~78 MB</span>
+            </span>
+          </a>
+          <a href="https://s3vya.tech/downloads/s3vyaPOS-0.1.0-arm64.dmg" download
+            className="group flex items-center gap-4 rounded-xl border border-slate-200 p-4 transition-colors hover:border-brand-400 hover:bg-brand-50/40 dark:border-slate-600">
+            <svg className="h-9 w-9 shrink-0 text-slate-500 group-hover:text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z" /><path d="M10 2c1 .5 2 2 2 5" />
+            </svg>
+            <span>
+              <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Download for macOS</span>
+              <span className="block text-xs text-slate-400">.dmg · Apple Silicon · ~94 MB</span>
+            </span>
+          </a>
+        </div>
+        <div className="rounded-lg bg-slate-50 p-4 text-xs text-slate-500 dark:bg-slate-700/40 dark:text-slate-300">
+          <p className="mb-1 font-semibold text-slate-600 dark:text-slate-200">First-launch notes (unsigned builds)</p>
+          <p><strong>Windows:</strong> SmartScreen may warn — click <em>More info → Run anyway</em>.</p>
+          <p><strong>macOS:</strong> right-click the app → <em>Open</em> (first launch only), or run <code>xattr -cr /Applications/s3vyaPOS.app</code>.</p>
+          <p className="mt-2">After installing: sign in, pick printers under <a className="text-brand-600 underline" href="/printing">Settings → Printing</a>, and set the scanner IP under <a className="text-brand-600 underline" href="/attendance">Staff → Attendance → Device</a>.</p>
+        </div>
+      </div>
+      )}
 
       {/* ── Danger zone ── */}
       {section === 'danger' && (
