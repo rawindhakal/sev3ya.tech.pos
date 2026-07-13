@@ -25,6 +25,7 @@ import PaymentPanel from '@/components/PaymentPanel';
 import ConnBadge from '@/components/ConnBadge';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
 import AutoPrintAgent from '@/components/AutoPrintAgent';
+import AttendanceBridge from '@/components/AttendanceBridge';
 import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
 import { formatBsLong } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea } from '@/lib/printing';
@@ -1009,6 +1010,7 @@ export default function PosPage() {
   return (
     <div className="flex h-full flex-col bg-[var(--pos-bg)] text-[var(--pos-text)]">
       <AutoPrintAgent />
+      <AttendanceBridge />
       <ManagerAuth
         open={!!mgrAuth}
         title={mgrAuth?.title}

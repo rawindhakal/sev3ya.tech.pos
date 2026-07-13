@@ -61,6 +61,10 @@ importers:
         version: 5.9.3
 
   apps/desktop:
+    dependencies:
+      zkteco-js:
+        specifier: ^1.7.2
+        version: 1.7.2
     devDependencies:
       cross-env:
         specifier: ^7.0.3

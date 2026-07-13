@@ -85,6 +85,31 @@ export class AttendanceService {
     };
   }
 
+  // Bulk-ingest punches pushed by the desktop LAN bridge (idempotent — the
+  // unique (deviceUserId, at) constraint silently drops already-seen punches).
+  async ingest(punches: { deviceUserId: string; at: string }[]) {
+    const employees = await this.prisma.employee.findMany({ where: { deviceUserId: { not: null } } });
+    const empByDevice = new Map(employees.map((e) => [String(e.deviceUserId), e.id]));
+    let inserted = 0;
+    for (const p of punches ?? []) {
+      if (!p?.deviceUserId || !p?.at) continue;
+      const at = new Date(p.at);
+      if (isNaN(at.getTime())) continue;
+      try {
+        await this.prisma.attendanceLog.create({
+          data: {
+            deviceUserId: String(p.deviceUserId),
+            at,
+            employeeId: empByDevice.get(String(p.deviceUserId)) ?? null,
+            source: 'DEVICE',
+          },
+        });
+        inserted++;
+      } catch { /* duplicate — already ingested */ }
+    }
+    return { received: punches?.length ?? 0, newPunches: inserted };
+  }
+
   // Manual punch (forgot to scan / device offline).
   async addManual(employeeId: string, at: string, actor?: string) {
     const emp = await this.prisma.employee.findUnique({ where: { id: employeeId } });

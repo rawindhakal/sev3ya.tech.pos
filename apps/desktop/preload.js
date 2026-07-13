@@ -12,4 +12,7 @@ contextBridge.exposeInMainWorld('cakezakeDesktop', {
   listPrinters: () => ipcRenderer.invoke('printers:list'),
   // Prints the given HTML silently. { html, printerName?, widthMm? }
   printHtml: (opts) => ipcRenderer.invoke('print:html', opts),
+  // Pull users + punches from the ZKTeco scanner on the LAN. { ip, port? }
+  // → { users: [{deviceUserId,name}], punches: [{deviceUserId,at}] } | { error }
+  pullAttendance: (opts) => ipcRenderer.invoke('zk:pull', opts),
 });

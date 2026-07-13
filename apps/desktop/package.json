@@ -20,10 +20,27 @@
   "build": {
     "appId": "tech.s3vya.pos",
     "productName": "s3vyaPOS",
-    "files": ["main.js", "preload.js", "package.json"],
-    "directories": { "output": "release" },
-    "mac": { "target": "dmg", "category": "public.app-category.business" },
-    "win": { "target": "nsis" },
-    "linux": { "target": "AppImage", "category": "Office" }
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Office"
+    }
+  },
+  "dependencies": {
+    "zkteco-js": "^1.7.2"
   }
 }

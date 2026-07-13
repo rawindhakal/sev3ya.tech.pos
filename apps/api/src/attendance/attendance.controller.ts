@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
-import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
+import { AuthGuard, RoleGuard, CurrentEmployee } from '../common/auth.guard';
 import { TokenPayload } from '../common/token';
 
 @Controller('attendance')
@@ -12,6 +12,13 @@ export class AttendanceController {
   @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
   sync() {
     return this.att.syncFromDevice();
+  }
+
+  // Punches pushed by the desktop LAN bridge (any signed-in till).
+  @Post('ingest')
+  @UseGuards(new AuthGuard())
+  ingest(@Body() dto: { punches: { deviceUserId: string; at: string }[] }) {
+    return this.att.ingest(dto?.punches ?? []);
   }
 
   // Re-attach unmapped punches after assigning device IDs to employees.
