@@ -547,6 +547,9 @@ model CafeSetting {
   serviceChargeRate Float    @default(0)
   // When true, menu prices already include VAT (tax is back-calculated).
   pricesIncludeVat  Boolean  @default(false)
+  // Dynamic preferences (Settings → Preferences).
+  currencySymbol    String   @default("Rs")
+  defaultGuestCount Int      @default(1)
   receiptHeader     String?
   receiptFooter     String?
   wifiPassword      String?

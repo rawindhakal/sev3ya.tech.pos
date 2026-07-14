@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, setCurrencySymbol } from '@/lib/api';
 import type { Employee, Features } from '@/lib/types';
 import { ROUTE_PERM } from './AppShell';
 import ThemeToggle from './ThemeToggle';
@@ -65,6 +65,7 @@ const NAV: NavNode[] = [
     label: 'Finance', icon: '💰', feature: 'finance',
     children: [
       { href: '/reports', label: 'Reports' },
+      { href: '/sales-report', label: 'Sales Reports' },
       { href: '/mis', label: 'MIS Reports' },
       { href: '/finance', label: 'P&L & Expenses' },
       { href: '/accounting', label: 'Accounting' },
@@ -95,7 +96,7 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    api.get<{ features?: Features }>('/settings').then((s) => setFeatures(s.features ?? null)).catch(() => {});
+    api.get<{ features?: Features; currencySymbol?: string }>('/settings').then((s) => { setFeatures(s.features ?? null); setCurrencySymbol(s.currencySymbol); }).catch(() => {});
   }, [pathname]);
 
   // Restore expanded groups; always expand the group holding the current page.

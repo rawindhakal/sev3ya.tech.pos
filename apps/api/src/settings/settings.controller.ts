@@ -13,6 +13,8 @@ class UpdateSettingsDto {
   @IsOptional() @IsNumber() @Min(0) @Max(1) vatRate?: number;
   @IsOptional() @IsNumber() @Min(0) @Max(1) serviceChargeRate?: number;
   @IsOptional() @IsBoolean() pricesIncludeVat?: boolean;
+  @IsOptional() @IsString() currencySymbol?: string;
+  @IsOptional() @IsNumber() @Min(1) defaultGuestCount?: number;
   @IsOptional() @IsString() receiptHeader?: string;
   @IsOptional() @IsString() receiptFooter?: string;
   @IsOptional() @IsString() wifiPassword?: string;

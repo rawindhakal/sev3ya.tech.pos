@@ -317,6 +317,116 @@ export class MisService {
     };
   }
 
+  // ── Sales: line-level detail with filters + grouping ──
+  // Powers the Sales Report screen: Detailed / KOT (kitchen) / BOT (bar)
+  // presets, and grouping by item / category / payment method / day.
+  async salesDetail(q: {
+    from?: string; to?: string;
+    categoryId?: string; itemId?: string;
+    method?: string; type?: string; station?: string;
+    groupBy?: 'detail' | 'item' | 'category' | 'method' | 'day';
+  }): Promise<MisReport & { kpis: Record<string, number> }> {
+    const { start, end } = range(q.from, q.to);
+    const lines = await this.prisma.orderItem.findMany({
+      where: {
+        cancelledAt: null,
+        ...(q.station ? { station: q.station as any } : {}),
+        ...(q.itemId ? { menuItemId: q.itemId } : {}),
+        ...(q.categoryId ? { menuItem: { categoryId: q.categoryId } } : {}),
+        order: {
+          status: 'PAID',
+          paidAt: { gte: start, lte: end },
+          ...(q.type ? { type: q.type as any } : {}),
+          ...(q.method ? { payments: { some: { method: q.method as any } } } : {}),
+        },
+      },
+      include: {
+        menuItem: { select: { category: { select: { id: true, name: true } } } },
+        order: {
+          select: {
+            number: true, paidAt: true, type: true, customerName: true,
+            payments: { select: { method: true, amountCents: true } },
+          },
+        },
+      },
+      orderBy: { order: { paidAt: 'asc' } },
+    });
+
+    const flat = lines.map((l) => {
+      const mods = Array.isArray(l.modifiers) ? (l.modifiers as any[]) : [];
+      const modCents = mods.reduce((s, m) => s + (m?.priceCents ?? 0), 0);
+      const gross = (l.unitPriceCents + modCents) * l.quantity - (l.discountCents ?? 0);
+      return {
+        invoice: l.order.number,
+        at: l.order.paidAt!,
+        item: l.nameSnapshot,
+        category: l.menuItem?.category?.name ?? 'Open item',
+        station: l.station,
+        qty: l.quantity,
+        unitCents: l.unitPriceCents + modCents,
+        discountCents: l.discountCents ?? 0,
+        grossCents: gross,
+        type: l.order.type,
+        party: l.order.customerName ?? '',
+        tenders: l.order.payments.map((p) => p.method).join('+') || '—',
+      };
+    });
+
+    const kpis = {
+      lines: flat.length,
+      qty: flat.reduce((s, r) => s + r.qty, 0),
+      grossCents: flat.reduce((s, r) => s + r.grossCents, 0),
+      discountCents: flat.reduce((s, r) => s + r.discountCents, 0),
+      invoices: new Set(flat.map((r) => r.invoice)).size,
+    };
+
+    const money = (k: string, l: string) => ({ key: k, label: l, type: 'money' as const });
+    const text = (k: string, l: string) => ({ key: k, label: l, type: 'text' as const });
+    const num = (k: string, l: string) => ({ key: k, label: l, type: 'number' as const });
+
+    const groupBy = q.groupBy ?? 'detail';
+    if (groupBy === 'detail') {
+      return {
+        title: 'Detailed Sales Report',
+        columns: [
+          text('dateBs', 'Date (BS)'), text('invoice', 'Invoice'), text('item', 'Item'),
+          text('category', 'Category'), text('station', 'Station'), num('qty', 'Qty'),
+          money('unitCents', 'Rate'), money('discountCents', 'Disc'), money('grossCents', 'Amount'),
+          text('type', 'Type'), text('tenders', 'Tender'),
+        ],
+        rows: flat.map((r) => ({ ...r, dateBs: formatBs(r.at), invoice: `#${r.invoice}`, at: undefined } as any)),
+        kpis,
+      };
+    }
+
+    // Aggregated groupings share one shape: name / qty / amount (+share %).
+    const keyOf = (r: (typeof flat)[number]) =>
+      groupBy === 'item' ? r.item
+      : groupBy === 'category' ? r.category
+      : groupBy === 'method' ? r.tenders
+      : formatBs(r.at); // day
+    const agg = new Map<string, { qty: number; grossCents: number; invoices: Set<number> }>();
+    for (const r of flat) {
+      const k = keyOf(r);
+      const a = agg.get(k) ?? { qty: 0, grossCents: 0, invoices: new Set<number>() };
+      a.qty += r.qty; a.grossCents += r.grossCents; a.invoices.add(r.invoice);
+      agg.set(k, a);
+    }
+    const label = groupBy === 'item' ? 'Item' : groupBy === 'category' ? 'Category' : groupBy === 'method' ? 'Payment method' : 'Date (BS)';
+    const rows = [...agg.entries()]
+      .map(([name, a]) => ({
+        name, qty: a.qty, invoices: a.invoices.size, grossCents: a.grossCents,
+        sharePct: kpis.grossCents ? Math.round((a.grossCents / kpis.grossCents) * 1000) / 10 : 0,
+      }))
+      .sort((a, b) => (groupBy === 'day' ? a.name.localeCompare(b.name) : b.grossCents - a.grossCents));
+    return {
+      title: `Sales by ${label}`,
+      columns: [text('name', label), num('qty', 'Qty'), num('invoices', 'Invoices'), money('grossCents', 'Amount'), num('sharePct', 'Share %')],
+      rows,
+      kpis,
+    };
+  }
+
   // ── Inventory: Stock Item Ledger Summary ──
   async stockLedger(from?: string, to?: string): Promise<MisReport> {
     const { start, end } = range(from, to);

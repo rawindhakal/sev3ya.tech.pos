@@ -25,7 +25,7 @@ export default function SettingsPage() {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   // RestroX-style settings hub: left sub-nav, one section at a time.
-  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'desktop' | 'danger'>('details');
+  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'prefs' | 'desktop' | 'danger'>('details');
 
   async function resetData() {
     setResetting(true);
@@ -96,6 +96,7 @@ export default function SettingsPage() {
       items: [
         { id: 'details', label: 'Restaurant Details' },
         { id: 'modules', label: 'Modules' },
+        { id: 'prefs', label: 'Preferences' },
         { id: 'desktop', label: 'Desktop Application' },
         { href: '/employees', label: 'Users & Roles' },
         { href: '/reports', label: 'Activity Log' },
@@ -290,6 +291,44 @@ export default function SettingsPage() {
 
       {/* ── IRD (CBMS Nepal) e-billing ── */}
       {section === 'ird' && form && <IrdCard settings={form} onSaved={setForm} />}
+
+      {/* ── Preferences (dynamic runtime settings) ── */}
+      {section === 'prefs' && (
+      <div className="card space-y-5 p-6">
+        <div>
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">Preferences</h2>
+          <p className="text-xs text-slate-400">Applied everywhere instantly — terminals pick these up on their next refresh.</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label">Currency symbol</label>
+            <input className="input" value={form.currencySymbol ?? 'Rs'} maxLength={6}
+              onChange={(e) => setForm({ ...form, currencySymbol: e.target.value })} placeholder="Rs / रू / NPR" />
+            <p className="mt-1 text-xs text-slate-400">Shown on every price, bill and report (e.g. {form.currencySymbol || 'Rs'} 1,250.00).</p>
+          </div>
+          <div>
+            <label className="label">Default guests per dine-in order</label>
+            <input className="input" type="number" min={1} max={50} value={form.defaultGuestCount ?? 1}
+              onChange={(e) => setForm({ ...form, defaultGuestCount: Math.max(1, parseInt(e.target.value) || 1) })} />
+            <p className="mt-1 text-xs text-slate-400">Pre-filled cover count when opening a table.</p>
+          </div>
+        </div>
+        <button
+          className="btn-primary"
+          onClick={async () => {
+            try {
+              const updated = await api.patch<Settings>('/settings', {
+                currencySymbol: form.currencySymbol || 'Rs',
+                defaultGuestCount: form.defaultGuestCount ?? 1,
+              });
+              setForm(updated);
+              setSaved(true); setTimeout(() => setSaved(false), 2500);
+            } catch (e) { alert((e as Error).message); }
+          }}
+        >Save preferences</button>
+        {saved && <span className="ml-2 text-sm text-emerald-600">✓ Saved</span>}
+      </div>
+      )}
 
       {/* ── Desktop application downloads ── */}
       {section === 'desktop' && (

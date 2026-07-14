@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, formatMoney, dollarsToCents } from '@/lib/api';
+import { api, formatMoney, dollarsToCents, setCurrencySymbol } from '@/lib/api';
 import type {
   Category,
   Employee,
@@ -191,7 +191,7 @@ export default function PosPage() {
   const [dayReport, setDayReport] = useState<DayReportData | null>(null);
 
   useEffect(() => {
-    api.get<Settings>('/settings').then(setSettings).catch(() => {});
+    api.get<Settings>('/settings').then((s) => { setSettings(s); setCurrencySymbol(s.currencySymbol); if (s.defaultGuestCount) setGuestCount(s.defaultGuestCount); }).catch(() => {});
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
     api.get<Waiter[]>('/waiters').then(setWaiters).catch(() => {});

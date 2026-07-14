@@ -29,6 +29,8 @@ export class SettingsService {
       vatRate: s.vatRate,
       serviceChargeRate: s.serviceChargeRate,
       pricesIncludeVat: s.pricesIncludeVat,
+      currencySymbol: s.currencySymbol,
+      defaultGuestCount: s.defaultGuestCount,
       restaurantName: s.restaurantName,
       address: s.address,
       phone: s.phone,
@@ -114,6 +116,8 @@ export class SettingsService {
     vatRate?: number;
     serviceChargeRate?: number;
     pricesIncludeVat?: boolean;
+    currencySymbol?: string;
+    defaultGuestCount?: number;
     receiptHeader?: string;
     receiptFooter?: string;
     wifiPassword?: string;

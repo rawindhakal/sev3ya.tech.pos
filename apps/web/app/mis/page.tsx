@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
+import { exportPdf } from '@/lib/pdf';
 import { adToBs, formatBsLong } from '@/lib/bs-date';
 
 // MIS & statutory reports (RestroX-style): a grouped report picker on the left,
@@ -143,6 +144,7 @@ export default function MisPage() {
               </select>
             )}
             <button className="btn-ghost" onClick={exportCsv} disabled={!report?.rows.length}>⬇ CSV</button>
+          <button className="btn-ghost" onClick={() => report && exportPdf({ title: report.title, columns: report.columns, rows: report.rows })} disabled={!report?.rows.length}>⬇ PDF</button>
             <button className="btn-ghost" onClick={() => window.print()}>🖨 Print</button>
           </div>
         </div>

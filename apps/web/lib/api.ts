@@ -119,7 +119,11 @@ export function syncOutbox() {
 }
 
 // Money helpers — API stores integer minor units (paisa for NPR).
-const CURRENCY_SYMBOL = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL ?? 'Rs';
+// The symbol is dynamic: Settings → Preferences updates it at runtime.
+let CURRENCY_SYMBOL = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL ?? 'Rs';
+export function setCurrencySymbol(sym?: string | null) {
+  if (sym && sym.trim()) CURRENCY_SYMBOL = sym.trim();
+}
 const CURRENCY_LOCALE = process.env.NEXT_PUBLIC_CURRENCY_LOCALE ?? 'en-IN';
 
 export const formatMoney = (cents: number) =>

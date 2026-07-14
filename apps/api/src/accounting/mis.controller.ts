@@ -53,4 +53,18 @@ export class MisController {
   stockLedger(@Query('from') from?: string, @Query('to') to?: string) {
     return this.mis.stockLedger(from, to);
   }
+
+  // Filterable sales report (detailed / KOT / BOT + item/category/method/day grouping).
+  @Get('sales-detail')
+  salesDetail(@Query() q: Record<string, string>) {
+    return this.mis.salesDetail({
+      from: q.from, to: q.to,
+      categoryId: q.categoryId || undefined,
+      itemId: q.itemId || undefined,
+      method: q.method || undefined,
+      type: q.type || undefined,
+      station: q.station || undefined,
+      groupBy: (q.groupBy as any) || 'detail',
+    });
+  }
 }

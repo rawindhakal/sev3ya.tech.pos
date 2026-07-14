@@ -151,3 +151,28 @@ body {
     display: none !important;
   }
 }
+
+
+/* ── UX polish (design-system checklist) ───────────────
+   Visible keyboard focus, calm motion for reduced-motion users,
+   and consistent row hover on data tables. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #ec4899;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.dark :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline-color: #f472b6;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+.card tbody tr { transition: background-color 120ms ease-out; }
+.card tbody tr:hover { background-color: rgba(148, 163, 184, 0.08); }
+button, [role="button"], a { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
