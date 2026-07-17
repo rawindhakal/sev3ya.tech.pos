@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
 import Login from './Login';
+import { tenantSlug } from '@/lib/api';
 import type { Employee } from '@/lib/types';
 
 // Permission required to view each admin route (absent = any signed-in user).
@@ -25,8 +26,9 @@ export const ROUTE_PERM: Record<string, keyof Employee> = {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname() ?? '';
-  // Terminals self-gate (their own PIN screens) and run full-screen.
-  const fullscreen = path === '/pos' || path === '/kds' || path.startsWith('/waiter');
+  // Terminals self-gate (their own PIN screens) and run full-screen. The
+  // Platform Console is a standalone section with its own layout + login.
+  const fullscreen = path === '/pos' || path === '/kds' || path.startsWith('/waiter') || path.startsWith('/platform');
   const [emp, setEmp] = useState<Employee | null>(null);
   const [ready, setReady] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
@@ -52,6 +54,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (fullscreen) return <main className="h-screen overflow-hidden">{children}</main>;
   if (!ready) return null;
   if (!emp) return <Login onLogin={setEmp} />;
+
+  // Control context (no restaurant code) is the platform owner's world — the
+  // back-office belongs to tenants. Send platform admins to their console.
+  if (!tenantSlug() && emp.canManageStaff) {
+    if (typeof window !== 'undefined') window.location.replace('/platform');
+    return null;
+  }
 
   function logout() {
     localStorage.removeItem('cakezake-emp');

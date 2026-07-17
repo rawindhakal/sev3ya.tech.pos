@@ -1,7 +1,16 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '1.7.0';
+export const APP_VERSION = '1.8.0';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '1.8.0', date: '2026-07-18',
+    changes: [
+      'Fully standalone platform: the control plane now holds only platform data — CakeZake itself became tenant "cakezake" with its own isolated database',
+      'Platform Console is now a separate, standalone admin panel (own login, own layout) reachable only on the main s3vya domain',
+      'Platform admins can remotely manage each restaurant\'s settings and toggle features/modules (KDS, reservations, CRM, inventory, purchasing, finance) without touching their DB directly',
+      'Per-tenant connection pooling so many restaurant databases can share the server safely',
+    ],
+  },
   {
     version: '1.7.0', date: '2026-07-17',
     changes: [

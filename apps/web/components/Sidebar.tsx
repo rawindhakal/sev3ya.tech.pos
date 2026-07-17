@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { api, setCurrencySymbol } from '@/lib/api';
+import { api, setCurrencySymbol, tenantSlug } from '@/lib/api';
 import type { Employee, Features } from '@/lib/types';
 import { ROUTE_PERM } from './AppShell';
 import ThemeToggle from './ThemeToggle';
@@ -14,7 +14,7 @@ import { APP_VERSION } from '@/lib/changelog';
 // permission comes from ROUTE_PERM. A group hides itself when every child is
 // hidden, and auto-expands when it contains the current page.
 interface NavLeaf { href: string; label: string; icon?: string; feature?: keyof Features }
-interface NavNode extends Omit<NavLeaf, 'href'> { href?: string; icon: string; children?: NavLeaf[] }
+interface NavNode extends Omit<NavLeaf, 'href'> { href?: string; icon: string; children?: NavLeaf[]; controlOnly?: boolean }
 
 // Lucide icon paths (24×24, stroke) — structural icons must be SVG, not emoji.
 const ICON_PATHS: Record<string, React.ReactNode> = {
@@ -81,7 +81,7 @@ const NAV: NavNode[] = [
       { href: '/attendance', label: 'Attendance & Payroll' },
     ],
   },
-  { label: 'Platform', icon: '🏢', href: '/platform' },
+  { label: 'Platform', icon: '🏢', href: '/platform', controlOnly: true },
   {
     label: 'Settings', icon: '⚙️',
     children: [
@@ -149,6 +149,8 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
         {NAV.map((node) => {
           if (!allowed(node)) return null;
+          // Platform Console only exists in the control context (no tenant).
+          if (node.controlOnly && tenantSlug()) return null;
 
           // Direct link (no children)
           if (!node.children) {

@@ -175,6 +175,62 @@ export class PlatformService {
     };
   }
 
+  // ── Remote tenant management (features / modules / settings) ──
+  private async tenantOr404(id: string) {
+    const t = await this.control.tenant.findUnique({ where: { id } });
+    if (!t) throw new NotFoundException('Tenant not found');
+    return t;
+  }
+
+  async tenantSettings(id: string) {
+    const t = await this.tenantOr404(id);
+    const c = clientForDb(t.dbName);
+    const s = await c.cafeSetting.findUnique({ where: { id: 'singleton' } });
+    return {
+      tenant: { id: t.id, slug: t.slug, name: t.name },
+      restaurantName: s?.restaurantName,
+      vatRate: s?.vatRate,
+      serviceChargeRate: s?.serviceChargeRate,
+      pricesIncludeVat: s?.pricesIncludeVat,
+      currencySymbol: s?.currencySymbol,
+      features: {
+        reservations: s?.featReservations, inventory: s?.featInventory,
+        purchasing: s?.featPurchasing, crm: s?.featCrm,
+        finance: s?.featFinance, kds: s?.featKds,
+      },
+    };
+  }
+
+  async updateTenantSettings(id: string, dto: Record<string, unknown>) {
+    const t = await this.tenantOr404(id);
+    const c = clientForDb(t.dbName);
+    const allowed = [
+      'restaurantName', 'vatRate', 'serviceChargeRate', 'pricesIncludeVat', 'currencySymbol',
+      'featReservations', 'featInventory', 'featPurchasing', 'featCrm', 'featFinance', 'featKds',
+    ];
+    const data = Object.fromEntries(Object.entries(dto).filter(([k]) => allowed.includes(k)));
+    await c.cafeSetting.upsert({
+      where: { id: 'singleton' },
+      create: { id: 'singleton', ...(data as any) },
+      update: data as any,
+    });
+    if (typeof dto.restaurantName === 'string') {
+      await this.control.tenant.update({ where: { id }, data: { name: dto.restaurantName } });
+    }
+    return this.tenantSettings(id);
+  }
+
+  async tenantSummary(id: string) {
+    const t = await this.tenantOr404(id);
+    const c = clientForDb(t.dbName);
+    const [employees, orders, last] = await Promise.all([
+      c.employee.count({ where: { isActive: true } }),
+      c.order.count({ where: { status: 'PAID' } }),
+      c.order.findFirst({ where: { status: 'PAID' }, orderBy: { paidAt: 'desc' }, select: { paidAt: true } }),
+    ]);
+    return { employees, paidOrders: orders, lastSaleAt: last?.paidAt ?? null };
+  }
+
   async removeTenant(id: string, dropDb: boolean) {
     const t = await this.control.tenant.findUnique({ where: { id } });
     if (!t) throw new NotFoundException('Tenant not found');

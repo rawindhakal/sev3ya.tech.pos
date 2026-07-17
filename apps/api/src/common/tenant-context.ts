@@ -19,7 +19,9 @@ export function clientForDb(dbName: string): PrismaClient {
   let c = clients.get(dbName);
   if (!c) {
     const base = process.env.DATABASE_URL ?? '';
-    const url = base.replace(/\/[^/?]+(\?|$)/, `/${dbName}$1`);
+    let url = base.replace(/\/[^/?]+(\?|$)/, `/${dbName}$1`);
+    // Cap each tenant's pool so dozens of tenant DBs can't exhaust Postgres.
+    url += (url.includes('?') ? '&' : '?') + 'connection_limit=3&pool_timeout=10';
     c = new PrismaClient({ datasources: { db: { url } } });
     clients.set(dbName, c);
   }

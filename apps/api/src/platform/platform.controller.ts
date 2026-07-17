@@ -42,8 +42,22 @@ export class PlatformController {
     return this.platform.recordPayment({ ...dto, receivedBy: emp?.name });
   }
 
+  @Get('me')
+  me() { assertControlContext(); return { platform: true }; }
+
+  @Get('tenants/:id/settings')
+  tenantSettings(@Param('id') id: string) { assertControlContext(); return this.platform.tenantSettings(id); }
+
+  @Post('tenants/:id/settings')
+  updateTenantSettings(@Param('id') id: string, @Body() dto: any) {
+    assertControlContext(); return this.platform.updateTenantSettings(id, dto);
+  }
+
+  @Get('tenants/:id/summary')
+  tenantSummary(@Param('id') id: string) { assertControlContext(); return this.platform.tenantSummary(id); }
+
   @Delete('tenants/:id')
   remove(@Param('id') id: string, @Query('dropDb') dropDb?: string) {
-    assertControlContext(); return this.platform.removeTenant(id, dropDb === '1');
+    assertControlContext(); return this.platform.removeTenant(id, dropDb === '1' || dropDb === 'true');
   }
 }
