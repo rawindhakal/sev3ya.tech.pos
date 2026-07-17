@@ -18,8 +18,10 @@ export class TenantMiddleware implements NestMiddleware {
     let slug = (req.headers['x-tenant'] as string | undefined)?.trim().toLowerCase();
     if (!slug) {
       const host = (req.headers.host ?? '').split(':')[0];
+      // Never treat IP addresses or localhost as tenant subdomains.
+      const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(host);
       const first = host.split('.')[0];
-      if (host.split('.').length >= 3 && !RESERVED.has(first)) slug = first;
+      if (!isIp && host.split('.').length >= 3 && !RESERVED.has(first)) slug = first;
     }
     if (!slug) return next(); // platform / control context
 
