@@ -338,6 +338,10 @@ model Customer {
   birthday        DateTime?
   loyaltyPoints   Int       @default(0)
   totalSpentCents Int       @default(0)
+  // Membership number (e.g. RADH1 — initials + sequence), PAN for businesses.
+  memberCode      String?   @unique
+  panNumber       String?
+  isBusiness      Boolean   @default(false)
   // Outstanding credit the customer owes (CREDIT tender / house account).
   creditBalanceCents Int    @default(0)
   visitCount      Int       @default(0)

@@ -3,7 +3,8 @@
 // Kitchen Display System (matrix #41–55, design spec §4). Dark screen with
 // color-coded urgency timers (charcoal → amber @3m → crimson @5m), per-item
 // ready taps, ticket bump, and a Processing/Ready token rail.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { playDing } from '@/lib/sound';
 import { api } from '@/lib/api';
 
 interface KdsItem {
@@ -38,9 +39,13 @@ export default function KdsPage() {
   const [now, setNow] = useState(Date.now());
   const [error, setError] = useState<string | null>(null);
 
+  const prevCount = useRef<number | null>(null);
   async function load() {
     try {
-      setTickets(await api.get<KdsTicket[]>('/kds/tickets'));
+      const rows = await api.get<KdsTicket[]>('/kds/tickets');
+      if (prevCount.current !== null && rows.length > prevCount.current) playDing();
+      prevCount.current = rows.length;
+      setTickets(rows);
       setError(null);
     } catch (e) {
       setError((e as Error).message);

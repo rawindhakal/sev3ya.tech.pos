@@ -72,12 +72,31 @@ export class CrmService {
     await tx.order.update({ where: { id: orderId }, data: { redeemedPoints: points, customerId: c.id } });
   }
 
+
+  // Membership number like "RADH1": first two letters of the first + last
+  // name (padded) + a sequence number.
+  private async nextMemberCode(name: string): Promise<string> {
+    const parts = name.trim().toUpperCase().split(/\s+/);
+    const a = (parts[0] ?? 'XX').slice(0, 2).padEnd(2, 'X');
+    const b = (parts[1] ?? parts[0] ?? 'XX').slice(0, 2).padEnd(2, 'X');
+    const prefix = `${a}${b}`.replace(/[^A-Z]/g, 'X');
+    const count = await this.prisma.customer.count({ where: { memberCode: { startsWith: prefix } } });
+    return `${prefix}${count + 1}`;
+  }
+
   // Attach/create a customer by phone (used when billing).
-  upsertByPhone(name: string | undefined, phone: string) {
-    return this.prisma.customer.upsert({
-      where: { phone },
-      create: { phone, name: name?.trim() || 'Guest' },
-      update: name?.trim() ? { name: name.trim() } : {},
+  async upsertByPhone(name: string | undefined, phone: string) {
+    const existing = await this.prisma.customer.findUnique({ where: { phone } });
+    if (existing) {
+      const patch: any = name?.trim() ? { name: name.trim() } : {};
+      if (!existing.memberCode) patch.memberCode = await this.nextMemberCode(name?.trim() || existing.name);
+      return Object.keys(patch).length
+        ? this.prisma.customer.update({ where: { phone }, data: patch })
+        : existing;
+    }
+    const nm = name?.trim() || 'Guest';
+    return this.prisma.customer.create({
+      data: { phone, name: nm, memberCode: await this.nextMemberCode(nm) },
     });
   }
 
@@ -175,6 +194,13 @@ export class CrmService {
   }
 
   // POS lookup by phone (#123 behavior history, #124 first-time tag).
+  // Suggested auto-redeem: loyal customers (2+ visits) get their points
+  // applied automatically, capped at Rs 500.
+  static suggestRedeem(c: { loyaltyPoints: number; visitCount: number }): number {
+    if (c.visitCount < 2) return 0;
+    return Math.min(c.loyaltyPoints, 500);
+  }
+
   async lookup(phone: string) {
     const c = await this.prisma.customer.findUnique({
       where: { phone },
@@ -188,7 +214,7 @@ export class CrmService {
       },
     });
     if (!c) return { found: false as const };
-    return { found: true as const, ...decorate(c) };
+    return { found: true as const, suggestedRedeem: CrmService.suggestRedeem(c), ...decorate(c) };
   }
 
   async findOne(id: string) {

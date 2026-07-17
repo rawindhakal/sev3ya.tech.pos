@@ -23,13 +23,19 @@ export class TablesService {
             guestCount: true,
             seatedAt: true,
             status: true,
+            _count: { select: { items: { where: { cancelledAt: null } } } },
           },
         },
       },
     });
     return tables.map((t) => {
       const { orders, ...rest } = t;
-      return { ...rest, activeOrder: orders[0] ?? null };
+      const active = orders[0] ?? null;
+      const hasItems = !!active && (active as any)._count?.items > 0;
+      // An "occupied" table with an empty order shows as available — starting
+      // a new order there re-uses the empty one server-side.
+      const status = rest.status === 'OCCUPIED' && !hasItems ? 'AVAILABLE' : rest.status;
+      return { ...rest, status, activeOrder: hasItems ? active : null };
     });
   }
 

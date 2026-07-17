@@ -7,6 +7,7 @@ import { api, setCurrencySymbol } from '@/lib/api';
 import type { Employee, Features } from '@/lib/types';
 import { ROUTE_PERM } from './AppShell';
 import ThemeToggle from './ThemeToggle';
+import { APP_VERSION } from '@/lib/changelog';
 
 // Hierarchical navigation: top-level items are either direct links or
 // collapsible groups with children. `feature` maps an item to an admin toggle;
@@ -208,7 +209,7 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
           </div>
         )}
         <ThemeToggle />
-        <div className="text-center text-xs text-slate-400">v0.1 · sev3ya.tech</div>
+        <div className="text-center text-xs text-slate-400">v{APP_VERSION} · s3vya.tech</div>
       </div>
     </aside>
   );

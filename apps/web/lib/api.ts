@@ -86,6 +86,8 @@ export const api = {
     request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { Authorization: `Bearer ${token}` } }),
   patchAs: <T>(token: string, path: string, body: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body), headers: { Authorization: `Bearer ${token}` } }),
+  deleteAs: <T>(token: string, path: string, body?: unknown) =>
+    request<T>(path, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }),
   post: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) =>

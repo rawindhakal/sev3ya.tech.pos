@@ -16,11 +16,13 @@ export default function Receipt({
   settings,
   mode,
   items,
+  docTitle,
 }: {
   order: Order | null;
   settings: Settings | null;
   mode: ReceiptMode;
   items?: OrderItem[]; // explicit items for KOT/BOT/CANCEL; defaults to the bill
+  docTitle?: string;   // overrides the bill document title (Estimated Bill / Tax Invoice / Invoice)
 }) {
   if (!order) return null;
   const when = new Date().toLocaleString();
@@ -43,7 +45,7 @@ export default function Receipt({
             {bt.showAddress && settings?.address && <div>{settings.address}</div>}
             {bt.showPhone && settings?.phone && <div>Tel: {settings.phone}</div>}
             {bt.showTaxId && settings?.taxId && <div>{settings.taxId}</div>}
-            <div style={{ marginTop: 2 }}>{bt.title}</div>
+            <div style={{ marginTop: 2, fontWeight: docTitle ? 700 : 400 }}>{docTitle ?? bt.title}</div>
             {(bt.headerText || settings?.receiptHeader) && (
               <div style={{ marginTop: 4 }}>{bt.headerText || settings?.receiptHeader}</div>
             )}

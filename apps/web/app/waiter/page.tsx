@@ -175,6 +175,12 @@ export default function WaiterPage() {
         <div className="flex items-center gap-2">
           {step !== 'home' && <button onClick={reset} className="rounded-md bg-[var(--pos-surface)] px-2 py-1 text-xs">‹ Back</button>}
           <span className="font-bold">🧑‍🍳 Waiter</span>
+          {step === 'order' && order && (
+            <button onClick={() => { setCust({ name: order.customerName ?? '', phone: order.customerPhone ?? '' }); setCustOpen(true); }}
+              className="rounded-md bg-[var(--pos-surface)] px-2 py-1 text-xs" title="Capture customer details">
+              👤 {order.customerName ? order.customerName.split(' ')[0] : 'Customer'}
+            </button>
+          )}
           <span className="text-[var(--pos-text-50)]">· {emp.name}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -317,7 +323,7 @@ export default function WaiterPage() {
 
       {/* customer capture (takeaway/delivery) */}
       <Modal open={custOpen} title="Customer details" onClose={() => { setCustOpen(false); setStep('home'); }}>
-        <form onSubmit={(e) => { e.preventDefault(); start(null); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); if (order) { api.post<Order>(`/orders/${order.id}/customer`, { name: cust.name || undefined, phone: cust.phone }).then((o) => { setOrder(o); setCustOpen(false); flash('Customer saved'); }).catch((er) => alert((er as Error).message)); } else start(null); }} className="space-y-4">
           <div><label className="label">Name</label><input className="input" value={cust.name} onChange={(e) => setCust({ ...cust, name: e.target.value })} autoFocus /></div>
           <div><label className="label">Phone</label><input className="input" value={cust.phone} onChange={(e) => setCust({ ...cust, phone: e.target.value })} placeholder="98XXXXXXXX" /></div>
           <div className="flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={() => { setCustOpen(false); setStep('home'); }}>Cancel</button><button type="submit" className="btn-primary" disabled={busy}>Start</button></div>

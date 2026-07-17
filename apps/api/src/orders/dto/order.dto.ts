@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -24,6 +25,7 @@ export class CartLineDto {
   @IsOptional() @IsString() variantId?: string; // chosen portion (30ml/60ml)
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsInt() @Min(0) unitPriceCents?: number;
+  @IsOptional() @IsIn(['KITCHEN', 'BAR', 'BILLING']) station?: string;
   @IsInt() @Min(1) quantity: number;
   @IsOptional() @IsInt() @Min(0) discountCents?: number; // item-wise discount
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CartModifierDto)
@@ -32,6 +34,7 @@ export class CartLineDto {
 }
 
 export class CancelItemDto {
+  @IsOptional() @IsInt() @Min(1) quantity?: number;
   @IsString() @IsNotEmpty() reason: string;
 }
 

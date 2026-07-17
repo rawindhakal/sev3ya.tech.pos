@@ -30,6 +30,9 @@ export default function CustomersPage() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<Customer | null>(null);
+  const [panDraft, setPanDraft] = useState('');
+  const [panBusy, setPanBusy] = useState(false);
+  const [panMsg, setPanMsg] = useState<string | null>(null);
 
   // Credit ledger modal state
   const [ledger, setLedger] = useState<{ customer: Customer; entries: CreditLedgerEntry[] } | null>(null);
@@ -98,6 +101,7 @@ export default function CustomersPage() {
   }, [load]);
 
   async function openDetail(c: Customer) {
+    setPanDraft((c as any).panNumber ?? ''); setPanMsg(null);
     setDetail(await api.get<Customer>(`/customers/${c.id}`));
   }
   async function gdprDelete(c: Customer) {
@@ -138,7 +142,7 @@ export default function CustomersPage() {
           <tbody className="divide-y divide-slate-50">
             {rows.map((c) => (
               <tr key={c.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openDetail(c)}>
-                <td className="p-3"><div className="font-medium text-slate-700">{c.name}</div><div className="text-xs text-slate-400">{c.phone}</div></td>
+                <td className="p-3"><div className="font-medium text-slate-700">{c.name} {(c as any).memberCode && <span className="badge ml-1 bg-indigo-50 font-mono text-[10px] text-indigo-600">{(c as any).memberCode}</span>}</div><div className="text-xs text-slate-400">{c.phone}{(c as any).panNumber ? ` · PAN ${(c as any).panNumber}` : ''}</div></td>
                 <td className="p-3"><span className={`badge ${TIER[c.tier]}`}>{c.tier}</span></td>
                 <td className="p-3"><span className={`badge ${SEG[c.segment] ?? 'bg-slate-100 text-slate-500'}`}>{c.segment}</span></td>
                 <td className="p-3 font-semibold text-brand-700">{c.loyaltyPoints.toLocaleString()}</td>
@@ -188,6 +192,28 @@ export default function CustomersPage() {
                 <button className="btn-ghost text-xs" onClick={() => { setDetail(null); openLedger(detail); }}>Open ledger →</button>
               </div>
             )}
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-600">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Business / PAN</h3>
+              <div className="flex gap-2">
+                <input className="input" placeholder="PAN number" value={panDraft} onChange={(e) => setPanDraft(e.target.value)} />
+                <button className="btn-ghost whitespace-nowrap text-xs" disabled={!panDraft.trim() || panBusy}
+                  onClick={async () => {
+                    setPanBusy(true); setPanMsg(null);
+                    try {
+                      const r = await api.get<{ found: boolean; name?: string; message?: string }>(`/customers/pan-lookup?pan=${encodeURIComponent(panDraft.trim())}`);
+                      setPanMsg(r.found ? `IRD: ${r.name ?? 'registered taxpayer'} ✓` : r.message ?? 'Not found');
+                    } catch (er) { setPanMsg((er as Error).message); } finally { setPanBusy(false); }
+                  }}>{panBusy ? '…' : '🔎 IRD lookup'}</button>
+                <button className="btn-primary whitespace-nowrap text-xs"
+                  onClick={async () => {
+                    try {
+                      await api.patch(`/customers/${detail.id}`, { panNumber: panDraft.trim() || undefined, isBusiness: !!panDraft.trim() });
+                      setPanMsg('Saved ✓'); load();
+                    } catch (er) { setPanMsg((er as Error).message); }
+                  }}>Save</button>
+              </div>
+              {panMsg && <p className="mt-1.5 text-xs text-slate-500">{panMsg}</p>}
+            </div>
             <div className="flex justify-between border-t border-slate-100 pt-3">
               <button className="btn-ghost text-xs" onClick={() => { setDetail(null); openLedger(detail); }}>📒 Credit ledger</button>
               <button className="btn-danger text-xs" onClick={() => gdprDelete(detail)}>🗑 GDPR delete</button>

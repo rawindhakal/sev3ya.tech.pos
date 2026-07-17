@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, formatMoney, dollarsToCents, setCurrencySymbol } from '@/lib/api';
 import type {
@@ -30,6 +30,7 @@ import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
 import { formatBsLong } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea } from '@/lib/printing';
 import { getStatus } from '@/lib/offline';
+import { playDing } from '@/lib/sound';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
 // an express settle path.
@@ -142,6 +143,9 @@ export default function PosPage() {
   // Running (unsettled) orders — takeaway/delivery shown as temporary tables
   // in the POS until payment is settled.
   const [activeOrders, setActiveOrders] = useState<ActiveOrderCard[]>([]);
+  // Cancel / void request modals (no browser prompts — desktop friendly).
+  const [cancelReq, setCancelReq] = useState<{ line: CartLine; qty: number; reason: string } | null>(null);
+  const [voidReq, setVoidReq] = useState<{ reason: string } | null>(null);
   // Manager username+password approval dialog (replaces the PIN system).
   const [mgrAuth, setMgrAuth] = useState<{
     title: string;
@@ -168,6 +172,7 @@ export default function PosPage() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveSel, setMoveSel] = useState<Record<string, boolean>>({});
+  const [moveQty, setMoveQty] = useState<Record<string, number>>({});
 
   // menu ui
   const [activeCat, setActiveCat] = useState('all');
@@ -176,11 +181,11 @@ export default function PosPage() {
   // portion picker / open item / held / payment
   const [picker, setPicker] = useState<{ item: MenuItem; variants: MenuItemVariant[] } | null>(null);
   const [pickSel, setPickSel] = useState<Record<string, string[]>>({});
-  const [openItem, setOpenItem] = useState<{ name: string; price: string } | null>(null);
+  const [openItem, setOpenItem] = useState<{ name: string; price: string; station: 'KITCHEN' | 'BAR' | 'BILLING' } | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<{ order: Order; mode: ReceiptMode; items?: OrderItem[] } | null>(null);
+  const [receipt, setReceipt] = useState<{ order: Order; mode: ReceiptMode; items?: OrderItem[]; docTitle?: string } | null>(null);
 
   // Cash drawer / business-day session (open at first login → close at day-end)
   const [drawerOpen, setDrawerOpen] = useState<boolean | null>(null);
@@ -296,9 +301,14 @@ export default function PosPage() {
   async function lookupCustomer(phone: string) {
     if (phone.replace(/\D/g, '').length < 7) return setCustInfo(null);
     try {
-      const r = await api.get<{ found: boolean; name?: string; loyaltyPoints?: number; visitCount?: number; tier?: string }>(`/customers/lookup?phone=${encodeURIComponent(phone)}`);
+      const r = await api.get<{ found: boolean; name?: string; loyaltyPoints?: number; visitCount?: number; tier?: string; suggestedRedeem?: number }>(`/customers/lookup?phone=${encodeURIComponent(phone)}`);
       setCustInfo(r);
       if (r.found && r.name && !cust.name) setCust((c) => ({ ...c, name: r.name! }));
+      // Loyal customers get their points auto-applied as a discount (≤ Rs 500).
+      if (r.found && (r.suggestedRedeem ?? 0) > 0) {
+        setRedeemPts(String(r.suggestedRedeem));
+        flash(`Loyalty: Rs ${r.suggestedRedeem} auto-discount applied (${r.loyaltyPoints} pts)`);
+      }
     } catch {
       setCustInfo(null);
     }
@@ -466,9 +476,11 @@ export default function PosPage() {
   async function doMoveItems(targetTableId: string) {
     if (!order) return;
     const itemIds = Object.keys(moveSel).filter((k) => moveSel[k]);
+    const quantities: Record<string, number> = {};
+    for (const id of itemIds) { const q = moveQty[id]; const line = cart.find((c) => c.id === id); if (q && line && q > 0 && q < line.quantity) quantities[id] = q; }
     if (!itemIds.length) return flash('Select at least one item to move');
     try {
-      const res = await api.post<{ source: Order; target: Order }>(`/orders/${order.id}/transfer-items`, { itemIds, targetTableId });
+      const res = await api.post<{ source: Order; target: Order }>(`/orders/${order.id}/transfer-items`, { itemIds, targetTableId, quantities });
       setOrder(res.source);
       setCart(orderToCart(res.source));
       setMoveOpen(false);
@@ -507,13 +519,20 @@ export default function PosPage() {
   }
 
   // ── Running takeaway/delivery orders (temporary tables) ──
+  const prevActiveCount = useRef<number | null>(null);
   async function loadActiveOrders() {
-    try { setActiveOrders(await api.get<ActiveOrderCard[]>('/orders/active')); } catch { /* offline */ }
+    try {
+      const rows = await api.get<ActiveOrderCard[]>('/orders/active');
+      // Ding when a new order arrives (e.g. placed from the waiter panel).
+      if (prevActiveCount.current !== null && rows.length > prevActiveCount.current) playDing();
+      prevActiveCount.current = rows.length;
+      setActiveOrders(rows);
+    } catch { /* offline */ }
   }
   useEffect(() => {
     if (!emp) return;
     loadActiveOrders();
-    const iv = setInterval(loadActiveOrders, 12000);
+    const iv = setInterval(loadActiveOrders, 5000);
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emp]);
@@ -601,7 +620,7 @@ export default function PosPage() {
     if (!openItem) return;
     const priceCents = Math.round((parseFloat(openItem.price) || 0) * 100);
     if (!openItem.name.trim() || priceCents <= 0) return flash('Enter a name and price above zero');
-    setCart((prev) => [...prev, { key: `open::${openItem.name}::${Date.now()}`, name: openItem.name.trim(), unitPriceCents: priceCents, modifiers: [], quantity: 1, station: 'BILLING' }]);
+    setCart((prev) => [...prev, { key: `open::${openItem.name}::${Date.now()}`, name: openItem.name.trim(), unitPriceCents: priceCents, modifiers: [], quantity: 1, station: openItem.station }]);
     setOpenItem(null);
   }
 
@@ -652,7 +671,7 @@ export default function PosPage() {
     const saved = await api.put<Order>(`/orders/${order.id}/cart`, {
       items: cart.map((l) => ({
         id: l.id, // preserve fired items & reconcile
-        ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : { name: l.name, unitPriceCents: l.unitPriceCents }),
+        ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : { name: l.name, unitPriceCents: l.unitPriceCents, station: l.station ?? 'BILLING' }),
         quantity: l.quantity,
         discountCents: l.discountCents || 0,
         modifiers: l.modifiers,
@@ -671,8 +690,8 @@ export default function PosPage() {
   // chosen under Settings → Printing (bill printer for bills, KOT/BOT printers
   // for kitchen tickets) — no dialog. In the browser it falls back to the
   // normal print dialog.
-  async function printTicket(o: Order, m: ReceiptMode, tItems?: OrderItem[]) {
-    setReceipt({ order: o, mode: m, items: tItems });
+  async function printTicket(o: Order, m: ReceiptMode, tItems?: OrderItem[], docTitle?: string) {
+    setReceipt({ order: o, mode: m, items: tItems, docTitle });
     await new Promise((r) => setTimeout(r, 150)); // let the ticket render
     const prefs = getPrinterPrefs();
     const tpl = m === 'BILL' ? billTemplateOf(settings) : kotTemplateOf(settings);
@@ -719,7 +738,7 @@ export default function PosPage() {
     const cartBody = {
       items: cart.map((l) => ({
         id: l.id,
-        ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : { name: l.name, unitPriceCents: l.unitPriceCents }),
+        ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : { name: l.name, unitPriceCents: l.unitPriceCents, station: l.station ?? 'BILLING' }),
         quantity: l.quantity,
         discountCents: l.discountCents || 0,
         modifiers: l.modifiers,
@@ -745,7 +764,7 @@ export default function PosPage() {
     flash('KOT printed offline — will sync when back online');
   }
 
-  async function runAction(kind: 'draft' | 'kot' | 'kot_print' | 'bill' | 'bill_print' | 'pay') {
+  async function runAction(kind: 'kot' | 'kot_print' | 'bill' | 'pay') {
     if (cart.length === 0) return flash('Add at least one item first');
     // Offline: KOT still works locally; billing/payment need the server.
     if (getStatus() === 'offline') {
@@ -758,11 +777,9 @@ export default function PosPage() {
       const id = current.id;
       const bill = async () => (current = await api.post<Order>(`/orders/${id}/bill`, {}));
       switch (kind) {
-        case 'draft': flash(`Order #${current.number} held`); break;
         case 'kot': await fireKot(id, false); flash(`KOT fired for #${current.number}`); break;
         case 'kot_print': await fireKot(id, true); flash('KOT/BOT fired & printed'); break;
-        case 'bill': await bill(); flash(`Bill generated #${current.number}`); break;
-        case 'bill_print': await bill(); await printTicket(current, 'BILL'); break;
+        case 'bill': await bill(); await printTicket(current, 'BILL', undefined, 'ESTIMATED BILL'); flash('Estimated bill printed'); break;
         case 'pay': await bill(); setOrder(current); setPayOpen(true); break;
       }
     } catch (e) {
@@ -777,51 +794,43 @@ export default function PosPage() {
     }
   }
 
-  // Cancel a single (possibly fired) line — prints a cancellation KOT/BOT.
-  async function cancelLine(l: CartLine) {
-    if (!order) return;
-    if (!l.id) {
-      // Unsaved line — just drop it locally.
+  // Cancel flow: proper modal (qty + reason) then manager/admin sign-in —
+  // no browser prompts, works in the desktop shell.
+  function cancelLine(l: CartLine) {
+    if (!l.id && (!l.kotStatus || l.kotStatus === 'PENDING')) {
+      // Never persisted anywhere — just drop it locally, nothing to audit.
       setCart((prev) => prev.filter((x) => x.key !== l.key));
       return;
     }
-    const reason = prompt(`Cancel "${l.name}"? Reason:`);
-    if (reason === null) return;
-    if (!reason.trim()) return flash('A reason is required to cancel an item');
+    setCancelReq({ line: l, qty: l.quantity, reason: '' });
+  }
 
-    const run = async (overrideToken?: string) => {
-      setBusy(true);
-      try {
-        const path = `/orders/${order.id}/items/${l.id}/cancel`;
-        const body = { reason: reason.trim() };
-        const res = overrideToken
-          ? await api.postAs<{ order: Order; cancelledItem: OrderItem; wasFired: boolean }>(overrideToken, path, body)
-          : await api.post<{ order: Order; cancelledItem: OrderItem; wasFired: boolean }>(path, body);
-        setOrder(res.order);
-        setCart(orderToCart(res.order));
-        // If it had already been fired, tell the station via a cancellation ticket.
-        if (res.wasFired && l.station && l.station !== 'BILLING') {
-          await printTicket(res.order, 'CANCEL', [{ ...res.cancelledItem }]);
-        }
-        flash('Item cancelled');
-      } catch (e) {
-        const msg = (e as Error).message;
-        // Lacking the void permission → ask a manager to approve with their login.
-        if (!overrideToken && /permission|Requires|sign-in/i.test(msg)) {
-          setMgrAuth({
-            title: 'Approve cancellation',
-            hint: `Cancelling "${l.name}" (already sent to the kitchen) needs a manager.`,
-            permission: 'canVoid',
-            onApproved: ({ token }) => void run(token),
-          });
-        } else {
-          alert(msg);
-        }
-      } finally {
-        setBusy(false);
+  async function doCancel(token: string) {
+    const req = cancelReq;
+    if (!req || !order) return;
+    setCancelReq(null);
+    setBusy(true);
+    try {
+      // Persist first so EVERY line (including unsaved custom items) has a
+      // server id — this also fixes the bug where cancelling refreshed the
+      // cart from the server and silently dropped unsaved lines.
+      const saved = await persistCart();
+      const target = saved.items.find((i) =>
+        !i.cancelledAt && (req.line.id ? i.id === req.line.id : i.nameSnapshot === req.line.name && i.unitPriceCents === req.line.unitPriceCents));
+      if (!target) throw new Error('Item not found on the order');
+      const res = await api.postAs<{ order: Order; cancelledItem: OrderItem; wasFired: boolean }>(
+        token, `/orders/${order.id}/items/${target.id}/cancel`, { reason: req.reason.trim(), quantity: req.qty });
+      setOrder(res.order);
+      setCart(orderToCart(res.order));
+      if (res.wasFired && target.station && target.station !== 'BILLING') {
+        await printTicket(res.order, 'CANCEL', [{ ...res.cancelledItem }]);
       }
-    };
-    await run();
+      flash(`${req.qty}× ${req.line.name} cancelled`);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Attach / look up a customer while billing (also enables credit + points).
@@ -848,6 +857,13 @@ export default function PosPage() {
       });
       setPayOpen(false);
       flash(totals.redeemPoints ? `Settled ✓ · ${totals.redeemPoints} pts redeemed` : `Order #${order.number} settled ✓`);
+      // Nepal billing practice: after settlement print the TAX INVOICE and a
+      // customer INVOICE copy back-to-back.
+      try {
+        const paid = await api.get<Order>(`/orders/${order.id}`);
+        await printTicket(paid, 'BILL', undefined, 'TAX INVOICE');
+        await printTicket(paid, 'BILL', undefined, 'INVOICE');
+      } catch { /* printing is best-effort */ }
       resetTerminal();
     } catch (e) {
       alert((e as Error).message);
@@ -930,22 +946,30 @@ export default function PosPage() {
     }
   }
 
-  async function voidBasket() {
+  function voidBasket() {
     if (!order) return resetTerminal();
-    let reason: string | undefined;
-    if (cart.length > 0) {
-      const r = prompt('Reason for voiding this order?');
-      if (r === null) return;
-      if (!r.trim()) return flash('A reason is required to void');
-      reason = r.trim();
-    }
-    try {
-      await api.delete(`/orders/${order.id}`, reason ? { reason } : undefined);
-    } catch (e) {
-      alert((e as Error).message);
+    if (cart.length === 0) {
+      // Empty basket — nothing sold; just discard the order.
+      api.delete(`/orders/${order.id}`).catch(() => {}).finally(() => resetTerminal());
       return;
     }
-    resetTerminal();
+    setVoidReq({ reason: '' });
+  }
+
+  async function doVoid(token: string) {
+    const req = voidReq;
+    if (!req || !order) return;
+    setVoidReq(null);
+    setBusy(true);
+    try {
+      await api.deleteAs(token, `/orders/${order.id}`, { reason: req.reason.trim() });
+      flash('Basket voided');
+      resetTerminal();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   const custLabel = order?.customerName ? `${order.customerName}${order.customerPhone ? ` · ${order.customerPhone}` : ''}` : null;
@@ -1202,7 +1226,7 @@ export default function PosPage() {
                   onChange={(e) => setSearch(e.target.value)}
                   autoFocus
                 />
-                <button className="rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-xs text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]" onClick={() => setOpenItem({ name: '', price: '' })}>
+                <button className="rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-xs text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]" onClick={() => setOpenItem({ name: '', price: '', station: 'KITCHEN' })}>
                   + Custom
                 </button>
               </div>
@@ -1373,16 +1397,14 @@ export default function PosPage() {
 
               {/* actions */}
               <div className="mt-3 grid grid-cols-3 gap-2">
-                <button className="rounded-lg bg-[var(--pos-surface-strong)] py-2 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40" disabled={busy || !emp.canVoid} title={emp.canVoid ? '' : 'No void permission'} onClick={voidBasket}>Void Basket</button>
+                <button className="rounded-lg bg-[var(--pos-surface-strong)] py-2 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40" disabled={busy} title="Requires manager approval" onClick={voidBasket}>Void Basket</button>
                 <button className="rounded-lg bg-[var(--pos-surface-strong)] py-2 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40" disabled={busy || isQuick} onClick={() => runAction('kot_print')}>Print KOT</button>
                 <button className="rounded-lg bg-[#2ECC71] py-2 text-xs font-bold text-black hover:bg-[#28b463] disabled:opacity-40" disabled={busy} onClick={() => runAction('pay')}>Proceed to Pay</button>
               </div>
               {!isQuick && (
-                <div className="mt-2 grid grid-cols-4 gap-2">
-                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('draft')}>Hold</button>
-                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('kot')}>KOT</button>
-                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('bill')}>Bill</button>
-                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('bill_print')}>Bill+Print</button>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('kot')} title="Fire to kitchen without printing here">KOT only</button>
+                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('bill')} title="Print the pre-payment estimated bill">Estimated Bill</button>
                 </div>
               )}
             </div>
@@ -1480,6 +1502,11 @@ export default function PosPage() {
           {cart.map((l) => (
             <label key={l.key} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <input type="checkbox" checked={!!moveSel[l.id ?? '']} disabled={!l.id} onChange={(e) => setMoveSel((s) => ({ ...s, [l.id!]: e.target.checked }))} />
+              {!!moveSel[l.id ?? ''] && l.quantity > 1 && (
+                <input type="number" min={1} max={l.quantity} value={moveQty[l.id!] ?? l.quantity}
+                  onChange={(e) => setMoveQty((m) => ({ ...m, [l.id!]: Math.min(l.quantity, Math.max(1, Number(e.target.value) || 1)) }))}
+                  className="w-14 rounded-md border border-slate-200 px-1.5 py-0.5 text-xs" title="Quantity to move" />
+              )}
               <span className="flex-1">{l.quantity}× {l.name}{l.notes ? ` (${l.notes})` : ''}</span>
               <span className="text-slate-400">{formatMoney((l.unitPriceCents + l.modifiers.reduce((s, m) => s + m.priceCents, 0)) * l.quantity)}</span>
             </label>
@@ -1494,6 +1521,73 @@ export default function PosPage() {
             </button>
           ))}
         </div>
+      </Modal>
+
+      {/* cancel item — qty + reason, then manager approval */}
+      <Modal open={!!cancelReq} title="Cancel item" onClose={() => setCancelReq(null)}>
+        {cancelReq && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Cancelling <strong>{cancelReq.line.name}</strong>
+              {cancelReq.line.kotStatus && cancelReq.line.kotStatus !== 'PENDING' ? ' (already sent to the kitchen — a cancellation ticket will print)' : ''}.
+            </p>
+            {cancelReq.line.quantity > 1 && (
+              <div>
+                <label className="label">Quantity to cancel (of {cancelReq.line.quantity})</label>
+                <div className="flex items-center gap-3">
+                  <button type="button" className="btn-ghost h-9 w-9 !p-0" onClick={() => setCancelReq({ ...cancelReq, qty: Math.max(1, cancelReq.qty - 1) })}>−</button>
+                  <span className="w-8 text-center text-lg font-bold">{cancelReq.qty}</span>
+                  <button type="button" className="btn-ghost h-9 w-9 !p-0" onClick={() => setCancelReq({ ...cancelReq, qty: Math.min(cancelReq.line.quantity, cancelReq.qty + 1) })}>+</button>
+                </div>
+              </div>
+            )}
+            <div>
+              <label className="label">Reason (required)</label>
+              <input className="input" value={cancelReq.reason} autoFocus placeholder="e.g. wrong item punched"
+                onChange={(e) => setCancelReq({ ...cancelReq, reason: e.target.value })} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost" onClick={() => setCancelReq(null)}>Back</button>
+              <button className="btn-primary" disabled={!cancelReq.reason.trim()}
+                onClick={() => setMgrAuth({
+                  title: 'Approve cancellation',
+                  hint: `Cancel ${cancelReq.qty}× ${cancelReq.line.name} — needs a manager or admin sign-in.`,
+                  permission: 'canVoid',
+                  onApproved: ({ token }) => void doCancel(token),
+                })}>
+                Continue → manager approval
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* void basket — reason, then manager approval */}
+      <Modal open={!!voidReq} title="Void entire basket" onClose={() => setVoidReq(null)}>
+        {voidReq && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              This voids <strong>all {cart.length} item(s)</strong> on order #{order?.number} — it cannot be undone and is audited.
+            </p>
+            <div>
+              <label className="label">Reason (required)</label>
+              <input className="input" value={voidReq.reason} autoFocus placeholder="e.g. customer left"
+                onChange={(e) => setVoidReq({ reason: e.target.value })} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost" onClick={() => setVoidReq(null)}>Back</button>
+              <button className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40" disabled={!voidReq.reason.trim()}
+                onClick={() => setMgrAuth({
+                  title: 'Approve void',
+                  hint: 'Voiding a basket needs an admin or manager sign-in.',
+                  permission: 'canVoid',
+                  onApproved: ({ token }) => void doVoid(token),
+                })}>
+                Continue → manager approval
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* portion picker */}
@@ -1533,6 +1627,17 @@ export default function PosPage() {
             <div>
               <label className="label">Price (Rs)</label>
               <input className="input" type="number" step="0.01" min="0" value={openItem.price} onChange={(e) => setOpenItem({ ...openItem, price: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Prepared at (prints the ticket there)</label>
+              <div className="flex gap-2">
+                {(['KITCHEN', 'BAR', 'BILLING'] as const).map((st) => (
+                  <button key={st} type="button" onClick={() => setOpenItem({ ...openItem, station: st })}
+                    className={`flex-1 rounded-lg border px-2 py-2 text-xs font-semibold ${openItem.station === st ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-500'}`}>
+                    {st === 'KITCHEN' ? 'Kitchen (KOT)' : st === 'BAR' ? 'Bar (BOT)' : 'Billing only'}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost" onClick={() => setOpenItem(null)}>Cancel</button>
@@ -1599,7 +1704,7 @@ export default function PosPage() {
         </div>
       </Modal>
 
-      <Receipt order={receipt?.order ?? null} settings={settings} mode={receipt?.mode ?? 'BILL'} items={receipt?.items} />
+      <Receipt order={receipt?.order ?? null} settings={settings} mode={receipt?.mode ?? 'BILL'} items={receipt?.items} docTitle={receipt?.docTitle} />
       <DayReport report={dayReport} settings={settings} />
     </div>
   );

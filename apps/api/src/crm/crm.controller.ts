@@ -15,12 +15,16 @@ import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
 import { TokenPayload } from '../common/token';
 
 class CreateCustomerDto {
+  @IsOptional() @IsString() panNumber?: string;
+  @IsOptional() @IsBoolean() isBusiness?: boolean;
   @IsString() @IsNotEmpty() name: string;
   @IsString() @IsNotEmpty() phone: string;
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsString() birthday?: string;
 }
 class UpdateCustomerDto {
+  @IsOptional() @IsString() panNumber?: string;
+  @IsOptional() @IsBoolean() isBusiness?: boolean;
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsBoolean() optIn?: boolean;
@@ -49,6 +53,33 @@ export class CrmController {
   lookup(@Query('phone') phone: string) {
     return this.crm.lookup(phone);
   }
+  // Best-effort IRD PAN lookup (public taxpayer search) for business customers.
+  @Get('pan-lookup')
+  async panLookup(@Query('pan') pan: string) {
+    if (!pan?.trim()) return { found: false, message: 'Provide a PAN number' };
+    try {
+      const res = await fetch('https://ird.gov.np/statstics/getPanSearch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pan: pan.trim() }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const body: any = await res.json().catch(() => null);
+      const rec = body?.records?.[0] ?? body?.panDetails?.[0] ?? (body?.pan ? body : null);
+      if (rec) {
+        return {
+          found: true,
+          name: rec.trade_Name_Eng ?? rec.tradeNameEng ?? rec.name ?? null,
+          office: rec.office_Name ?? rec.officeName ?? null,
+          raw: rec,
+        };
+      }
+      return { found: false, message: 'PAN not found on IRD' };
+    } catch (err) {
+      return { found: false, message: `IRD lookup unavailable: ${(err as Error).message}` };
+    }
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.crm.findOne(id);
@@ -71,6 +102,7 @@ export class CrmController {
   ) {
     return this.crm.settleCredit(id, dto.amountCents, dto.method ?? 'CASH', dto.note, emp?.name);
   }
+
 
   @Get(':id/ledger')
   ledger(@Param('id') id: string) {

@@ -90,7 +90,7 @@ export class OrdersController {
     @Body() dto: CancelItemDto,
     @CurrentEmployee() emp: TokenPayload,
   ) {
-    return this.orders.cancelItem(id, itemId, dto.reason, emp);
+    return this.orders.cancelItem(id, itemId, dto.reason, emp, dto.quantity);
   }
 
   @Post(':id/bill')
@@ -123,7 +123,7 @@ export class OrdersController {
   @UseGuards(SoftAuthGuard)
   transferItems(
     @Param('id') id: string,
-    @Body() body: { itemIds: string[]; targetTableId: string },
+    @Body() body: { itemIds: string[]; targetTableId: string; quantities?: Record<string, number> },
     @CurrentEmployee() emp: TokenPayload,
   ) {
     return this.orders.transferItems(id, body, emp);

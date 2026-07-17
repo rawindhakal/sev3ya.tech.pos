@@ -27,15 +27,15 @@
 .dark {
   color-scheme: dark;
   /* POS / full-screen terminal palette — extra dark */
-  --pos-bg: #0b0d10;
-  --pos-card: #15181d;
-  --pos-elevated: #1c2027;
-  --pos-inset: #0e1013;
+  --pos-bg: #12161d;
+  --pos-card: #1a1f28;
+  --pos-elevated: #212836;
+  --pos-inset: #141922;
   --pos-line: rgba(255, 255, 255, 0.09);
   --pos-surface: rgba(255, 255, 255, 0.05);
   --pos-surface-strong: rgba(255, 255, 255, 0.08);
   --pos-surface-hover: rgba(255, 255, 255, 0.13);
-  --pos-text: #f8fafc;
+  --pos-text: #e6ebf2;
   --pos-text-80: rgba(248, 250, 252, 0.80);
   --pos-text-70: rgba(248, 250, 252, 0.70);
   --pos-text-60: rgba(248, 250, 252, 0.60);

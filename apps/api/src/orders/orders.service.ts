@@ -89,7 +89,8 @@ export class OrdersService {
           station: mi.station, // KOT/BOT/Billing routing snapshot
         };
       }
-      // Open item: custom name + price, not linked to the menu.
+      // Open item: custom name + price, not linked to the menu. Station is
+      // chosen by the cashier so custom dishes still fire a KOT/BOT.
       if (!l.name || l.unitPriceCents == null)
         throw new BadRequestException('Open item requires a name and price');
       return {
@@ -97,7 +98,7 @@ export class OrdersService {
         menuItemId: null,
         nameSnapshot: l.name,
         unitPriceCents: l.unitPriceCents,
-        station: 'BILLING' as const,
+        station: (((l as any).station ?? 'BILLING') as any),
       };
     });
   }
@@ -117,6 +118,22 @@ export class OrdersService {
         throw new BadRequestException(
           `Table ${table.name} seats ${table.seats}; cannot seat ${dto.guestCount} guests`,
         );
+    }
+
+    // Re-use an existing EMPTY open order on this table (e.g. someone opened
+    // the table and backed out) so tables never look occupied with no items.
+    if (isDineIn) {
+      const empty = await this.prisma.order.findFirst({
+        where: { tableId: dto.tableId!, status: 'OPEN', items: { none: {} } },
+        include: orderInclude,
+      });
+      if (empty) {
+        return this.prisma.order.update({
+          where: { id: empty.id },
+          data: { guestCount: dto.guestCount ?? empty.guestCount, waiterId: dto.waiterId ?? empty.waiterId, seatedAt: new Date() },
+          include: orderInclude,
+        });
+      }
     }
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -253,22 +270,46 @@ export class OrdersService {
   }
 
   // Cancel a single order item (prints a cancellation KOT if already fired).
-  async cancelItem(orderId: string, itemId: string, reason: string, actor?: TokenPayload) {
+  // Cancel an item — optionally a partial quantity (splits the line: the
+  // cancelled part becomes its own cancelled row, the rest stays live).
+  async cancelItem(orderId: string, itemId: string, reason: string, actor?: TokenPayload, quantity?: number) {
     const order = await this.findOne(orderId);
     const item = order.items.find((i) => i.id === itemId);
     if (!item) throw new BadRequestException('Item not on this order');
     if (item.cancelledAt) throw new BadRequestException('Item already cancelled');
+    const qty = Math.min(Math.max(1, quantity ?? item.quantity), item.quantity);
+    const partial = qty < item.quantity;
     const wasFired = item.kotStatus !== 'PENDING';
     const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.orderItem.update({
-        where: { id: itemId },
-        data: { cancelledAt: new Date(), cancelReason: reason },
-      });
+      if (partial) {
+        await tx.orderItem.update({ where: { id: itemId }, data: { quantity: item.quantity - qty } });
+        await tx.orderItem.create({
+          data: {
+            orderId,
+            menuItemId: item.menuItemId,
+            nameSnapshot: item.nameSnapshot,
+            unitPriceCents: item.unitPriceCents,
+            quantity: qty,
+            modifiers: (item.modifiers ?? []) as any,
+            notes: item.notes,
+            station: item.station,
+            kotStatus: item.kotStatus,
+            kotPrintedAt: item.kotPrintedAt,
+            cancelledAt: new Date(),
+            cancelReason: reason,
+          },
+        });
+      } else {
+        await tx.orderItem.update({
+          where: { id: itemId },
+          data: { cancelledAt: new Date(), cancelReason: reason },
+        });
+      }
       await this.recompute(tx, orderId);
       return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude });
     });
-    await this.audit.log(actor ?? null, 'CANCEL_ITEM', `Order #${order.number} — ${item.quantity}× ${item.nameSnapshot} (${reason})`);
-    return { order: updated, cancelledItem: item, wasFired };
+    await this.audit.log(actor ?? null, 'CANCEL_ITEM', `Order #${order.number} — ${qty}× ${item.nameSnapshot} (${reason})`);
+    return { order: updated, cancelledItem: { ...item, quantity: qty }, wasFired };
   }
 
   async update(id: string, dto: UpdateOrderDto) {
@@ -556,12 +597,31 @@ export class OrdersService {
 
   // Move selected items from this order to another table (item-level transfer).
   // If the target table has no open order, a new one is started there.
-  async transferItems(id: string, dto: { itemIds: string[]; targetTableId: string }, actor?: TokenPayload) {
+  async transferItems(id: string, dto: { itemIds: string[]; targetTableId: string; quantities?: Record<string, number> }, actor?: TokenPayload) {
     const source = await this.findOne(id);
     if (['PAID', 'CANCELLED', 'REFUNDED'].includes(source.status))
       throw new BadRequestException('Only active orders can be transferred from');
-    const items = source.items.filter((i) => dto.itemIds.includes(i.id) && !i.cancelledAt);
+    let items = source.items.filter((i) => dto.itemIds.includes(i.id) && !i.cancelledAt);
     if (!items.length) throw new BadRequestException('No valid items to transfer');
+    // Partial-quantity transfers: split the line first, move only the split row.
+    for (const it of [...items]) {
+      const want = dto.quantities?.[it.id];
+      if (want && want > 0 && want < it.quantity) {
+        const split = await this.prisma.$transaction(async (tx) => {
+          await tx.orderItem.update({ where: { id: it.id }, data: { quantity: it.quantity - want } });
+          return tx.orderItem.create({
+            data: {
+              orderId: id, menuItemId: it.menuItemId, nameSnapshot: it.nameSnapshot,
+              unitPriceCents: it.unitPriceCents, quantity: want,
+              modifiers: (it.modifiers ?? []) as any, notes: it.notes,
+              station: it.station, kotStatus: it.kotStatus, kotPrintedAt: it.kotPrintedAt,
+            },
+          });
+        });
+        items = items.filter((x) => x.id !== it.id).concat(split as any);
+        dto.itemIds = dto.itemIds.filter((x) => x !== it.id).concat(split.id);
+      }
+    }
     const targetTable = await this.prisma.restaurantTable.findUnique({ where: { id: dto.targetTableId } });
     if (!targetTable) throw new BadRequestException('Target table not found');
     if (source.tableId === dto.targetTableId) throw new BadRequestException('Items are already on that table');

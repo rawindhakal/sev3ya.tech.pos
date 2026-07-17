@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import type { Features, Settings } from '@/lib/types';
 import Modal from '@/components/Modal';
+import { APP_VERSION, CHANGELOG } from '@/lib/changelog';
 
 // UI feature key → backend column.
 const FEATURES: { key: keyof Features; col: string; label: string }[] = [
@@ -25,7 +26,7 @@ export default function SettingsPage() {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   // RestroX-style settings hub: left sub-nav, one section at a time.
-  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'prefs' | 'desktop' | 'danger'>('details');
+  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'prefs' | 'desktop' | 'about' | 'danger'>('details');
 
   async function resetData() {
     setResetting(true);
@@ -98,6 +99,7 @@ export default function SettingsPage() {
         { id: 'modules', label: 'Modules' },
         { id: 'prefs', label: 'Preferences' },
         { id: 'desktop', label: 'Desktop Application' },
+        { id: 'about', label: 'About & Changelog' },
         { href: '/employees', label: 'Users & Roles' },
         { href: '/reports', label: 'Activity Log' },
       ],
@@ -368,6 +370,29 @@ export default function SettingsPage() {
           <p><strong>Windows:</strong> SmartScreen may warn — click <em>More info → Run anyway</em>.</p>
           <p><strong>macOS:</strong> right-click the app → <em>Open</em> (first launch only), or run <code>xattr -cr /Applications/s3vyaPOS.app</code>.</p>
           <p className="mt-2">After installing: sign in, pick printers under <a className="text-brand-600 underline" href="/printing">Settings → Printing</a>, and set the scanner IP under <a className="text-brand-600 underline" href="/attendance">Staff → Attendance → Device</a>.</p>
+        </div>
+      </div>
+      )}
+
+      {/* ── About & changelog ── */}
+      {section === 'about' && (
+      <div className="card space-y-4 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700">s3vyaPOS</h2>
+          <span className="badge bg-brand-50 font-mono text-brand-700">v{APP_VERSION}</span>
+        </div>
+        <div className="space-y-4">
+          {CHANGELOG.map((rel) => (
+            <div key={rel.version} className="border-l-2 border-brand-200 pl-4">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="font-mono text-sm font-bold text-slate-800">v{rel.version}</span>
+                <span className="text-xs text-slate-400">{rel.date}</span>
+              </div>
+              <ul className="list-disc space-y-0.5 pl-4 text-sm text-slate-600">
+                {rel.changes.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
       )}
