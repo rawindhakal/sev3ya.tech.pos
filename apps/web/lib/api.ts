@@ -16,11 +16,30 @@ export class QueuedError extends Error {
   }
 }
 
+// SaaS: which restaurant (tenant) this browser talks to — from the subdomain
+// (everest.s3vya.tech) or a saved restaurant code. Empty = platform/control.
+export function tenantSlug(): string {
+  if (typeof window === 'undefined') return '';
+  const host = window.location.hostname;
+  const parts = host.split('.');
+  if (parts.length >= 3 && !['www', 's3vya', 'api', 'app'].includes(parts[0])) return parts[0];
+  return window.localStorage.getItem('s3vya-tenant') ?? '';
+}
+export function setTenantSlug(slug: string) {
+  if (typeof window === 'undefined') return;
+  if (slug.trim()) window.localStorage.setItem('s3vya-tenant', slug.trim().toLowerCase());
+  else window.localStorage.removeItem('s3vya-tenant');
+}
+
 // Read the staff token (set on PIN login) so requests carry the actor identity.
 function authHeader(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const t = window.localStorage.getItem('cakezake-token');
-  return t ? { Authorization: `Bearer ${t}` } : {};
+  const slug = tenantSlug();
+  return {
+    ...(t ? { Authorization: `Bearer ${t}` } : {}),
+    ...(slug ? { 'X-Tenant': slug } : {}),
+  };
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

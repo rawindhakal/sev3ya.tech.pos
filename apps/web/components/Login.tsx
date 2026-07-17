@@ -1,18 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { api } from '@/lib/api';
+import { api, setTenantSlug, tenantSlug } from '@/lib/api';
 import type { Employee } from '@/lib/types';
 
 // Back-office sign-in with username + password. The token is stored so the API
 // client sends it and role/permission gating can apply across admin pages.
 export default function Login({ onLogin }: { onLogin: (e: Employee) => void }) {
+  const [restaurant, setRestaurant] = useState(tenantSlug());
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    setTenantSlug(restaurant);
     if (!username.trim() || !password) return setErr('Enter your username and password');
     setBusy(true);
     setErr('');
@@ -40,6 +42,13 @@ export default function Login({ onLogin }: { onLogin: (e: Employee) => void }) {
         <p className="mb-4 text-xs text-slate-400">Sign in with your username &amp; password</p>
         {err && <p className="mb-3 text-xs text-red-500">{err}</p>}
         <div className="space-y-2 text-left">
+          <input
+            value={restaurant}
+            onChange={(e) => setRestaurant(e.target.value)}
+            placeholder="Restaurant code (blank = s3vya HQ)"
+            autoComplete="off"
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+          />
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}

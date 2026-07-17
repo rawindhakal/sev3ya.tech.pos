@@ -1,7 +1,17 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '1.6.0';
+export const APP_VERSION = '1.7.0';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '1.7.0', date: '2026-07-17',
+    changes: [
+      'SaaS platform: every restaurant gets its own fully isolated database',
+      'Platform Console — provision restaurants, plans (Starter/Pro/Enterprise), suspend/activate',
+      'Subscription payments by cash or direct bank transfer with references; validity extends automatically',
+      'Restaurant code on sign-in (or subdomain) routes each till to its own restaurant',
+      'Nepali fiscal-year management: exact Shrawan 1 → Ashadh-end windows, per-FY invoice numbers on Tax Invoices and IRD sync',
+    ],
+  },
   {
     version: '1.6.0', date: '2026-07-17',
     changes: [

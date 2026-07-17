@@ -21,9 +21,13 @@ async function bootstrap() {
     .split(',')
     .map((o) => o.trim());
   app.enableCors({
-    origin: origins,
+    // Allow configured origins plus any tenant subdomain (*.s3vya.tech).
+    origin: (origin, cb) => {
+      if (!origin || origins.includes(origin) || /^https:\/\/[a-z0-9-]+\.s3vya\.tech$/.test(origin)) cb(null, true);
+      else cb(null, false);
+    },
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Tenant'],
   });
 
   const port = process.env.PORT ?? 4000;

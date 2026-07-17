@@ -26,6 +26,7 @@ import { TerminalsModule } from './terminals/terminals.module';
 import { IrdModule } from './ird/ird.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { AttendanceModule } from './attendance/attendance.module';
     IrdModule,
     AccountingModule,
     AttendanceModule,
+    PlatformModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor }],

@@ -846,3 +846,76 @@ model AttendanceLog {
   @@index([at])
   @@map("attendance_logs")
 }
+
+// ─────────────────────────────────────────────────────────────
+// SAAS CONTROL PLANE (only meaningful in the platform/control DB)
+// Each tenant restaurant gets its OWN PostgreSQL database created from this
+// same schema; these tables track tenants, plans and subscription payments.
+// ─────────────────────────────────────────────────────────────
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+}
+
+model Plan {
+  id                String   @id @default(cuid())
+  code              String   @unique // STARTER | PRO | ENTERPRISE
+  name              String
+  priceMonthlyCents Int
+  priceYearlyCents  Int
+  maxEmployees      Int      @default(10)
+  maxItems          Int      @default(200)
+  features          Json?    // marketing bullet list
+  isActive          Boolean  @default(true)
+  tenants           Tenant[]
+  payments          SubscriptionPayment[]
+  createdAt         DateTime @default(now())
+
+  @@map("plans")
+}
+
+model Tenant {
+  id          String       @id @default(cuid())
+  slug        String       @unique // subdomain / x-tenant header value
+  name        String
+  dbName      String       @unique
+  status      TenantStatus @default(TRIAL)
+  planId      String?
+  plan        Plan?        @relation(fields: [planId], references: [id])
+  ownerName   String?
+  ownerPhone  String?
+  ownerEmail  String?
+  trialEndsAt DateTime?
+  paidUntil   DateTime?
+  notes       String?
+  payments    SubscriptionPayment[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("tenants")
+}
+
+// Manual subscription payment gateway: cash at office or direct bank transfer,
+// recorded + verified by the platform owner. Verification extends paidUntil.
+model SubscriptionPayment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planId      String?
+  plan        Plan?    @relation(fields: [planId], references: [id])
+  amountCents Int
+  method      String   // CASH | BANK_TRANSFER
+  reference   String?  // bank voucher / txn reference
+  months      Int      @default(1)
+  status      String   @default("VERIFIED") // PENDING | VERIFIED | REJECTED
+  periodStart DateTime
+  periodEnd   DateTime
+  receivedBy  String?
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("subscription_payments")
+}
