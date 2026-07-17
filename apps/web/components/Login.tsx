@@ -6,7 +6,7 @@ import type { Employee } from '@/lib/types';
 
 // Back-office sign-in with username + password. The token is stored so the API
 // client sends it and role/permission gating can apply across admin pages.
-export default function Login({ onLogin }: { onLogin: (e: Employee) => void }) {
+export default function Login({ onLogin, onBack }: { onLogin: (e: Employee) => void; onBack?: () => void }) {
   const [restaurant, setRestaurant] = useState(tenantSlug());
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -75,6 +75,11 @@ export default function Login({ onLogin }: { onLogin: (e: Employee) => void }) {
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+        {onBack && (
+          <button onClick={onBack} className="mt-3 text-xs text-slate-400 underline hover:text-slate-500">
+            ← Back to home
+          </button>
+        )}
       </div>
     </div>
   );

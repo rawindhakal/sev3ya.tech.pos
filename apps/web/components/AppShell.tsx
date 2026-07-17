@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
 import Login from './Login';
+import LandingPage from './LandingPage';
 import { tenantSlug } from '@/lib/api';
 import type { Employee } from '@/lib/types';
 
@@ -32,6 +33,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [emp, setEmp] = useState<Employee | null>(null);
   const [ready, setReady] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [wantsLogin, setWantsLogin] = useState(false);
 
   // Close the mobile drawer on navigation.
   useEffect(() => { setNavOpen(false); }, [path]);
@@ -53,7 +55,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (fullscreen) return <main className="h-screen overflow-hidden">{children}</main>;
   if (!ready) return null;
-  if (!emp) return <Login onLogin={setEmp} />;
+
+  // The bare main domain, signed out, shows the marketing home page instead
+  // of jumping straight to a login form. Existing tenants/staff still land
+  // on their own sign-in immediately (subdomain or any non-root path).
+  const isControlHome = !tenantSlug() && path === '/';
+  if (!emp) {
+    if (isControlHome && !wantsLogin) return <LandingPage onSignIn={() => setWantsLogin(true)} />;
+    return <Login onLogin={setEmp} onBack={isControlHome ? () => setWantsLogin(false) : undefined} />;
+  }
 
   // Control context (no restaurant code) is the platform owner's world — the
   // back-office belongs to tenants. Send platform admins to their console.
