@@ -237,6 +237,11 @@ model Order {
   // Loyalty points redeemed against this order (#111).
   redeemedPoints Int @default(0)
 
+  // Nepali fiscal year (e.g. "2082/83") + IRD-compliant invoice number that
+  // resets each fiscal year — both stamped at payment time.
+  fiscalYear      String?
+  fiscalInvoiceNo Int?
+
   // IRD (CBMS) e-billing sync state for this invoice.
   irdSyncedAt   DateTime?
   irdSyncStatus String?   // SYNCED | FAILED

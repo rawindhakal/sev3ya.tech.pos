@@ -28,11 +28,13 @@ export class IrdService {
         subtotalCents: true, discountCents: true, serviceChargeCents: true,
         taxCents: true, totalCents: true,
         irdSyncedAt: true, irdSyncStatus: true, irdSyncMessage: true,
+        fiscalYear: true, fiscalInvoiceNo: true,
       },
     });
     const rows = orders.map((o, i) => ({
       sn: i + 1,
-      invoiceNumber: o.number,
+      invoiceNumber: (o as any).fiscalInvoiceNo ?? o.number,
+      fiscalYearLabel: (o as any).fiscalYear ?? null,
       dateAd: o.paidAt,
       dateBs: o.paidAt ? formatBs(o.paidAt) : null,
       fiscalYear: o.paidAt ? fiscalYearBs(o.paidAt) : null,
@@ -89,7 +91,7 @@ export class IrdService {
         buyer_pan: '',
         buyer_name: o.customerName ?? '',
         fiscal_year: fiscalYearBs(paidAt),
-        invoice_number: String(o.number),
+        invoice_number: String(o.fiscalInvoiceNo ?? o.number),
         invoice_date: formatBsIrd(paidAt),
         total_sales: o.totalCents / 100,
         taxable_sales_vat: (o.totalCents - o.taxCents) / 100,

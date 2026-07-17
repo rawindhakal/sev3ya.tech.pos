@@ -60,6 +60,9 @@ export default function Receipt({
           Order #{order.number}
           {(isBill || kt.showOrderType) && <> · {order.type.replace('_', ' ')}</>}
         </div>
+        {isBill && order.fiscalInvoiceNo != null && (
+          <div>Invoice No: {order.fiscalInvoiceNo} · FY {order.fiscalYear}</div>
+        )}
         {(isBill ? bt.showTable : kt.showTable) && order.table && <div>Table: {order.table.name}</div>}
         {(isBill ? bt.showWaiter : kt.showWaiter) && order.waiter && <div>Waiter: {order.waiter.name}</div>}
         {isBill && bt.showCustomer && order.customerName && (

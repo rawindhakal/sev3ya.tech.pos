@@ -82,3 +82,26 @@ export function fiscalYearBs(ad: Date): string {
   const startYear = b.month >= 4 ? b.year : b.year - 1;
   return `${startYear}.${String((startYear + 1) % 1000).padStart(3, '0')}`;
 }
+
+// Convert a BS date back to AD (inverse walk over the month table).
+export function bsToAd(year: number, month: number, day: number): Date {
+  let days = 0;
+  for (let y = BS_START_YEAR; y < year; y++) {
+    const row = BS_MONTHS[y - BS_START_YEAR];
+    if (!row) throw new Error('Year outside BS table');
+    days += row.reduce((a, b) => a + b, 0);
+  }
+  const row = BS_MONTHS[year - BS_START_YEAR];
+  for (let m = 1; m < month; m++) days += row[m - 1];
+  days += day - 1;
+  return new Date(BS_EPOCH_AD + days * 86400000);
+}
+
+// Exact AD window of Nepali fiscal year fy: Shrawan 1, fy → last day of
+// Ashadh, fy+1 (Ashadh can have 31 or 32 days — read from the table).
+export function fyRangeAd(fy: number): { start: Date; end: Date } {
+  const start = bsToAd(fy, 4, 1);
+  const ashadhDays = BS_MONTHS[fy + 1 - BS_START_YEAR][2]; // month 3 of fy+1
+  const end = new Date(bsToAd(fy + 1, 3, ashadhDays).getTime() + 86399999);
+  return { start, end };
+}

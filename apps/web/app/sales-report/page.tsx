@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { exportPdf } from '@/lib/pdf';
-import { formatBsLong } from '@/lib/bs-date';
+import { adToBs, formatBsLong, fyRangeAd } from '@/lib/bs-date';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
 import type { Category, MenuItem, Settings } from '@/lib/types';
 
@@ -117,6 +117,16 @@ export default function SalesReportPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {[0, 1].map((back) => {
+            const b = adToBs(new Date());
+            const fy = (b.month >= 4 ? b.year : b.year - 1) - back;
+            return (
+              <button key={fy} className="btn-ghost whitespace-nowrap text-xs" title={`Shrawan 1 ${fy} → Ashadh end ${fy + 1}`}
+                onClick={() => { const r = fyRangeAd(fy); setFrom(iso(r.start)); setTo(iso(r.end > new Date() ? new Date() : r.end)); }}>
+                {back === 0 ? 'This FY' : 'Last FY'} {fy}/{(fy + 1) % 100}
+              </button>
+            );
+          })}
           <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From date" />
           <span className="text-slate-400">→</span>
           <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} aria-label="To date" />

@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeTotals } from '../common/settings';
+import { adToBs } from '../common/bs-date';
 import { SettingsService } from '../settings/settings.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
@@ -446,6 +447,12 @@ export class OrdersService {
         const withCust = await tx.order.findUniqueOrThrow({ where: { id }, select: { customerId: true } });
         if (withCust.customerId) await this.crm.addCredit(tx, withCust.customerId, creditCents, id);
       }
+      // Stamp Nepali fiscal year + per-FY sequential invoice number (IRD:
+      // billing must restart each fiscal year).
+      const paidAt = new Date();
+      const fyLabel = (() => { const b = adToBs(paidAt); const y = b.month >= 4 ? b.year : b.year - 1; return `${y}/${(y + 1) % 100}`; })();
+      const seq = await tx.order.count({ where: { fiscalYear: fyLabel } });
+      await tx.order.update({ where: { id }, data: { fiscalYear: fyLabel, fiscalInvoiceNo: seq + 1 } });
       // Return the fresh row so redeemedPoints / customerId are reflected.
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });

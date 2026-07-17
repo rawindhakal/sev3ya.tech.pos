@@ -175,6 +175,8 @@ export interface Order {
   refundReason?: string | null;
   refundCents: number;
   refundedAt?: string | null;
+  fiscalYear?: string | null;
+  fiscalInvoiceNo?: number | null;
   items: OrderItem[];
   payments: Payment[];
   table?: { id: string; name: string; area?: string | null } | null;

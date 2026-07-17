@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JournalService } from './journal.service';
-import { adToBs, formatBs, BS_MONTH_NAMES } from '../common/bs-date';
+import { adToBs, formatBs, fyRangeAd, BS_MONTH_NAMES } from '../common/bs-date';
 
 // MIS / statutory reports (RestroX-style). Every report returns one uniform
 // shape — { title, columns, rows, note? } — so the frontend renders and
@@ -28,7 +28,8 @@ function range(from?: string, to?: string) {
 
 // AD window generously covering BS fiscal year fy (Shrawan fy → Ashadh fy+1).
 function fyAdWindow(fy: number) {
-  return { gte: new Date(Date.UTC(fy - 57, 5, 25)), lte: new Date(Date.UTC(fy - 56, 7, 5)) };
+  const { start, end } = fyRangeAd(fy); // exact Shrawan 1 → Ashadh end
+  return { gte: start, lte: end };
 }
 // Bucket index (0-11) of a date within fiscal year fy, or -1 if outside.
 function fyBucket(fy: number, d: Date): number {
