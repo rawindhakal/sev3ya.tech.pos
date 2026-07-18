@@ -106,7 +106,9 @@ export default function Receipt({
           {bt.showVatBreakdown && (
             <>
               <Row label="Subtotal" value={formatMoney(order.subtotalCents)} />
-              {order.discountCents > 0 && <Row label="Discount" value={`-${formatMoney(order.discountCents)}`} />}
+              {order.discountCents > 0 && (
+                <Row label={order.discountLabel ? `Discount (${order.discountLabel})` : 'Discount'} value={`-${formatMoney(order.discountCents)}`} />
+              )}
               {order.serviceChargeCents > 0 && (
                 <Row label={`Service charge (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`} value={formatMoney(order.serviceChargeCents)} />
               )}

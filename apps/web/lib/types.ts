@@ -147,6 +147,7 @@ export interface OrderItem {
   station?: PrepStation;
   cancelledAt?: string | null;
   cancelReason?: string | null;
+  cancelledBy?: string | null;
 }
 
 export interface Payment {
@@ -168,6 +169,8 @@ export interface Order {
   subtotalCents: number;
   taxCents: number;
   discountCents: number;
+  discountLabel?: string | null;
+  isComplimentary?: boolean;
   serviceChargeCents: number;
   totalCents: number;
   notes?: string | null;
@@ -309,4 +312,13 @@ export interface DashboardData {
     waiter?: string | null;
     createdAt: string;
   }[];
+}
+
+export interface DiscountPreset {
+  id: string;
+  name: string;
+  type: 'PCT' | 'RS';
+  value: number; // whole percentage, or Rs cents, per `type`
+  isActive: boolean;
+  sortOrder: number;
 }

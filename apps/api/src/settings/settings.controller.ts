@@ -1,8 +1,20 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { SettingsService } from './settings.service';
 import { AuthGuard, CurrentEmployee } from '../common/auth.guard';
 import { TokenPayload } from '../common/token';
+
+class ResetDataDto {
+  @IsOptional() @IsArray() @IsIn(SettingsService.RESET_CATEGORIES, { each: true }) categories?: string[];
+}
+
+class DiscountPresetDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsEnum(['PCT', 'RS']) type?: 'PCT' | 'RS';
+  @IsOptional() @IsInt() @Min(0) value?: number;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsInt() sortOrder?: number;
+}
 
 class UpdateSettingsDto {
   @IsOptional() @IsString() restaurantName?: string;
@@ -51,10 +63,35 @@ export class SettingsController {
     return this.settings.update(dto);
   }
 
-  // Danger zone — wipe all sales/operational data. Admin-only (manage staff).
+  // Danger zone — wipe selected sales/operational data categories. Admin-only.
   @Post('reset-data')
   @UseGuards(new AuthGuard('canManageStaff'))
-  resetData(@CurrentEmployee() emp: TokenPayload) {
-    return this.settings.resetData({ sub: emp?.sub, name: emp?.name });
+  resetData(@Body() dto: ResetDataDto, @CurrentEmployee() emp: TokenPayload) {
+    return this.settings.resetData(dto.categories ?? [], { sub: emp?.sub, name: emp?.name });
+  }
+
+  // ── Discount presets (any signed-in staff can read for the POS modal) ──
+  @Get('discount-presets')
+  discountPresets(@Query('active') active?: string) {
+    return this.settings.discountPresets(active === '1');
+  }
+
+  @Post('discount-presets')
+  @UseGuards(new AuthGuard('canManageStaff'))
+  createDiscountPreset(@Body() dto: DiscountPresetDto) {
+    if (!dto.name?.trim() || dto.value == null) throw new BadRequestException('name and value are required');
+    return this.settings.createDiscountPreset({ name: dto.name.trim(), type: dto.type ?? 'PCT', value: dto.value, sortOrder: dto.sortOrder });
+  }
+
+  @Patch('discount-presets/:id')
+  @UseGuards(new AuthGuard('canManageStaff'))
+  updateDiscountPreset(@Param('id') id: string, @Body() dto: DiscountPresetDto) {
+    return this.settings.updateDiscountPreset(id, dto);
+  }
+
+  @Delete('discount-presets/:id')
+  @UseGuards(new AuthGuard('canManageStaff'))
+  deleteDiscountPreset(@Param('id') id: string) {
+    return this.settings.deleteDiscountPreset(id);
   }
 }

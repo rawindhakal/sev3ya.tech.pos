@@ -67,4 +67,11 @@ export class MisController {
       groupBy: (q.groupBy as any) || 'detail',
     });
   }
+
+  // Every cancelled item, who approved it and why (KOT/BOT reports only ever
+  // show what's still live — this is the audit-trail counterpart).
+  @Get('cancelled-items')
+  cancelledItems(@Query('from') from?: string, @Query('to') to?: string, @Query('station') station?: string) {
+    return this.mis.cancelledItems({ from, to, station: station || undefined });
+  }
 }

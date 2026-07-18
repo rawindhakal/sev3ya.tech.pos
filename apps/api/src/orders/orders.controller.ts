@@ -16,6 +16,7 @@ import type { TokenPayload } from '../common/token';
 import {
   AttachCustomerDto,
   CancelItemDto,
+  ComplimentaryDto,
   CreateOrderDto,
   PayDto,
   RefundDto,
@@ -96,6 +97,14 @@ export class OrdersController {
   @Post(':id/bill')
   bill(@Param('id') id: string) {
     return this.orders.bill(id);
+  }
+
+  // Mark the whole bill complimentary — needs the manager/admin's own
+  // canDiscount-permitted token (same one-off-approval pattern as void/refund).
+  @Post(':id/complimentary')
+  @UseGuards(new AuthGuard('canDiscount'))
+  markComplimentary(@Param('id') id: string, @Body() dto: ComplimentaryDto, @CurrentEmployee() emp: TokenPayload) {
+    return this.orders.markComplimentary(id, dto.reason, emp);
   }
 
   @Post(':id/pay')

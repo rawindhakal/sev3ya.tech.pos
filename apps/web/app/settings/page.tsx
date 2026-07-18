@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
-import type { Features, Settings } from '@/lib/types';
+import { useCallback, useEffect, useState } from 'react';
+import { api, formatMoney } from '@/lib/api';
+import type { DiscountPreset, Features, Settings } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { APP_VERSION, CHANGELOG } from '@/lib/changelog';
-import { notify } from '@/lib/dialog';
+import { confirmDialog, notify } from '@/lib/dialog';
 
 // UI feature key → backend column.
 const FEATURES: { key: keyof Features; col: string; label: string }[] = [
@@ -17,6 +17,21 @@ const FEATURES: { key: keyof Features; col: string; label: string }[] = [
   { key: 'kds', col: 'featKds', label: 'Kitchen display (KDS)' },
 ];
 
+// Danger zone: what a reset can clear, and whether it's checked by default.
+// Menu & Customers are opt-in (destructive to master data, not just history).
+const RESET_CATEGORIES: { key: string; label: string; hint: string; defaultOn: boolean; destructive?: boolean }[] = [
+  { key: 'transactions', label: 'Sales, Orders & Payments', hint: 'Orders, KOTs, payments, cash-drawer sessions, journal vouchers — everything every report reads from.', defaultOn: true },
+  { key: 'reservations', label: 'Reservations', hint: 'All reservation records.', defaultOn: true },
+  { key: 'purchasing', label: 'Purchase Orders', hint: 'Supplier purchase orders and their lines.', defaultOn: true },
+  { key: 'inventory', label: 'Inventory movements', hint: 'Stock history (ingredient definitions are kept).', defaultOn: true },
+  { key: 'expenses', label: 'Expenses', hint: 'Recorded business expenses.', defaultOn: true },
+  { key: 'roastery', label: 'Roastery data', hint: 'Green bean batches, roast batches, cupping scores.', defaultOn: true },
+  { key: 'attendance', label: 'Staff attendance & shifts', hint: 'Clock-in/out history and fingerprint attendance logs.', defaultOn: true },
+  { key: 'auditLog', label: 'Activity / audit log', hint: 'The staff action history itself.', defaultOn: true },
+  { key: 'menu', label: 'Menu items & categories', hint: 'Deletes your entire menu, categories, variants & modifiers. You will need to re-enter it.', defaultOn: false, destructive: true },
+  { key: 'customers', label: 'Customers & loyalty', hint: 'Deletes customer profiles, loyalty points and credit ledgers.', defaultOn: false, destructive: true },
+];
+
 export default function SettingsPage() {
   const [form, setForm] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,16 +41,22 @@ export default function SettingsPage() {
   const [confirmText, setConfirmText] = useState('');
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
+  const [resetCats, setResetCats] = useState<Record<string, boolean>>(
+    Object.fromEntries(RESET_CATEGORIES.map((c) => [c.key, c.defaultOn])),
+  );
   // RestroX-style settings hub: left sub-nav, one section at a time.
-  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'prefs' | 'desktop' | 'about' | 'danger'>('details');
+  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'prefs' | 'desktop' | 'about' | 'discounts' | 'danger'>('details');
+
+  const selectedCats = Object.entries(resetCats).filter(([, v]) => v).map(([k]) => k);
+  const allSelected = RESET_CATEGORIES.every((c) => resetCats[c.key]);
 
   async function resetData() {
     setResetting(true);
     setResetMsg(null);
     try {
-      const r = await api.post<{ cleared: Record<string, number> }>('/settings/reset-data', {});
+      const r = await api.post<{ cleared: Record<string, number> }>('/settings/reset-data', { categories: selectedCats });
       const total = Object.values(r.cleared).reduce((a, b) => a + b, 0);
-      setResetMsg(`Done — cleared ${total} records. Your menu, staff, tables & settings were kept.`);
+      setResetMsg(`Done — cleared ${total} records across ${selectedCats.length} categor${selectedCats.length === 1 ? 'y' : 'ies'}. Staff & settings were kept.`);
       setResetOpen(false);
       setConfirmText('');
     } catch (e) {
@@ -111,6 +132,7 @@ export default function SettingsPage() {
         { id: 'tax', label: 'Tax & Charges' },
         { id: 'invoice', label: 'Invoice Setting' },
         { href: '/printing', label: 'KOT & Printer' },
+        { id: 'discounts', label: 'Discounts' },
         { id: 'ird', label: 'IRD Nepal (CBMS)' },
       ],
     },
@@ -295,6 +317,9 @@ export default function SettingsPage() {
       {/* ── IRD (CBMS Nepal) e-billing ── */}
       {section === 'ird' && form && <IrdCard settings={form} onSaved={setForm} />}
 
+      {/* ── Discount presets (POS discount modal) ── */}
+      {section === 'discounts' && <DiscountsCard />}
+
       {/* ── Preferences (dynamic runtime settings) ── */}
       {section === 'prefs' && (
       <div className="card space-y-5 p-6">
@@ -403,9 +428,9 @@ export default function SettingsPage() {
       <div className="rounded-xl border border-red-200 bg-red-50/50 p-6 dark:border-red-900/40 dark:bg-red-950/20">
         <h2 className="mb-1 text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
         <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-          <strong>Reset all data</strong> permanently deletes all orders, payments, KOTs, cash-drawer
-          sessions, reservations, stock movements and the audit log. Your menu, staff, tables,
-          suppliers and settings are kept. Use this once, before you start real trading.
+          <strong>Reset data</strong> permanently deletes whichever categories you choose below —
+          from a light "clear today's sales" to a full fresh start. Staff logins and settings are
+          <strong> always</strong> kept, so you can never lock yourself out.
         </p>
         {resetMsg && <p className="mb-3 text-xs font-medium text-slate-700 dark:text-slate-200">{resetMsg}</p>}
         <button
@@ -413,18 +438,46 @@ export default function SettingsPage() {
           onClick={() => { setResetMsg(null); setConfirmText(''); setResetOpen(true); }}
           className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:bg-slate-800 dark:text-red-400 dark:hover:bg-red-950/40"
         >
-          Reset all data…
+          Reset data…
         </button>
       </div>
       )}
 
-      <Modal open={resetOpen} title="Reset all data" onClose={() => setResetOpen(false)}>
+      <Modal open={resetOpen} title="Reset data" onClose={() => setResetOpen(false)}>
         <div className="space-y-4">
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            This <strong>permanently</strong> deletes all sales &amp; operational data (orders,
-            payments, cash sessions, reservations, stock movements, audit log). It <strong>cannot be
-            undone</strong>. Your menu, staff, tables and settings will be kept.
+            Choose what to clear. This <strong>permanently deletes</strong> the selected data and{' '}
+            <strong>cannot be undone</strong>. Staff logins, tables, suppliers and settings are always kept.
           </p>
+
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 dark:bg-slate-700/40 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={(e) => setResetCats(Object.fromEntries(RESET_CATEGORIES.map((c) => [c.key, e.target.checked])))}
+            />
+            Select everything — fresh start
+          </label>
+
+          <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-100 p-2 dark:border-slate-700">
+            {RESET_CATEGORIES.map((c) => (
+              <label key={c.key} className="flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={!!resetCats[c.key]}
+                  onChange={(e) => setResetCats({ ...resetCats, [c.key]: e.target.checked })}
+                />
+                <span>
+                  <span className={`block text-sm font-medium ${c.destructive ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                    {c.destructive && '⚠ '}{c.label}
+                  </span>
+                  <span className="block text-xs text-slate-400">{c.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
           <div>
             <label className="label">Type <span className="font-mono text-red-600">RESET</span> to confirm</label>
             <input className="input" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="RESET" autoFocus />
@@ -433,11 +486,11 @@ export default function SettingsPage() {
             <button type="button" onClick={() => setResetOpen(false)} className="btn-ghost">Cancel</button>
             <button
               type="button"
-              disabled={confirmText !== 'RESET' || resetting}
+              disabled={confirmText !== 'RESET' || resetting || selectedCats.length === 0}
               onClick={resetData}
               className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
             >
-              {resetting ? 'Resetting…' : 'Permanently reset'}
+              {resetting ? 'Resetting…' : `Permanently reset ${selectedCats.length ? `(${selectedCats.length})` : ''}`}
             </button>
           </div>
         </div>
@@ -507,6 +560,92 @@ function IrdCard({ settings, onSaved }: { settings: Settings; onSaved: (s: Setti
         <button className="btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save IRD settings'}</button>
         {note && <span className="text-xs font-medium text-slate-500">{note}</span>}
       </div>
+    </div>
+  );
+}
+
+// ── Discount presets — named, one-tap discounts for the POS discount modal ──
+function DiscountsCard() {
+  const [presets, setPresets] = useState<DiscountPreset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ name: '', type: 'PCT' as 'PCT' | 'RS', value: '' });
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    api.get<DiscountPreset[]>('/settings/discount-presets').then(setPresets).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+  useEffect(load, [load]);
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim() || (parseFloat(form.value) || 0) <= 0) return;
+    setSaving(true);
+    try {
+      const value = form.type === 'PCT' ? Math.round(parseFloat(form.value)) : Math.round(parseFloat(form.value) * 100);
+      await api.post('/settings/discount-presets', { name: form.name.trim(), type: form.type, value, sortOrder: presets.length });
+      setForm({ name: '', type: 'PCT', value: '' });
+      load();
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleActive(p: DiscountPreset) {
+    setPresets((prev) => prev.map((x) => (x.id === p.id ? { ...x, isActive: !x.isActive } : x)));
+    try { await api.patch(`/settings/discount-presets/${p.id}`, { isActive: !p.isActive }); }
+    catch (e) { notify((e as Error).message, 'error'); load(); }
+  }
+
+  async function remove(p: DiscountPreset) {
+    if (!(await confirmDialog(`Delete discount "${p.name}"?`, { danger: true, confirmLabel: 'Delete' }))) return;
+    try { await api.delete(`/settings/discount-presets/${p.id}`); load(); }
+    catch (e) { notify((e as Error).message, 'error'); }
+  }
+
+  return (
+    <div className="card mt-6 p-6">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700">Discounts</h2>
+      <p className="mb-4 text-xs text-slate-400">
+        Named discounts cashiers can apply with one tap from the POS discount modal (e.g. &quot;Staff 10%&quot;,
+        &quot;Regular Rs 100&quot;). Applying any discount — preset or custom — still needs a manager/admin sign-in.
+      </p>
+
+      {loading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : (
+        <div className="mb-4 divide-y divide-slate-100 dark:divide-slate-700">
+          {presets.map((p) => (
+            <div key={p.id} className="flex items-center justify-between py-2.5">
+              <div>
+                <span className={`font-medium ${p.isActive ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400 line-through'}`}>{p.name}</span>
+                <span className="ml-2 text-xs text-slate-400">{p.type === 'PCT' ? `${p.value}%` : formatMoney(p.value)}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={() => toggleActive(p)} className="text-xs text-slate-500 underline decoration-dotted">
+                  {p.isActive ? 'Deactivate' : 'Activate'}
+                </button>
+                <button onClick={() => remove(p)} className="text-xs text-red-500 underline decoration-dotted">Delete</button>
+              </div>
+            </div>
+          ))}
+          {presets.length === 0 && <p className="py-4 text-center text-sm text-slate-400">No named discounts yet.</p>}
+        </div>
+      )}
+
+      <form onSubmit={add} className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-700">
+        <div className="min-w-[10rem] flex-1"><label className="label">Name</label>
+          <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Staff discount" /></div>
+        <div><label className="label">Type</label>
+          <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'PCT' | 'RS' })}>
+            <option value="PCT">Percent (%)</option>
+            <option value="RS">Fixed (Rs)</option>
+          </select></div>
+        <div><label className="label">Value</label>
+          <input className="input w-24" type="number" min={0} value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} placeholder={form.type === 'PCT' ? '10' : '100'} /></div>
+        <button className="btn-primary" disabled={saving}>{saving ? 'Adding…' : '+ Add'}</button>
+      </form>
     </div>
   );
 }

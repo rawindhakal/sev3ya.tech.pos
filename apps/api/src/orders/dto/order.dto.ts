@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsIn,
   IsInt,
@@ -59,9 +60,18 @@ export class SaveCartDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => CartLineDto)
   items: CartLineDto[];
   @IsOptional() @IsInt() @Min(0) discountCents?: number;
+  // Which named preset (Settings → Discounts) or "Custom" produced discountCents.
+  @IsOptional() @IsString() discountLabel?: string;
+  // Carries forward a Complimentary mark set by POST :id/complimentary — a
+  // plain cart save can never SET this (only clear it), see service comment.
+  @IsOptional() @IsBoolean() isComplimentary?: boolean;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() waiterId?: string;
   @IsOptional() @IsInt() @Min(1) guestCount?: number;
+}
+
+export class ComplimentaryDto {
+  @IsOptional() @IsString() reason?: string;
 }
 
 export class PaymentLineDto {

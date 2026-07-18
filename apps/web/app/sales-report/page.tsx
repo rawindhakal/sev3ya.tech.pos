@@ -6,11 +6,15 @@ import { downloadCsv, toCsv } from '@/lib/csv';
 import { exportPdf } from '@/lib/pdf';
 import { adToBs, formatBsLong, fyRangeAd } from '@/lib/bs-date';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
-import type { Category, MenuItem, Settings } from '@/lib/types';
+import type { Category, MenuItem, Order, Settings } from '@/lib/types';
+import Modal from '@/components/Modal';
+import Receipt from '@/components/Receipt';
+import { billTemplateOf, getPrinterPrefs, silentPrintArea } from '@/lib/printing';
 
 // Filterable Sales Report: preset views (Detailed · By Item · By Category ·
-// By Payment · By Day · KOT · BOT), filters for date range / category / item /
-// payment method / order type, KPI strip, and CSV + PDF export.
+// By Payment · By Day · KOT · BOT · Cancelled Items), filters for date range /
+// category / item / payment method / order type, KPI strip, CSV + PDF export,
+// and a 👁 to preview the actual bill behind any row.
 
 interface Col { key: string; label: string; type: 'text' | 'money' | 'number' }
 interface Report { title: string; columns: Col[]; rows: Record<string, any>[]; kpis: Record<string, number> }
@@ -23,6 +27,7 @@ const PRESETS = [
   { id: 'day', label: 'By Day', groupBy: 'day', station: '' },
   { id: 'kot', label: 'KOT Report', groupBy: 'detail', station: 'KITCHEN' },
   { id: 'bot', label: 'BOT Report', groupBy: 'detail', station: 'BAR' },
+  { id: 'cancelled', label: 'Cancelled Items', groupBy: 'cancelled', station: '' },
 ] as const;
 
 const METHODS = ['CASH', 'FONEPAY', 'BANK', 'ESEWA', 'KHALTI', 'CARD', 'CREDIT', 'OFFLINE'];
@@ -40,31 +45,61 @@ export default function SalesReportPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [report, setReport] = useState<Report | null>(null);
-  const [restName, setRestName] = useState('s3vyaPOS');
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  const [billOrder, setBillOrder] = useState<Order | null>(null);
+  const [billLoading, setBillLoading] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
-    api.get<Settings>('/settings').then((s) => setRestName(s.restaurantName)).catch(() => {});
+    api.get<Settings>('/settings').then(setSettings).catch(() => {});
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const qs = new URLSearchParams({
-        from, to, groupBy: preset.groupBy,
-        ...(preset.station ? { station: preset.station } : {}),
-        ...(categoryId ? { categoryId } : {}), ...(itemId ? { itemId } : {}),
-        ...(method ? { method } : {}), ...(type ? { type } : {}),
-      });
-      setReport(await api.get<Report>(`/mis/sales-detail?${qs}`));
+      if (preset.id === 'cancelled') {
+        const qs = new URLSearchParams({ from, to });
+        setReport(await api.get<Report>(`/mis/cancelled-items?${qs}`));
+      } else {
+        const qs = new URLSearchParams({
+          from, to, groupBy: preset.groupBy,
+          ...(preset.station ? { station: preset.station } : {}),
+          ...(categoryId ? { categoryId } : {}), ...(itemId ? { itemId } : {}),
+          ...(method ? { method } : {}), ...(type ? { type } : {}),
+        });
+        setReport(await api.get<Report>(`/mis/sales-detail?${qs}`));
+      }
     } catch (e) { setErr((e as Error).message); } finally { setLoading(false); }
   }, [preset, from, to, categoryId, itemId, method, type]);
   useEffect(() => { load(); }, [load]);
+
+  async function viewBill(orderId: string) {
+    setBillLoading(orderId);
+    try {
+      setBillOrder(await api.get<Order>(`/orders/${orderId}`));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBillLoading(null);
+    }
+  }
+
+  // Reprint a settled bill straight from the report — same silent-print path
+  // the till uses, falling back to the browser print dialog.
+  async function reprintBill() {
+    if (!billOrder) return;
+    const prefs = getPrinterPrefs();
+    const tpl = billTemplateOf(settings);
+    if (await silentPrintArea({ printer: prefs.bill, widthMm: tpl.paperWidthMm, fontSize: tpl.fontSize })) return;
+    document.body.classList.add('print-receipt');
+    window.print();
+    document.body.classList.remove('print-receipt');
+  }
   // Columns change per preset — a stale sort/search would silently no-op.
   useEffect(() => { setSearch(''); setSort(null); }, [preset]);
 
@@ -89,6 +124,9 @@ export default function SalesReportPage() {
     }
     return rows;
   })();
+  // "detail"/"kot"/"bot"/"cancelled" rows carry an orderId (not shown as a
+  // column) — aggregated views (by item/category/etc.) don't map to one bill.
+  const hasBillLink = report?.rows.some((r) => r.orderId) ?? false;
 
   const activeFilters = [
     categoryId && `Category: ${categories.find((c) => c.id === categoryId)?.name}`,
@@ -110,7 +148,7 @@ export default function SalesReportPage() {
   }
   function pdf() {
     if (!report) return;
-    exportPdf({ title, subtitle, columns: report.columns, rows: visibleRows, restaurantName: restName });
+    exportPdf({ title, subtitle, columns: report.columns, rows: visibleRows, restaurantName: settings?.restaurantName ?? 's3vyaPOS' });
   }
 
   const sel = 'input w-auto min-w-[10rem]';
@@ -156,22 +194,26 @@ export default function SalesReportPage() {
           <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From date" />
           <span className="text-slate-400">→</span>
           <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} aria-label="To date" />
-          <select className={sel} value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setItemId(''); }} aria-label="Category filter">
-            <option value="">All categories</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select className={sel} value={itemId} onChange={(e) => setItemId(e.target.value)} aria-label="Item filter">
-            <option value="">All items</option>
-            {items.filter((i) => !categoryId || i.categoryId === categoryId).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </select>
-          <select className={sel} value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Payment method filter">
-            <option value="">All payments</option>
-            {METHODS.map((m) => <option key={m} value={m}>{PAYMENT_METHOD_LABEL[m as never] ?? m}</option>)}
-          </select>
-          <select className={sel} value={type} onChange={(e) => setType(e.target.value)} aria-label="Order type filter">
-            <option value="">All order types</option>
-            {TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-          </select>
+          {preset.id !== 'cancelled' && (
+            <>
+              <select className={sel} value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setItemId(''); }} aria-label="Category filter">
+                <option value="">All categories</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <select className={sel} value={itemId} onChange={(e) => setItemId(e.target.value)} aria-label="Item filter">
+                <option value="">All items</option>
+                {items.filter((i) => !categoryId || i.categoryId === categoryId).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </select>
+              <select className={sel} value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Payment method filter">
+                <option value="">All payments</option>
+                {METHODS.map((m) => <option key={m} value={m}>{PAYMENT_METHOD_LABEL[m as never] ?? m}</option>)}
+              </select>
+              <select className={sel} value={type} onChange={(e) => setType(e.target.value)} aria-label="Order type filter">
+                <option value="">All order types</option>
+                {TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+              </select>
+            </>
+          )}
           {activeFilters.length > 0 && (
             <button className="text-xs text-brand-600 underline decoration-dotted"
               onClick={() => { setCategoryId(''); setItemId(''); setMethod(''); setType(''); }}>
@@ -200,12 +242,16 @@ export default function SalesReportPage() {
           <>
             {/* KPI strip */}
             <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[
+              {(preset.id === 'cancelled' ? [
+                ['Cancelled lines', String(report.kpis.lines)],
+                ['Items cancelled', String(report.kpis.qty)],
+                ['Value cancelled', formatMoney(report.kpis.valueCents)],
+              ] : [
                 ['Net sales', formatMoney(report.kpis.grossCents)],
                 ['Invoices', String(report.kpis.invoices)],
                 ['Items sold', String(report.kpis.qty)],
                 ['Item discounts', formatMoney(report.kpis.discountCents)],
-              ].map(([l, v]) => (
+              ]).map(([l, v]) => (
                 <div key={l} className="card p-3">
                   <div className="truncate text-lg font-bold text-slate-900">{v}</div>
                   <div className="text-xs text-slate-500">{l}</div>
@@ -232,6 +278,7 @@ export default function SalesReportPage() {
                         </span>
                       </th>
                     ))}
+                    {hasBillLink && <th className={`${th} sticky top-0 z-[1] w-10 bg-white text-center dark:bg-slate-800`}>Bill</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -242,10 +289,25 @@ export default function SalesReportPage() {
                           {c.type === 'money' ? (r[c.key] ? formatMoney(Number(r[c.key])) : '—') : String(r[c.key] ?? '')}
                         </td>
                       ))}
+                      {hasBillLink && (
+                        <td className="p-2 text-center">
+                          {r.orderId && (
+                            <button
+                              onClick={() => viewBill(r.orderId)}
+                              disabled={billLoading === r.orderId}
+                              className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600 disabled:opacity-40 dark:hover:bg-slate-700"
+                              title="View bill"
+                              aria-label="View bill"
+                            >
+                              {billLoading === r.orderId ? '…' : '👁'}
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {visibleRows.length === 0 && !loading && (
-                    <tr><td colSpan={report.columns.length} className="p-10 text-center text-slate-400">{search ? 'No rows match your search.' : 'No sales match these filters.'}</td></tr>
+                    <tr><td colSpan={report.columns.length + (hasBillLink ? 1 : 0)} className="p-10 text-center text-slate-400">{search ? 'No rows match your search.' : 'No sales match these filters.'}</td></tr>
                   )}
                 </tbody>
                 {visibleRows.length > 1 && (
@@ -257,6 +319,7 @@ export default function SalesReportPage() {
                             : c.key === 'qty' ? visibleRows.reduce((s, r) => s + (Number(r.qty) || 0), 0) : ''}
                         </td>
                       ))}
+                      {hasBillLink && <td />}
                     </tr>
                   </tfoot>
                 )}
@@ -266,6 +329,18 @@ export default function SalesReportPage() {
         )}
         {loading && <p className="mt-4 text-sm text-slate-400">Loading…</p>}
       </div>
+
+      {/* Bill preview — the actual receipt behind a report row */}
+      <Modal open={!!billOrder} title={billOrder ? `Bill #${billOrder.number}` : ''} onClose={() => setBillOrder(null)}>
+        {billOrder && (
+          <div className="space-y-3">
+            <div className="receipt-preview mx-auto max-w-xs rounded-lg border border-slate-200 bg-white p-3 text-black dark:border-slate-700">
+              <Receipt order={billOrder} settings={settings} mode="BILL" docTitle={billOrder.status === 'PAID' ? 'TAX INVOICE' : undefined} />
+            </div>
+            <button onClick={reprintBill} className="btn-primary w-full">🖨 Reprint bill</button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

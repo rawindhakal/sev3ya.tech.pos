@@ -256,6 +256,11 @@ model Order {
   refundCents  Int       @default(0)
   refundedAt   DateTime?
 
+  // Discount provenance — which named preset (Settings → Discounts) or
+  // "Custom" was applied, and whether the whole bill was comped to zero.
+  discountLabel   String?
+  isComplimentary Boolean @default(false)
+
   // Lifecycle timestamps drive turnaround / guest-time metrics.
   seatedAt  DateTime?  // when the table became occupied for this order
   kotFiredAt DateTime? // when the KOT was first sent to the kitchen (KDS timer)
@@ -267,6 +272,7 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([tableId])
+  @@index([fiscalYear])
   @@map("orders")
 }
 
@@ -508,6 +514,7 @@ model OrderItem {
   // Item-level cancellation (prints a cancellation KOT + audited).
   cancelledAt  DateTime?
   cancelReason String?
+  cancelledBy  String? // approving manager/admin's name, for the cancelled-items report
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -591,6 +598,26 @@ model CafeSetting {
   updatedAt         DateTime @updatedAt
 
   @@map("cafe_settings")
+}
+
+// Named, reusable discounts (e.g. "Staff 10%", "Regular Rs 100") offered as
+// one-tap choices in the POS discount modal instead of typing a number.
+model DiscountPreset {
+  id        String       @id @default(cuid())
+  name      String
+  type      DiscountType @default(PCT)
+  value     Int          // percentage (whole number) or Rs amount in cents, per `type`
+  isActive  Boolean      @default(true)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("discount_presets")
+}
+
+enum DiscountType {
+  PCT
+  RS
 }
 
 // ─────────────────────────────────────────────────────────────

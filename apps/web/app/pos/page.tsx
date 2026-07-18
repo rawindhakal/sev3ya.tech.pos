@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api, formatMoney, dollarsToCents, setCurrencySymbol, tenantSlug, setTenantSlug } from '@/lib/api';
 import type {
   Category,
+  DiscountPreset,
   Employee,
   MenuItem,
   MenuItemVariant,
@@ -31,7 +32,7 @@ import { formatBsLong } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea, isDesktopShell } from '@/lib/printing';
 import { getStatus } from '@/lib/offline';
 import { playDing } from '@/lib/sound';
-import { notify } from '@/lib/dialog';
+import { notify, promptDialog } from '@/lib/dialog';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
 // an express settle path.
@@ -144,7 +145,11 @@ export default function PosPage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [discount, setDiscount] = useState('');
   const [discountMode, setDiscountMode] = useState<'rs' | 'pct'>('rs');
+  const [discountLabel, setDiscountLabel] = useState(''); // preset name, or 'Custom'
   const [discountApproved, setDiscountApproved] = useState(false); // manager override
+  const [discountModalOpen, setDiscountModalOpen] = useState(false);
+  const [discountPresets, setDiscountPresets] = useState<DiscountPreset[]>([]);
+  const [isComplimentary, setIsComplimentary] = useState(false);
   // Running (unsettled) orders — takeaway/delivery shown as temporary tables
   // in the POS until payment is settled.
   const [activeOrders, setActiveOrders] = useState<ActiveOrderCard[]>([]);
@@ -205,6 +210,7 @@ export default function PosPage() {
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
     api.get<Waiter[]>('/waiters').then(setWaiters).catch(() => {});
+    api.get<DiscountPreset[]>('/settings/discount-presets?active=1').then(setDiscountPresets).catch(() => {});
     const clock = setInterval(() => setNow(new Date()), 1000);
     setRestaurant(tenantSlug());
     // Restore a previous terminal session (still within its token lifetime).
@@ -360,6 +366,11 @@ export default function PosPage() {
       subtotal += Math.max(0, gross - (l.discountCents || 0));
       count += l.quantity;
     }
+    // A complimentary bill is simply "discount = the whole subtotal" — every
+    // downstream figure (service charge, tax, total) already falls to zero.
+    if (isComplimentary) {
+      return { count, subtotal, discountCents: subtotal, redeemCents: 0, redeemPoints: 0, serviceCharge: 0, tax: 0, total: 0 };
+    }
     const discountRaw = parseFloat(discount) || 0;
     const discountCents = Math.min(
       subtotal,
@@ -373,7 +384,7 @@ export default function PosPage() {
     const serviceCharge = Math.round(taxable * serviceChargeRate);
     const tax = Math.round((taxable + serviceCharge) * vatRate);
     return { count, subtotal, discountCents, redeemCents, redeemPoints, serviceCharge, tax, total: taxable + serviceCharge + tax };
-  }, [cart, vatRate, serviceChargeRate, discount, discountMode, redeemPts, pointsAvail]);
+  }, [cart, vatRate, serviceChargeRate, discount, discountMode, redeemPts, pointsAvail, isComplimentary]);
 
   const orderType: OrderType = mode === 'DELIVERY' ? 'DELIVERY' : mode === 'DINE_IN' ? 'DINE_IN' : 'TAKEAWAY';
 
@@ -428,6 +439,8 @@ export default function PosPage() {
       setIsQuick(quick);
       setCart([]);
       setDiscount('');
+      setDiscountLabel('');
+      setIsComplimentary(false);
     setDiscountApproved(false);
       setOverlay(null);
     } catch (e) {
@@ -445,6 +458,8 @@ export default function PosPage() {
     setGuestCount(o.guestCount);
     setDiscount(o.discountCents ? (o.discountCents / 100).toFixed(2) : '');
     setDiscountMode('rs');
+    setDiscountLabel(o.discountLabel && o.discountLabel !== 'Complimentary' ? o.discountLabel : '');
+    setIsComplimentary(!!o.isComplimentary);
     setIsQuick(false);
     setCart(orderToCart(o));
   }
@@ -681,6 +696,62 @@ export default function PosPage() {
     });
   }
 
+  function applyDiscountPreset(p: DiscountPreset) {
+    setDiscountMode(p.type === 'PCT' ? 'pct' : 'rs');
+    setDiscount(p.type === 'PCT' ? String(p.value) : (p.value / 100).toFixed(2));
+    setDiscountLabel(p.name);
+    setIsComplimentary(false);
+    setDiscountModalOpen(false);
+  }
+  function applyCustomDiscount() {
+    if ((parseFloat(discount) || 0) <= 0) return flash('Enter a discount amount first');
+    setDiscountLabel('Custom');
+    setIsComplimentary(false);
+    setDiscountModalOpen(false);
+  }
+  function clearDiscount() {
+    setDiscount('');
+    setDiscountLabel('');
+    setIsComplimentary(false);
+    setDiscountModalOpen(false);
+  }
+
+  // Comp the whole bill to Rs 0 — a distinctly audited action (not just a
+  // 100% discount), gated by its own permission-checked endpoint.
+  async function makeComplimentary() {
+    if (cart.length === 0) return flash('Add at least one item first');
+    const reason = await promptDialog('Reason for complimentary (optional):', '', { title: 'Mark bill complimentary' });
+    if (reason === null) return;
+    setMgrAuth({
+      title: 'Approve complimentary bill',
+      hint: `Mark this ${formatMoney(totals.subtotal)} bill complimentary (Rs 0 due) — needs a manager or admin sign-in.`,
+      permission: 'canDiscount',
+      onApproved: async ({ token }) => {
+        setBusy(true);
+        try {
+          const saved = await persistCart();
+          const res = await api.postAs<Order>(token, `/orders/${saved.id}/complimentary`, { reason: reason || undefined });
+          setOrder(res);
+          setCart(orderToCart(res));
+          setIsComplimentary(true);
+          setDiscountApproved(true);
+          setDiscountModalOpen(false);
+          flash('Bill marked complimentary');
+        } catch (e) {
+          notify((e as Error).message, 'error');
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  }
+  function removeComplimentary() {
+    setIsComplimentary(false);
+    setDiscount('');
+    setDiscountLabel('');
+    flash('Complimentary removed');
+  }
+
   function confirmPicker() {
     if (!picker) return;
     // A portion is required when the item has variants.
@@ -712,6 +783,8 @@ export default function PosPage() {
         notes: l.notes,
       })),
       discountCents: totals.discountCents + totals.redeemCents,
+      discountLabel: isComplimentary ? 'Complimentary' : discountLabel || undefined,
+      isComplimentary,
       waiterId: waiterId || undefined,
       guestCount,
     });
@@ -779,6 +852,8 @@ export default function PosPage() {
         notes: l.notes,
       })),
       discountCents: totals.discountCents + totals.redeemCents,
+      discountLabel: isComplimentary ? 'Complimentary' : discountLabel || undefined,
+      isComplimentary,
       waiterId: waiterId || undefined,
       guestCount,
     };
@@ -912,6 +987,8 @@ export default function PosPage() {
     setTable(null);
     setCart([]);
     setDiscount('');
+    setDiscountLabel('');
+    setIsComplimentary(false);
     setDiscountApproved(false);
     setRedeemPts('');
     setCustInfo(null);
@@ -932,6 +1009,8 @@ export default function PosPage() {
     setTable(null);
     setCart([]);
     setDiscount('');
+    setDiscountLabel('');
+    setIsComplimentary(false);
     setDiscountApproved(false);
     setRedeemPts('');
     setCustInfo(null);
@@ -1421,25 +1500,13 @@ export default function PosPage() {
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between text-[var(--pos-text-50)]"><span>Sub-Total ({totals.count} items)</span><span>{formatMoney(totals.subtotal)}</span></div>
                 <div className="flex items-center justify-between text-[var(--pos-text-50)]">
-                  <span className="flex items-center gap-1">
-                    Discount
-                    <button
-                      disabled={!canDiscountNow}
-                      onClick={() => setDiscountMode((m) => (m === 'rs' ? 'pct' : 'rs'))}
-                      className="rounded bg-[var(--pos-surface-strong)] px-1.5 text-[10px] text-[var(--pos-text-70)] disabled:opacity-40"
-                    >
-                      {discountMode === 'rs' ? 'Rs' : '%'}
-                    </button>
-                    {!canDiscountNow && (
-                      <button onClick={requestDiscountApproval} className="rounded bg-[#F39C12]/20 px-1.5 text-[10px] text-[#F39C12]">🔒 Approve</button>
-                    )}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <input type="number" min={0} value={discount} disabled={!canDiscountNow} onChange={(e) => setDiscount(e.target.value)} placeholder="0" title={canDiscountNow ? '' : 'Needs manager approval'} className="w-16 rounded border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-0.5 text-right text-sm text-[var(--pos-text)] disabled:opacity-40" />
-                    {discountMode === 'pct' && totals.discountCents > 0 && <span className="text-[10px] text-[var(--pos-text-40)]">−{formatMoney(totals.discountCents)}</span>}
-                  </div>
+                  <button onClick={() => setDiscountModalOpen(true)} className="flex items-center gap-1 hover:text-[var(--pos-text-70)]">
+                    {isComplimentary ? '🎁 Complimentary' : discountLabel ? `Discount · ${discountLabel}` : 'Discount'}
+                    <span className="rounded bg-[var(--pos-surface-strong)] px-1.5 text-[10px] text-[var(--pos-text-70)]">Edit</span>
+                  </button>
+                  {totals.discountCents > 0 && <span>−{formatMoney(totals.discountCents)}</span>}
                 </div>
-                {pointsAvail > 0 && (
+                {pointsAvail > 0 && !isComplimentary && (
                   <div className="flex items-center justify-between text-amber-300/80">
                     <span>⭐ Redeem pts <span className="text-[var(--pos-text-30)]">(of {pointsAvail})</span></span>
                     <input type="number" min={0} max={pointsAvail} value={redeemPts} onChange={(e) => setRedeemPts(e.target.value)} placeholder="0" className="w-20 rounded border border-[var(--pos-line)] bg-[var(--pos-surface)] px-2 py-0.5 text-right text-sm text-[var(--pos-text)]" />
@@ -1469,6 +1536,76 @@ export default function PosPage() {
           </aside>
         </div>
       )}
+
+      {/* Discount modal — presets from Settings → Discounts, custom Rs/%, and
+          Complimentary (comps the whole bill, separately audited). */}
+      <Modal open={discountModalOpen && !mgrAuth} title="Discount" onClose={() => setDiscountModalOpen(false)}>
+        <div className="space-y-4">
+          {!canDiscountNow ? (
+            <div className="rounded-lg bg-amber-50 p-3 text-center dark:bg-amber-950/30">
+              <p className="mb-2 text-sm text-amber-700 dark:text-amber-400">Discounts need a manager or admin sign-in.</p>
+              <button onClick={requestDiscountApproval} className="btn-primary">🔒 Approve discount</button>
+            </div>
+          ) : (
+            <>
+              {isComplimentary ? (
+                <div className="rounded-lg bg-emerald-50 p-3 text-center dark:bg-emerald-950/30">
+                  <p className="mb-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">🎁 This bill is marked complimentary — Rs 0 due.</p>
+                  <button onClick={removeComplimentary} className="btn-ghost text-sm">Remove complimentary</button>
+                </div>
+              ) : (
+                <>
+                  {discountPresets.length > 0 && (
+                    <div>
+                      <label className="label">Named discounts</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {discountPresets.map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => applyDiscountPreset(p)}
+                            className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                              discountLabel === p.name
+                                ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10'
+                                : 'border-[var(--pos-line)] text-[var(--pos-text-70)] hover:bg-[var(--pos-surface)]'
+                            }`}
+                          >
+                            {p.name} <span className="text-xs opacity-60">({p.type === 'PCT' ? `${p.value}%` : formatMoney(p.value)})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label className="label">Custom</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setDiscountMode((m) => (m === 'rs' ? 'pct' : 'rs'))}
+                        className="rounded-lg bg-[var(--pos-surface-strong)] px-2.5 py-2 text-xs font-semibold text-[var(--pos-text-70)]"
+                      >
+                        {discountMode === 'rs' ? 'Rs' : '%'}
+                      </button>
+                      <input
+                        type="number" min={0} value={discount}
+                        onChange={(e) => { setDiscount(e.target.value); if (discountLabel && discountLabel !== 'Custom') setDiscountLabel(''); }}
+                        placeholder="0" className="input flex-1"
+                      />
+                      <button onClick={applyCustomDiscount} className="btn-primary shrink-0">Apply</button>
+                    </div>
+                  </div>
+                  {(discount || discountLabel) && (
+                    <button onClick={clearDiscount} className="text-xs text-red-500 underline decoration-dotted">Clear discount</button>
+                  )}
+                  <div className="border-t border-[var(--pos-line)] pt-3">
+                    <button onClick={makeComplimentary} className="w-full rounded-lg border border-dashed border-[var(--pos-line)] py-2 text-sm font-medium text-[var(--pos-text-70)] hover:bg-[var(--pos-surface)]">
+                      🎁 Mark whole bill complimentary (Rs 0)
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </Modal>
 
       {/* Customer capture overlay */}
       <Modal open={overlay === 'customer'} title={mode === 'DELIVERY' ? 'Delivery details' : 'Customer details'} onClose={() => { setOverlay(null); setMode(null); }}>

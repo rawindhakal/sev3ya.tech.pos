@@ -345,7 +345,7 @@ export class MisService {
         menuItem: { select: { category: { select: { id: true, name: true } } } },
         order: {
           select: {
-            number: true, paidAt: true, type: true, customerName: true,
+            id: true, number: true, paidAt: true, type: true, customerName: true,
             payments: { select: { method: true, amountCents: true } },
           },
         },
@@ -358,6 +358,7 @@ export class MisService {
       const modCents = mods.reduce((s, m) => s + (m?.priceCents ?? 0), 0);
       const gross = (l.unitPriceCents + modCents) * l.quantity - (l.discountCents ?? 0);
       return {
+        orderId: l.order.id,
         invoice: l.order.number,
         at: l.order.paidAt!,
         item: l.nameSnapshot,
@@ -425,6 +426,58 @@ export class MisService {
       columns: [text('name', label), num('qty', 'Qty'), num('invoices', 'Invoices'), money('grossCents', 'Amount'), num('sharePct', 'Share %')],
       rows,
       kpis,
+    };
+  }
+
+  // Every cancelled order-item line, whoever approved it and why — the audit
+  // trail the KOT/BOT reports can't show since those only ever list live items.
+  async cancelledItems(q: { from?: string; to?: string; station?: string }): Promise<MisReport & { kpis: Record<string, number> }> {
+    const { start, end } = range(q.from, q.to);
+    const lines = await this.prisma.orderItem.findMany({
+      where: {
+        cancelledAt: { gte: start, lte: end },
+        ...(q.station ? { station: q.station as any } : {}),
+      },
+      include: {
+        menuItem: { select: { category: { select: { name: true } } } },
+        order: { select: { id: true, number: true, type: true, status: true } },
+      },
+      orderBy: { cancelledAt: 'desc' },
+    });
+    const money = (k: string, l: string) => ({ key: k, label: l, type: 'money' as const });
+    const text = (k: string, l: string) => ({ key: k, label: l, type: 'text' as const });
+    const num = (k: string, l: string) => ({ key: k, label: l, type: 'number' as const });
+    const rows = lines.map((l) => {
+      const mods = Array.isArray(l.modifiers) ? (l.modifiers as any[]) : [];
+      const modCents = mods.reduce((s: number, m: any) => s + (m?.priceCents ?? 0), 0);
+      return {
+        orderId: l.order.id,
+        dateBs: formatBs(l.cancelledAt!),
+        invoice: `#${l.order.number}`,
+        item: l.nameSnapshot,
+        category: l.menuItem?.category?.name ?? 'Open item',
+        station: l.station,
+        qty: l.quantity,
+        valueCents: (l.unitPriceCents + modCents) * l.quantity,
+        reason: l.cancelReason ?? '',
+        cancelledBy: l.cancelledBy ?? '—',
+        orderStatus: l.order.status,
+      };
+    });
+    return {
+      title: 'Cancelled Items',
+      columns: [
+        text('dateBs', 'Date (BS)'), text('invoice', 'Invoice'), text('item', 'Item'),
+        text('category', 'Category'), text('station', 'Station'), num('qty', 'Qty'),
+        money('valueCents', 'Value'), text('reason', 'Reason'), text('cancelledBy', 'Cancelled by'),
+        text('orderStatus', 'Order status'),
+      ],
+      rows,
+      kpis: {
+        lines: rows.length,
+        qty: rows.reduce((s, r) => s + r.qty, 0),
+        valueCents: rows.reduce((s, r) => s + r.valueCents, 0),
+      },
     };
   }
 

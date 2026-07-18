@@ -68,44 +68,100 @@ export class SettingsService {
     return { vatRate: s.vatRate, serviceChargeRate: s.serviceChargeRate, pricesIncludeVat: s.pricesIncludeVat };
   }
 
-  // Danger zone: wipe all sales / operational data while KEEPING configuration
-  // (menu, staff, tables, suppliers, settings). For starting real trading with a
-  // clean slate. Deletes children before parents to satisfy FK constraints.
-  async resetData(actor?: { sub?: string; name?: string }) {
+  // Danger zone: wipe SELECTED sales / operational data categories while
+  // ALWAYS keeping staff and settings (so the admin who ran this can still
+  // sign in). Deletes children before parents to satisfy FK constraints.
+  // `categories` — any of: transactions, reservations, purchasing, inventory,
+  // menu, customers, expenses, roastery, attendance, auditLog.
+  static readonly RESET_CATEGORIES = [
+    'transactions', 'reservations', 'purchasing', 'inventory',
+    'menu', 'customers', 'expenses', 'roastery', 'attendance', 'auditLog',
+  ] as const;
+
+  async resetData(categories: string[], actor?: { sub?: string; name?: string }) {
+    const want = new Set(categories.length ? categories : SettingsService.RESET_CATEGORIES);
     const cleared: Record<string, number> = {};
     await this.prisma.$transaction(
       async (tx) => {
-        cleared.payments = (await tx.payment.deleteMany()).count;
-        cleared.orderItems = (await tx.orderItem.deleteMany()).count;
-        cleared.cashMovements = (await tx.cashMovement.deleteMany()).count;
-        cleared.orders = (await tx.order.deleteMany()).count;
-        cleared.cashDrawerSessions = (await tx.cashDrawerSession.deleteMany()).count;
-        cleared.reservations = (await tx.reservation.deleteMany()).count;
-        cleared.shifts = (await tx.shift.deleteMany()).count;
-        cleared.stockMovements = (await tx.stockMovement.deleteMany()).count;
-        cleared.purchaseOrderLines = (await tx.purchaseOrderLine.deleteMany()).count;
-        cleared.purchaseOrders = (await tx.purchaseOrder.deleteMany()).count;
-        cleared.cuppingScores = (await tx.cuppingScore.deleteMany()).count;
-        cleared.roastBatches = (await tx.roastBatch.deleteMany()).count;
-        cleared.greenBeanBatches = (await tx.greenBeanBatch.deleteMany()).count;
-        cleared.expenses = (await tx.expense.deleteMany()).count;
-        cleared.auditLogs = (await tx.auditLog.deleteMany()).count;
-        cleared.idempotencyKeys = (await tx.idempotencyKey.deleteMany()).count;
-        // Free every table so the floor starts clean.
-        await tx.restaurantTable.updateMany({ data: { status: 'AVAILABLE' } });
+        if (want.has('transactions')) {
+          cleared.payments = (await tx.payment.deleteMany()).count;
+          cleared.orderItems = (await tx.orderItem.deleteMany()).count;
+          cleared.cashMovements = (await tx.cashMovement.deleteMany()).count;
+          cleared.orders = (await tx.order.deleteMany()).count;
+          cleared.cashDrawerSessions = (await tx.cashDrawerSession.deleteMany()).count;
+          cleared.idempotencyKeys = (await tx.idempotencyKey.deleteMany()).count;
+          cleared.journalLines = (await tx.journalLine.deleteMany()).count;
+          cleared.journalEntries = (await tx.journalEntry.deleteMany()).count;
+          // Free every table so the floor starts clean.
+          await tx.restaurantTable.updateMany({ data: { status: 'AVAILABLE' } });
+        }
+        if (want.has('reservations')) {
+          cleared.reservations = (await tx.reservation.deleteMany()).count;
+        }
+        if (want.has('purchasing')) {
+          cleared.purchaseOrderLines = (await tx.purchaseOrderLine.deleteMany()).count;
+          cleared.purchaseOrders = (await tx.purchaseOrder.deleteMany()).count;
+        }
+        if (want.has('inventory')) {
+          cleared.stockMovements = (await tx.stockMovement.deleteMany()).count;
+        }
+        if (want.has('menu')) {
+          cleared.recipeItems = (await tx.recipeItem.deleteMany()).count;
+          cleared.menuItemVariants = (await tx.menuItemVariant.deleteMany()).count;
+          cleared.modifiers = (await tx.modifier.deleteMany()).count;
+          cleared.modifierGroups = (await tx.modifierGroup.deleteMany()).count;
+          cleared.menuItems = (await tx.menuItem.deleteMany()).count;
+          cleared.categories = (await tx.category.deleteMany()).count;
+        }
+        if (want.has('customers')) {
+          cleared.creditLedgerEntries = (await tx.creditLedgerEntry.deleteMany()).count;
+          cleared.customers = (await tx.customer.deleteMany()).count;
+        }
+        if (want.has('expenses')) {
+          cleared.expenses = (await tx.expense.deleteMany()).count;
+        }
+        if (want.has('roastery')) {
+          cleared.cuppingScores = (await tx.cuppingScore.deleteMany()).count;
+          cleared.roastBatches = (await tx.roastBatch.deleteMany()).count;
+          cleared.greenBeanBatches = (await tx.greenBeanBatch.deleteMany()).count;
+        }
+        if (want.has('attendance')) {
+          cleared.attendanceLogs = (await tx.attendanceLog.deleteMany()).count;
+          cleared.shifts = (await tx.shift.deleteMany()).count;
+        }
+        if (want.has('auditLog')) {
+          cleared.auditLogs = (await tx.auditLog.deleteMany()).count;
+        }
       },
       { timeout: 30000 },
     );
-    // Record the reset itself (audit was just cleared, so this is the first entry).
+    // Record the reset itself (may or may not have just cleared the log).
     await this.prisma.auditLog.create({
       data: {
         employeeId: actor?.sub,
         employeeName: actor?.name ?? 'system',
         action: 'RESET_DATA',
-        detail: `Cleared sales data: ${JSON.stringify(cleared)}`,
+        detail: `Cleared [${[...want].join(', ')}]: ${JSON.stringify(cleared)}`,
       },
     });
-    return { ok: true, cleared };
+    return { ok: true, cleared, categories: [...want] };
+  }
+
+  // ── Discount presets (Settings → Discounts → POS discount modal) ──
+  discountPresets(activeOnly = false) {
+    return this.prisma.discountPreset.findMany({
+      where: activeOnly ? { isActive: true } : undefined,
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+  createDiscountPreset(data: { name: string; type: 'PCT' | 'RS'; value: number; sortOrder?: number }) {
+    return this.prisma.discountPreset.create({ data });
+  }
+  updateDiscountPreset(id: string, data: { name?: string; type?: 'PCT' | 'RS'; value?: number; isActive?: boolean; sortOrder?: number }) {
+    return this.prisma.discountPreset.update({ where: { id }, data });
+  }
+  deleteDiscountPreset(id: string) {
+    return this.prisma.discountPreset.delete({ where: { id } });
   }
 
   async update(data: {

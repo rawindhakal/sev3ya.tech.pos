@@ -260,6 +260,11 @@ export class OrdersService {
           waiterId: dto.waiterId,
           guestCount: dto.guestCount,
           discountCents: dto.discountCents ?? 0,
+          discountLabel: dto.discountCents ? dto.discountLabel ?? null : null,
+          // A plain save can only CARRY FORWARD or CLEAR the comp mark set by
+          // the permission-gated POST :id/complimentary — it can never flip
+          // false → true here, closing off that bypass of the guard.
+          isComplimentary: existing.isComplimentary && !!dto.isComplimentary,
           subtotalCents: totals.subtotalCents,
           serviceChargeCents: totals.serviceChargeCents,
           taxCents: totals.taxCents,
@@ -268,6 +273,39 @@ export class OrdersService {
       });
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
+  }
+
+  // Mark the whole bill complimentary (comp'd to Rs 0). A dedicated,
+  // permission-gated endpoint (unlike the general discount field, which the
+  // POS only soft-gates client-side) since this zeroes out the entire order.
+  async markComplimentary(id: string, reason: string | undefined, actor?: TokenPayload) {
+    if (!actor?.canDiscount)
+      throw new ForbiddenException('Marking a bill complimentary requires the "canDiscount" permission');
+    const order = await this.findOne(id);
+    if (order.status === 'PAID') throw new BadRequestException('Order is already paid');
+    if (order.items.filter((i) => !i.cancelledAt).length === 0)
+      throw new BadRequestException('Cannot comp an empty order');
+    const rates = await this.settings.getRates();
+    const items = order.items.filter((i) => !i.cancelledAt);
+    // Discount the full subtotal so tax/service/total all fall to zero.
+    const gross = computeTotals(items, rates).subtotalCents;
+    const label = reason?.trim() ? `Complimentary — ${reason.trim()}` : 'Complimentary';
+    const totals = computeTotals(items, { ...rates, discountCents: gross });
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: {
+        discountCents: gross,
+        discountLabel: label,
+        isComplimentary: true,
+        subtotalCents: totals.subtotalCents,
+        serviceChargeCents: totals.serviceChargeCents,
+        taxCents: totals.taxCents,
+        totalCents: totals.totalCents,
+      },
+      include: orderInclude,
+    });
+    await this.audit.log(actor ?? null, 'COMPLIMENTARY', `Order #${order.number} marked complimentary${reason ? ` — ${reason.trim()}` : ''}`);
+    return updated;
   }
 
   // Cancel a single order item (prints a cancellation KOT if already fired).
@@ -281,6 +319,11 @@ export class OrdersService {
     const qty = Math.min(Math.max(1, quantity ?? item.quantity), item.quantity);
     const partial = qty < item.quantity;
     const wasFired = item.kotStatus !== 'PENDING';
+    // A fired item has already reached the kitchen/bar — cancelling it needs
+    // the same void permission as cancelling a whole order (matches cancel()
+    // below). Unfired lines are just a draft edit, no approval needed.
+    if (wasFired && !actor?.canVoid)
+      throw new ForbiddenException('Cancelling an item already sent to the kitchen requires the "canVoid" permission');
     const updated = await this.prisma.$transaction(async (tx) => {
       if (partial) {
         await tx.orderItem.update({ where: { id: itemId }, data: { quantity: item.quantity - qty } });
@@ -298,12 +341,13 @@ export class OrdersService {
             kotPrintedAt: item.kotPrintedAt,
             cancelledAt: new Date(),
             cancelReason: reason,
+            cancelledBy: actor?.name,
           },
         });
       } else {
         await tx.orderItem.update({
           where: { id: itemId },
-          data: { cancelledAt: new Date(), cancelReason: reason },
+          data: { cancelledAt: new Date(), cancelReason: reason, cancelledBy: actor?.name },
         });
       }
       await this.recompute(tx, orderId);

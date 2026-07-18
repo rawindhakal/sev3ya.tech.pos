@@ -128,6 +128,12 @@ body {
   #print-area {
     display: none;
   }
+  /* Bill-preview modals (e.g. Sales Reports 👁) want the same receipt markup
+     visible on screen, not just at print time. */
+  .receipt-preview #print-area {
+    display: block;
+    font-family: ui-monospace, monospace;
+  }
 }
 @media print {
   body.print-receipt * {
