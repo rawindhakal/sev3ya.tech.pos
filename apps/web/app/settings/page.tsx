@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import type { Features, Settings } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { APP_VERSION, CHANGELOG } from '@/lib/changelog';
+import { notify } from '@/lib/dialog';
 
 // UI feature key → backend column.
 const FEATURES: { key: keyof Features; col: string; label: string }[] = [
@@ -68,7 +69,7 @@ export default function SettingsPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -81,7 +82,7 @@ export default function SettingsPage() {
     try {
       await api.patch('/settings', { [col]: next });
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
       setForm({ ...form, features: { ...form.features, [key]: !next } });
     }
   }
@@ -233,7 +234,7 @@ export default function SettingsPage() {
               onClick={async () => {
                 const next = !form.pricesIncludeVat;
                 setForm({ ...form, pricesIncludeVat: next });
-                try { await api.patch('/settings', { pricesIncludeVat: next }); } catch (err) { alert((err as Error).message); setForm({ ...form, pricesIncludeVat: !next }); }
+                try { await api.patch('/settings', { pricesIncludeVat: next }); } catch (err) { notify((err as Error).message, 'error'); setForm({ ...form, pricesIncludeVat: !next }); }
               }}
               className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm hover:bg-slate-50"
             >
@@ -325,7 +326,7 @@ export default function SettingsPage() {
               });
               setForm(updated);
               setSaved(true); setTimeout(() => setSaved(false), 2500);
-            } catch (e) { alert((e as Error).message); }
+            } catch (e) { notify((e as Error).message, 'error'); }
           }}
         >Save preferences</button>
         {saved && <span className="ml-2 text-sm text-emerald-600">✓ Saved</span>}

@@ -14,20 +14,18 @@ export class AnalyticsService {
     d.setHours(0, 0, 0, 0);
     return d;
   }
-  private startOfMonth() {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  }
   private daysAgo(n: number) {
     const d = this.startOfToday();
     d.setDate(d.getDate() - n);
     return d;
   }
 
-  async dashboard() {
-    const todayStart = this.startOfToday();
-    const monthStart = this.startOfMonth();
-    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1);
+  // Dashboard's quick date filter (Today/Yesterday/This week/This month/
+  // custom range) — from/to are YYYY-MM-DD, both inclusive. Defaults to just
+  // today, matching the page's original fixed behavior.
+  async dashboard(from?: string, to?: string) {
+    const rangeStart = from ? new Date(`${from}T00:00:00`) : this.startOfToday();
+    const rangeEnd = to ? new Date(`${to}T23:59:59.999`) : new Date(rangeStart.getTime() + 864e5 - 1);
     const window30 = this.daysAgo(29);
 
     const [
@@ -44,44 +42,45 @@ export class AnalyticsService {
       waiterOverview,
       recentOrders,
     ] = await Promise.all([
-      // Today's order count (excluding cancelled).
+      // Order count in the selected range (excluding cancelled).
       this.prisma.order.count({
-        where: { createdAt: { gte: todayStart }, status: { not: 'CANCELLED' } },
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, status: { not: 'CANCELLED' } },
       }),
-      // Today's customers (covers).
+      // Customers (covers) in the selected range.
       this.prisma.order.aggregate({
         _sum: { guestCount: true },
-        where: { createdAt: { gte: todayStart }, status: { not: 'CANCELLED' } },
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, status: { not: 'CANCELLED' } },
       }),
-      // Today's earnings (paid).
+      // Earnings (paid) in the selected range.
       this.prisma.order.aggregate({
         _sum: { totalCents: true },
         _count: true,
-        where: { status: 'PAID', paidAt: { gte: todayStart } },
+        where: { status: 'PAID', paidAt: { gte: rangeStart, lte: rangeEnd } },
       }),
-      // Last-30-day paid revenue → average daily earning.
+      // Last-30-day paid revenue → average daily earning (rolling context stat,
+      // independent of the selected range).
       this.prisma.order.aggregate({
         _sum: { totalCents: true },
         where: { status: 'PAID', paidAt: { gte: window30 } },
       }),
-      // Daily sales for the current month (line graph).
+      // Daily sales across the selected range (line graph).
       this.prisma.$queryRaw<{ day: Date; cents: bigint; orders: bigint }[]>(
         Prisma.sql`
           SELECT date_trunc('day', "paidAt") AS day,
                  SUM("totalCents") AS cents,
                  COUNT(*) AS orders
           FROM orders
-          WHERE status = 'PAID' AND "paidAt" >= ${monthStart} AND "paidAt" < ${monthEnd}
+          WHERE status = 'PAID' AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd}
           GROUP BY 1 ORDER BY 1`,
       ),
-      // Amount received by payment method (today).
+      // Amount received by payment method in the selected range.
       this.prisma.payment.groupBy({
         by: ['method'],
         _sum: { amountCents: true },
         _count: true,
-        where: { createdAt: { gte: todayStart } },
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
       }),
-      // Top selling items (this month).
+      // Top selling items in the selected range.
       this.prisma.$queryRaw<{ name: string; qty: bigint; revenue: bigint }[]>(
         Prisma.sql`
           SELECT oi."nameSnapshot" AS name,
@@ -89,11 +88,11 @@ export class AnalyticsService {
                  SUM(oi."unitPriceCents" * oi.quantity) AS revenue
           FROM order_items oi
           JOIN orders o ON o.id = oi."orderId"
-          WHERE o.status = 'PAID' AND o."paidAt" >= ${monthStart}
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd}
           GROUP BY oi."nameSnapshot"
           ORDER BY qty DESC LIMIT 8`,
       ),
-      // Top selling tables (this month).
+      // Top selling tables in the selected range.
       this.prisma.$queryRaw<{ name: string; orders: bigint; revenue: bigint }[]>(
         Prisma.sql`
           SELECT t.name AS name,
@@ -101,28 +100,28 @@ export class AnalyticsService {
                  SUM(o."totalCents") AS revenue
           FROM orders o
           JOIN restaurant_tables t ON t.id = o."tableId"
-          WHERE o.status = 'PAID' AND o."paidAt" >= ${monthStart}
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd}
           GROUP BY t.name
           ORDER BY revenue DESC LIMIT 6`,
       ),
-      // Average guest time on table, in seconds (this month, dine-in).
+      // Average guest time on table, in seconds, in the selected range (dine-in).
       this.prisma.$queryRaw<{ avg_seconds: number | null }[]>(
         Prisma.sql`
           SELECT AVG(EXTRACT(EPOCH FROM ("paidAt" - "seatedAt"))) AS avg_seconds
           FROM orders
           WHERE status = 'PAID' AND type = 'DINE_IN'
             AND "seatedAt" IS NOT NULL AND "paidAt" IS NOT NULL
-            AND "paidAt" >= ${monthStart}`,
+            AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd}`,
       ),
-      // Turnaround: dine-in paid orders per table used today.
+      // Turnaround: dine-in paid orders per table used, in the selected range.
       this.prisma.$queryRaw<{ orders: bigint; tables: bigint }[]>(
         Prisma.sql`
           SELECT COUNT(*) AS orders, COUNT(DISTINCT "tableId") AS tables
           FROM orders
           WHERE status = 'PAID' AND type = 'DINE_IN'
-            AND "tableId" IS NOT NULL AND "paidAt" >= ${todayStart}`,
+            AND "tableId" IS NOT NULL AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd}`,
       ),
-      // Waiter overview (this month).
+      // Waiter overview in the selected range.
       this.prisma.$queryRaw<
         { name: string; orders: bigint; revenue: bigint; guests: bigint }[]
       >(
@@ -133,13 +132,13 @@ export class AnalyticsService {
                  SUM(o."guestCount") AS guests
           FROM orders o
           JOIN waiters w ON w.id = o."waiterId"
-          WHERE o.status = 'PAID' AND o."paidAt" >= ${monthStart}
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd}
           GROUP BY w.name
           ORDER BY revenue DESC`,
       ),
-      // Recent orders today.
+      // Recent orders in the selected range.
       this.prisma.order.findMany({
-        where: { createdAt: { gte: todayStart } },
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
         orderBy: { createdAt: 'desc' },
         take: 10,
         include: {

@@ -5,6 +5,7 @@ import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { Customer, CreditLedgerEntry, PaymentMethod } from '@/lib/types';
 import Modal from '@/components/Modal';
 import ManagerAuth from '@/components/ManagerAuth';
+import { confirmDialog } from '@/lib/dialog';
 
 const SETTLE_METHODS: PaymentMethod[] = ['CASH', 'FONEPAY', 'BANK', 'ESEWA', 'KHALTI', 'CARD'];
 
@@ -105,7 +106,7 @@ export default function CustomersPage() {
     setDetail(await api.get<Customer>(`/customers/${c.id}`));
   }
   async function gdprDelete(c: Customer) {
-    if (!confirm(`GDPR delete ${c.name}? This removes their profile and unlinks orders.`)) return;
+    if (!(await confirmDialog(`GDPR delete ${c.name}? This removes their profile and unlinks orders.`, { danger: true, confirmLabel: 'Delete' }))) return;
     await api.delete(`/customers/${c.id}`);
     setDetail(null);
     load();

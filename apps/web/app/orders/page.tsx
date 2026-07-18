@@ -6,6 +6,8 @@ import { api, formatMoney } from '@/lib/api';
 import type { Order, PaymentMethod } from '@/lib/types';
 import Modal from '@/components/Modal';
 import PaymentPanel from '@/components/PaymentPanel';
+import ManagerAuth from '@/components/ManagerAuth';
+import { notify } from '@/lib/dialog';
 
 const STATUS_BADGE: Record<string, string> = {
   OPEN: 'bg-slate-100 text-slate-600',
@@ -25,6 +27,9 @@ export default function OrdersPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const [payFor, setPayFor] = useState<Order | null>(null);
+  const [voidReq, setVoidReq] = useState<{ order: Order; reason: string } | null>(null);
+  const [refundReq, setRefundReq] = useState<{ order: Order; reason: string } | null>(null);
+  const [mgrAuth, setMgrAuth] = useState<{ title: string; hint: string; onApproved: (token: string) => void } | null>(null);
 
   async function load() {
     try {
@@ -50,7 +55,7 @@ export default function OrdersPage() {
       await api.post(`/orders/${id}/${action}`, {});
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(null);
     }
@@ -64,55 +69,44 @@ export default function OrdersPage() {
       setPayFor(null);
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(null);
     }
   }
 
-  // Void/refund require a manager identity with the canVoid permission. If no
-  // one is signed in on this back-office device, prompt for a PIN once.
-  async function ensureAuth(): Promise<boolean> {
-    if (localStorage.getItem('cakezake-token')) return true;
-    const pin = prompt('Manager PIN required to authorise:');
-    if (!pin) return false;
-    try {
-      const e = await api.post<{ token?: string }>('/employees/login', { pin });
-      if (e.token) localStorage.setItem('cakezake-token', e.token);
-      return true;
-    } catch {
-      alert('Invalid PIN');
-      return false;
-    }
+  // Void/refund: reason modal, then a manager/admin sign-in approves it —
+  // same in-app pattern as the POS terminal, no browser prompts.
+  function voidOrder(o: Order) {
+    setVoidReq({ order: o, reason: '' });
+  }
+  function refundOrder(o: Order) {
+    setRefundReq({ order: o, reason: '' });
   }
 
-  async function voidOrder(o: Order) {
-    const reason = prompt(`Void order #${o.number}? Enter a reason:`);
-    if (reason === null) return;
-    if (!reason.trim()) return alert('A reason is required to void.');
-    if (!(await ensureAuth())) return;
-    setBusy(o.id);
+  async function doVoid(token: string) {
+    const req = voidReq;
+    if (!req) return;
+    setBusy(req.order.id);
     try {
-      await api.delete(`/orders/${o.id}`, { reason: reason.trim() });
+      await api.deleteAs(token, `/orders/${req.order.id}`, { reason: req.reason.trim() });
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(null);
     }
   }
 
-  async function refundOrder(o: Order) {
-    const reason = prompt(`Refund order #${o.number}? Enter a reason:`);
-    if (reason === null) return;
-    if (!reason.trim()) return alert('A reason is required to refund.');
-    if (!(await ensureAuth())) return;
-    setBusy(o.id);
+  async function doRefund(token: string) {
+    const req = refundReq;
+    if (!req) return;
+    setBusy(req.order.id);
     try {
-      await api.post(`/orders/${o.id}/refund`, { reason: reason.trim() });
+      await api.postAs(token, `/orders/${req.order.id}/refund`, { reason: req.reason.trim() });
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(null);
     }
@@ -202,6 +196,67 @@ export default function OrdersPage() {
           />
         )}
       </Modal>
+
+      <Modal open={!!voidReq && !mgrAuth} title="Void order" onClose={() => setVoidReq(null)}>
+        {voidReq && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              This voids order <strong>#{voidReq.order.number}</strong> — it cannot be undone and is audited.
+            </p>
+            <div>
+              <label className="label">Reason (required)</label>
+              <input className="input" value={voidReq.reason} autoFocus placeholder="e.g. customer left"
+                onChange={(e) => setVoidReq({ ...voidReq, reason: e.target.value })} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost" onClick={() => setVoidReq(null)}>Back</button>
+              <button className="btn-danger" disabled={!voidReq.reason.trim()}
+                onClick={() => setMgrAuth({
+                  title: 'Approve void',
+                  hint: `Voiding order #${voidReq.order.number} needs a manager or admin sign-in.`,
+                  onApproved: (token) => void doVoid(token),
+                })}>
+                Continue → manager approval
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!refundReq && !mgrAuth} title="Refund order" onClose={() => setRefundReq(null)}>
+        {refundReq && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              This refunds order <strong>#{refundReq.order.number}</strong> ({formatMoney(refundReq.order.totalCents)}) — it cannot be undone and is audited.
+            </p>
+            <div>
+              <label className="label">Reason (required)</label>
+              <input className="input" value={refundReq.reason} autoFocus placeholder="e.g. wrong order"
+                onChange={(e) => setRefundReq({ ...refundReq, reason: e.target.value })} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost" onClick={() => setRefundReq(null)}>Back</button>
+              <button className="btn-danger" disabled={!refundReq.reason.trim()}
+                onClick={() => setMgrAuth({
+                  title: 'Approve refund',
+                  hint: `Refunding order #${refundReq.order.number} needs a manager or admin sign-in.`,
+                  onApproved: (token) => void doRefund(token),
+                })}>
+                Continue → manager approval
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ManagerAuth
+        open={!!mgrAuth}
+        title={mgrAuth?.title}
+        hint={mgrAuth?.hint}
+        permission="canVoid"
+        onApproved={({ token }) => { mgrAuth?.onApproved(token); setVoidReq(null); setRefundReq(null); }}
+        onClose={() => setMgrAuth(null)}
+      />
     </div>
   );
 }

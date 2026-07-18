@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
 import { downloadCsv, toCsv } from '@/lib/csv';
+import { notify } from '@/lib/dialog';
 
 interface Report {
   range: { from: string; to: string };
@@ -68,22 +69,12 @@ export default function ReportsPage() {
     setTo(today);
   }
 
-  // Audit trail requires a manager token (canViewReports).
+  // Audit trail needs the canViewReports permission on the signed-in session.
   async function loadAudit() {
-    if (!localStorage.getItem('cakezake-token')) {
-      const pin = prompt('Manager PIN to view the audit trail:');
-      if (!pin) return;
-      try {
-        const e = await api.post<{ token?: string }>('/employees/login', { pin });
-        if (e.token) localStorage.setItem('cakezake-token', e.token);
-      } catch {
-        return alert('Invalid PIN');
-      }
-    }
     try {
       setAudit(await api.get('/audit'));
     } catch (e) {
-      alert((e as Error).message + ' — needs the "view reports" permission.');
+      notify((e as Error).message + ' — needs the "view reports" permission.', 'error');
     }
   }
 

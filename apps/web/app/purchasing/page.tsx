@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import Modal from '@/components/Modal';
+import { notify } from '@/lib/dialog';
 
 interface Supplier { id: string; name: string; contact?: string | null; address?: string | null; taxId?: string | null }
 interface Ingredient { id: string; name: string; unit: string; costPerUnitCents: number }
@@ -66,7 +67,7 @@ export default function PurchasingPage() {
       setSupModal(false);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
@@ -75,7 +76,7 @@ export default function PurchasingPage() {
     const lines = poLines
       .filter((l) => l.ingredientId && l.quantity)
       .map((l) => ({ ingredientId: l.ingredientId, quantity: parseFloat(l.quantity), unitCostCents: l.costRs ? dollarsToCents(parseFloat(l.costRs)) : 0 }));
-    if (!poSupplier || lines.length === 0) return alert('Pick a supplier and at least one line');
+    if (!poSupplier || lines.length === 0) return notify('Pick a supplier and at least one line', 'error');
     try {
       await api.post('/purchase-orders', { supplierId: poSupplier, lines });
       setPoModal(false);
@@ -83,7 +84,7 @@ export default function PurchasingPage() {
       setPoLines([{ ingredientId: '', quantity: '', costRs: '' }]);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
@@ -92,16 +93,16 @@ export default function PurchasingPage() {
       await api.post(`/purchase-orders/${id}/${action}`, {});
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function autoGenerate() {
     try {
       const r = await api.post<{ created: number; message?: string }>('/purchase-orders/auto-generate', {});
-      alert(r.created ? `Created ${r.created} draft PO(s) from stock deficits.` : r.message ?? 'No deficits.');
+      notify(r.created ? `Created ${r.created} draft PO(s) from stock deficits.` : r.message ?? 'No deficits.', r.created ? 'success' : 'info');
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
@@ -121,7 +122,7 @@ export default function PurchasingPage() {
       setReceivePo(null);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 

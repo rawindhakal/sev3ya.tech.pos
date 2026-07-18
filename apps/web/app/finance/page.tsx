@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import Modal from '@/components/Modal';
+import { confirmDialog, notify } from '@/lib/dialog';
 
 interface PnL {
   grossSalesCents: number; vatCollectedCents: number; serviceChargeCents: number; discountsCents: number;
@@ -55,10 +56,10 @@ export default function FinancePage() {
       setForm({ category: 'RENT', amountRs: '', description: '' });
       setModal(false);
       load();
-    } catch (e) { alert((e as Error).message); }
+    } catch (e) { notify((e as Error).message, 'error'); }
   }
   async function delExpense(id: string) {
-    if (!confirm('Delete this expense?')) return;
+    if (!(await confirmDialog('Delete this expense?', { danger: true, confirmLabel: 'Delete' }))) return;
     await api.delete(`/finance/expenses/${id}`);
     load();
   }

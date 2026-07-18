@@ -43,6 +43,8 @@ export default function SalesReportPage() {
   const [restName, setRestName] = useState('s3vyaPOS');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
 
   useEffect(() => {
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
@@ -63,6 +65,30 @@ export default function SalesReportPage() {
     } catch (e) { setErr((e as Error).message); } finally { setLoading(false); }
   }, [preset, from, to, categoryId, itemId, method, type]);
   useEffect(() => { load(); }, [load]);
+  // Columns change per preset — a stale sort/search would silently no-op.
+  useEffect(() => { setSearch(''); setSort(null); }, [preset]);
+
+  function toggleSort(key: string) {
+    setSort((s) => (s?.key === key ? (s.dir === 1 ? { key, dir: -1 } : null) : { key, dir: 1 }));
+  }
+
+  // Free-text search across every visible column, then optional column sort —
+  // both applied client-side so results stay instant while typing.
+  const visibleRows = (() => {
+    if (!report) return [];
+    let rows = report.rows;
+    const q = search.trim().toLowerCase();
+    if (q) rows = rows.filter((r) => report.columns.some((c) => String(r[c.key] ?? '').toLowerCase().includes(q)));
+    if (sort) {
+      const { key, dir } = sort;
+      const col = report.columns.find((c) => c.key === key);
+      rows = [...rows].sort((a, b) => {
+        if (col?.type === 'text') return dir * String(a[key] ?? '').localeCompare(String(b[key] ?? ''));
+        return dir * ((Number(a[key]) || 0) - (Number(b[key]) || 0));
+      });
+    }
+    return rows;
+  })();
 
   const activeFilters = [
     categoryId && `Category: ${categories.find((c) => c.id === categoryId)?.name}`,
@@ -79,16 +105,16 @@ export default function SalesReportPage() {
     if (!report) return;
     downloadCsv(`sales-report-${preset.id}-${from}-to-${to}.csv`, toCsv(
       report.columns.map((c) => c.label),
-      report.rows.map((r) => report.columns.map((c) => (c.type === 'money' ? ((Number(r[c.key]) || 0) / 100).toFixed(2) : r[c.key] ?? ''))),
+      visibleRows.map((r) => report.columns.map((c) => (c.type === 'money' ? ((Number(r[c.key]) || 0) / 100).toFixed(2) : r[c.key] ?? ''))),
     ));
   }
   function pdf() {
     if (!report) return;
-    exportPdf({ title, subtitle, columns: report.columns, rows: report.rows, restaurantName: restName });
+    exportPdf({ title, subtitle, columns: report.columns, rows: visibleRows, restaurantName: restName });
   }
 
   const sel = 'input w-auto min-w-[10rem]';
-  const th = 'p-2 text-xs font-semibold uppercase tracking-wide text-slate-400';
+  const th = 'p-2 text-xs font-semibold uppercase tracking-wide text-slate-400 select-none';
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -100,8 +126,8 @@ export default function SalesReportPage() {
             <p className="text-xs text-slate-400">{formatBsLong(new Date())} BS</p>
           </div>
           <div className="flex gap-2">
-            <button className="btn-ghost" onClick={csv} disabled={!report?.rows.length}>⬇ CSV</button>
-            <button className="btn-ghost" onClick={pdf} disabled={!report?.rows.length}>⬇ PDF</button>
+            <button className="btn-ghost" onClick={csv} disabled={!visibleRows.length}>⬇ CSV</button>
+            <button className="btn-ghost" onClick={pdf} disabled={!visibleRows.length}>⬇ PDF</button>
           </div>
         </div>
 
@@ -152,6 +178,18 @@ export default function SalesReportPage() {
               Clear filters
             </button>
           )}
+          <div className="relative ml-auto">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search this report…"
+              className="input w-56 pl-8"
+              aria-label="Search report rows"
+            />
+            <svg className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+          </div>
         </div>
       </div>
 
@@ -176,15 +214,28 @@ export default function SalesReportPage() {
             </div>
 
             <div className="card overflow-x-auto">
-              <div className="border-b border-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">{title}</div>
+              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                <span className="text-sm font-semibold text-slate-700">{title}</span>
+                <span className="text-xs text-slate-400">
+                  {visibleRows.length === report.rows.length ? `${report.rows.length} row${report.rows.length === 1 ? '' : 's'}` : `${visibleRows.length} of ${report.rows.length} rows`}
+                </span>
+              </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100">
-                    {report.columns.map((c) => <th key={c.key} className={`${th} ${c.type === 'text' ? 'text-left' : 'text-right'}`}>{c.label}</th>)}
+                    {report.columns.map((c) => (
+                      <th key={c.key} className={`${th} sticky top-0 z-[1] cursor-pointer bg-white hover:text-slate-600 dark:bg-slate-800 ${c.type === 'text' ? 'text-left' : 'text-right'}`}
+                        onClick={() => toggleSort(c.key)}>
+                        <span className="inline-flex items-center gap-1">
+                          {c.label}
+                          {sort?.key === c.key && <span className="text-brand-600">{sort.dir === 1 ? '▲' : '▼'}</span>}
+                        </span>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {report.rows.map((r, i) => (
+                  {visibleRows.map((r, i) => (
                     <tr key={i}>
                       {report.columns.map((c) => (
                         <td key={c.key} className={`p-2 text-slate-600 ${c.type === 'text' ? 'text-left' : 'text-right tabular-nums'}`}>
@@ -193,17 +244,17 @@ export default function SalesReportPage() {
                       ))}
                     </tr>
                   ))}
-                  {report.rows.length === 0 && !loading && (
-                    <tr><td colSpan={report.columns.length} className="p-10 text-center text-slate-400">No sales match these filters.</td></tr>
+                  {visibleRows.length === 0 && !loading && (
+                    <tr><td colSpan={report.columns.length} className="p-10 text-center text-slate-400">{search ? 'No rows match your search.' : 'No sales match these filters.'}</td></tr>
                   )}
                 </tbody>
-                {report.rows.length > 1 && (
+                {visibleRows.length > 1 && (
                   <tfoot>
                     <tr className="border-t border-slate-200 font-semibold text-slate-800">
                       {report.columns.map((c, i) => (
                         <td key={c.key} className={`p-2 ${c.type === 'text' ? 'text-left' : 'text-right tabular-nums'}`}>
-                          {i === 0 ? 'Totals' : c.type === 'money' ? formatMoney(report.rows.reduce((s, r) => s + (Number(r[c.key]) || 0), 0))
-                            : c.key === 'qty' ? report.rows.reduce((s, r) => s + (Number(r.qty) || 0), 0) : ''}
+                          {i === 0 ? 'Totals' : c.type === 'money' ? formatMoney(visibleRows.reduce((s, r) => s + (Number(r[c.key]) || 0), 0))
+                            : c.key === 'qty' ? visibleRows.reduce((s, r) => s + (Number(r.qty) || 0), 0) : ''}
                         </td>
                       ))}
                     </tr>

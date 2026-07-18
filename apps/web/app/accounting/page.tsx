@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import { downloadCsv, toCsv, exportObjects } from '@/lib/csv';
 import { formatBsLong } from '@/lib/bs-date';
+import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
 
 // Accounting books (Tally / Busy-style), derived live from POS operations:
 // Day Book · Sales Book · Purchase Register · Cash Book · Bank Book ·
@@ -284,18 +285,18 @@ function ChartTab() {
       await api.post('/accounting/accounts', { ...form, group: form.group || undefined });
       setForm({ code: '', name: '', type: 'EXPENSE', group: '' });
       load();
-    } catch (er) { alert((er as Error).message); }
+    } catch (er) { notify((er as Error).message, 'error'); }
   }
   async function rename(a: Account) {
-    const name = prompt('Rename account:', a.name);
+    const name = await promptDialog('Rename account:', a.name, { title: 'Rename account' });
     if (!name?.trim()) return;
     try { await api.patch(`/accounting/accounts/${a.id}`, { name: name.trim() }); load(); }
-    catch (er) { alert((er as Error).message); }
+    catch (er) { notify((er as Error).message, 'error'); }
   }
   async function remove(a: Account) {
-    if (!confirm(`Delete/deactivate account ${a.code} — ${a.name}?`)) return;
+    if (!(await confirmDialog(`Delete/deactivate account ${a.code} — ${a.name}?`, { danger: true, confirmLabel: 'Delete' }))) return;
     try { await api.delete(`/accounting/accounts/${a.id}`); load(); }
-    catch (er) { alert((er as Error).message); }
+    catch (er) { notify((er as Error).message, 'error'); }
   }
 
   const groups = Array.from(new Set(accounts.map((a) => a.group ?? 'Other')));
@@ -379,12 +380,12 @@ function JournalTab({ from, to }: { from: string; to: string }) {
       setLines([{ accountId: '', dr: '', cr: '' }, { accountId: '', dr: '', cr: '' }]);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally { setBusy(false); }
   }
   async function remove(id: string, number: number) {
-    if (!confirm(`Delete voucher #${number}? This is audited.`)) return;
-    try { await api.delete(`/accounting/journal/${id}`); load(); } catch (e) { alert((e as Error).message); }
+    if (!(await confirmDialog(`Delete voucher #${number}? This is audited.`, { danger: true, confirmLabel: 'Delete' }))) return;
+    try { await api.delete(`/accounting/journal/${id}`); load(); } catch (e) { notify((e as Error).message, 'error'); }
   }
 
   return (

@@ -5,6 +5,7 @@ import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { Category, MenuItem } from '@/lib/types';
 import { toCsv, downloadCsv, parseCsv } from '@/lib/csv';
 import Modal from '@/components/Modal';
+import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
 
 type ItemForm = {
   name: string;
@@ -123,7 +124,7 @@ export default function MenuPage() {
       setItemModal(false);
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -142,32 +143,32 @@ export default function MenuPage() {
   }
 
   async function deleteItem(item: MenuItem) {
-    if (!confirm(`Delete "${item.name}"?`)) return;
+    if (!(await confirmDialog(`Delete "${item.name}"?`, { danger: true, confirmLabel: 'Delete' }))) return;
     try {
       await api.delete(`/menu-items/${item.id}`);
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
   // ── Category rename / delete ─────────────────────
   async function renameCategory(c: Category) {
-    const name = prompt('Rename category:', c.name);
+    const name = await promptDialog('Rename category:', c.name, { title: 'Rename category' });
     if (!name?.trim() || name.trim() === c.name) return;
     try {
       await api.patch(`/categories/${c.id}`, { name: name.trim() });
       load();
-    } catch (e) { alert((e as Error).message); }
+    } catch (e) { notify((e as Error).message, 'error'); }
   }
   async function deleteCategory(c: Category) {
     const n = c._count?.items ?? 0;
-    if (!confirm(`Delete category "${c.name}"${n ? ` and its ${n} item(s)` : ''}? This cannot be undone.`)) return;
+    if (!(await confirmDialog(`Delete category "${c.name}"${n ? ` and its ${n} item(s)` : ''}? This cannot be undone.`, { danger: true, confirmLabel: 'Delete' }))) return;
     try {
       await api.delete(`/categories/${c.id}`);
       setActiveCat('all');
       load();
-    } catch (e) { alert((e as Error).message); }
+    } catch (e) { notify((e as Error).message, 'error'); }
   }
 
   // ── CSV import / export ──────────────────────────
@@ -251,10 +252,10 @@ export default function MenuPage() {
           created++;
         } catch { failed++; }
       }
-      alert(`Import finished — ${created} item(s) created${failed ? `, ${failed} failed` : ''}.`);
+      notify(`Import finished — ${created} item(s) created${failed ? `, ${failed} failed` : ''}.`, failed ? 'info' : 'success');
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -270,7 +271,7 @@ export default function MenuPage() {
       setCatModal(false);
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }

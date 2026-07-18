@@ -9,6 +9,7 @@ import type { Category, Employee, MenuItem, MenuItemVariant, Order, TableArea } 
 import { priceForType } from '@/lib/types';
 import Modal from '@/components/Modal';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
+import { notify } from '@/lib/dialog';
 
 type Mode = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY';
 interface Line { key: string; id?: string; menuItemId?: string; variantId?: string; name: string; unitPriceCents: number; modifiers: { name: string; priceCents: number }[]; quantity: number; notes?: string; kotStatus?: string }
@@ -95,7 +96,7 @@ export default function WaiterPage() {
       let o = resumeOrder;
       if (!o) o = await api.post<Order>('/orders', { type: mode, tableId: tableId ?? undefined, customerName: cust.name || undefined, customerPhone: cust.phone || undefined });
       setOrder(o); setTableName(o.table?.name ?? null); setCart(toCart(o)); setStep('order'); setCustOpen(false);
-    } catch (e) { alert((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { notify((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   async function resumeTable(t: { id: string; activeOrder?: { id: string } | null; name: string }) {
     if (!t.activeOrder) return;
@@ -138,12 +139,12 @@ export default function WaiterPage() {
     if (cart.length === 0) return flash('Add items first');
     setBusy(true);
     try { await save(); await api.post(`/orders/${order!.id}/kot`, {}); const o = await api.get<Order>(`/orders/${order!.id}`); setOrder(o); setCart(toCart(o)); flash('Sent to kitchen ✓'); }
-    catch (e) { alert((e as Error).message); } finally { setBusy(false); }
+    catch (e) { notify((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   async function saveExit() {
     setBusy(true);
     try { await save(); flash('Saved'); reset(); }
-    catch (e) { alert((e as Error).message); } finally { setBusy(false); }
+    catch (e) { notify((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   function reset() { setStep('home'); setOrder(null); setTableName(null); setCart([]); setCartOpen(false); setActiveCat('all'); setSearch(''); }
 
@@ -323,7 +324,7 @@ export default function WaiterPage() {
 
       {/* customer capture (takeaway/delivery) */}
       <Modal open={custOpen} title="Customer details" onClose={() => { setCustOpen(false); setStep('home'); }}>
-        <form onSubmit={(e) => { e.preventDefault(); if (order) { api.post<Order>(`/orders/${order.id}/customer`, { name: cust.name || undefined, phone: cust.phone }).then((o) => { setOrder(o); setCustOpen(false); flash('Customer saved'); }).catch((er) => alert((er as Error).message)); } else start(null); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); if (order) { api.post<Order>(`/orders/${order.id}/customer`, { name: cust.name || undefined, phone: cust.phone }).then((o) => { setOrder(o); setCustOpen(false); flash('Customer saved'); }).catch((er) => notify((er as Error).message, 'error')); } else start(null); }} className="space-y-4">
           <div><label className="label">Name</label><input className="input" value={cust.name} onChange={(e) => setCust({ ...cust, name: e.target.value })} autoFocus /></div>
           <div><label className="label">Phone</label><input className="input" value={cust.phone} onChange={(e) => setCust({ ...cust, phone: e.target.value })} placeholder="98XXXXXXXX" /></div>
           <div className="flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={() => { setCustOpen(false); setStep('home'); }}>Cancel</button><button type="submit" className="btn-primary" disabled={busy}>Start</button></div>

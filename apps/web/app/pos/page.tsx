@@ -31,6 +31,7 @@ import { formatBsLong } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea, isDesktopShell } from '@/lib/printing';
 import { getStatus } from '@/lib/offline';
 import { playDing } from '@/lib/sound';
+import { notify } from '@/lib/dialog';
 
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
 // an express settle path.
@@ -291,7 +292,7 @@ export default function PosPage() {
       setOpenFloat('');
       checkDrawer();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
@@ -319,7 +320,7 @@ export default function PosPage() {
       setDrawerOpen(false);
       resetTerminal();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -430,7 +431,7 @@ export default function PosPage() {
     setDiscountApproved(false);
       setOverlay(null);
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -469,7 +470,7 @@ export default function PosPage() {
       setAddTableOpen(false);
       reloadAreas();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function tablePatch(id: string, data: Record<string, unknown>) {
@@ -477,7 +478,7 @@ export default function PosPage() {
       await api.patch(`/tables/${id}`, data);
       reloadAreas();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function doTransfer(tableId: string) {
@@ -489,7 +490,7 @@ export default function PosPage() {
       setTransferOpen(false);
       flash('Order transferred');
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function openMoveItems() {
@@ -501,7 +502,7 @@ export default function PosPage() {
       setMoveSel({});
       setMoveOpen(true);
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -520,7 +521,7 @@ export default function PosPage() {
       reloadAreas();
       flash(`${itemIds.length} item(s) moved`);
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function doMerge(fromOrderId: string) {
@@ -531,7 +532,7 @@ export default function PosPage() {
       setMergeOpen(false);
       flash('Tables merged');
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   const flatTables = areas.flatMap((a) => a.tables);
@@ -545,7 +546,7 @@ export default function PosPage() {
       resume(full);
       setTable(t);
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -577,7 +578,7 @@ export default function PosPage() {
     try {
       resume(await api.get<Order>(`/orders/${id}`));
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -820,7 +821,7 @@ export default function PosPage() {
       if ((kind === 'kot' || kind === 'kot_print') && getStatus() === 'offline') {
         await offlineKot(kind === 'kot_print');
       } else {
-        alert((e as Error).message);
+        notify((e as Error).message, 'error');
       }
     } finally {
       setBusy(false);
@@ -860,7 +861,7 @@ export default function PosPage() {
       }
       flash(`${req.qty}× ${req.line.name} cancelled`);
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -875,7 +876,7 @@ export default function PosPage() {
       lookupCustomer(phone);
       flash(`Customer ${updated.customerName} attached`);
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
@@ -899,7 +900,7 @@ export default function PosPage() {
       } catch { /* printing is best-effort */ }
       resetTerminal();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -999,7 +1000,7 @@ export default function PosPage() {
       flash('Basket voided');
       resetTerminal();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -1581,7 +1582,7 @@ export default function PosPage() {
       </Modal>
 
       {/* cancel item — qty + reason, then manager approval */}
-      <Modal open={!!cancelReq} title="Cancel item" onClose={() => setCancelReq(null)}>
+      <Modal open={!!cancelReq && !mgrAuth} title="Cancel item" onClose={() => setCancelReq(null)}>
         {cancelReq && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -1620,7 +1621,7 @@ export default function PosPage() {
       </Modal>
 
       {/* void basket — reason, then manager approval */}
-      <Modal open={!!voidReq} title="Void entire basket" onClose={() => setVoidReq(null)}>
+      <Modal open={!!voidReq && !mgrAuth} title="Void entire basket" onClose={() => setVoidReq(null)}>
         {voidReq && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600 dark:text-slate-300">

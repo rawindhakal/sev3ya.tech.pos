@@ -6,6 +6,7 @@ import Sidebar from './Sidebar';
 import Login from './Login';
 import LandingPage from './LandingPage';
 import { tenantSlug } from '@/lib/api';
+import DialogHost from '@/lib/dialog';
 import type { Employee } from '@/lib/types';
 
 // Permission required to view each admin route (absent = any signed-in user).
@@ -53,34 +54,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  if (fullscreen) return <main className="h-screen overflow-hidden">{children}</main>;
-  if (!ready) return null;
-
-  // The bare main domain, signed out, shows the marketing home page instead
-  // of jumping straight to a login form. Existing tenants/staff still land
-  // on their own sign-in immediately (subdomain or any non-root path).
-  const isControlHome = !tenantSlug() && path === '/';
-  if (!emp) {
-    if (isControlHome && !wantsLogin) return <LandingPage onSignIn={() => setWantsLogin(true)} />;
-    return <Login onLogin={setEmp} onBack={isControlHome ? () => setWantsLogin(false) : undefined} />;
-  }
-
-  // Control context (no restaurant code) is the platform owner's world — the
-  // back-office belongs to tenants. Send platform admins to their console.
-  if (!tenantSlug() && emp.canManageStaff) {
-    if (typeof window !== 'undefined') window.location.replace('/platform');
-    return null;
-  }
-
   function logout() {
     localStorage.removeItem('cakezake-emp');
     localStorage.removeItem('cakezake-token');
     setEmp(null);
   }
 
-  // Waiters are locked to the Waiter Panel — no back-office at all.
-  if (emp.role === 'WAITER') {
-    return (
+  // The bare main domain, signed out, shows the marketing home page instead
+  // of jumping straight to a login form. Existing tenants/staff still land
+  // on their own sign-in immediately (subdomain or any non-root path).
+  const isControlHome = !tenantSlug() && path === '/';
+
+  let content: React.ReactNode;
+  if (fullscreen) {
+    content = <main className="h-screen overflow-hidden">{children}</main>;
+  } else if (!ready) {
+    content = null;
+  } else if (!emp) {
+    content = isControlHome && !wantsLogin
+      ? <LandingPage onSignIn={() => setWantsLogin(true)} />
+      : <Login onLogin={setEmp} onBack={isControlHome ? () => setWantsLogin(false) : undefined} />;
+  } else if (!tenantSlug() && emp.canManageStaff) {
+    // Control context (no restaurant code) is the platform owner's world —
+    // the back-office belongs to tenants. Send platform admins to their console.
+    if (typeof window !== 'undefined') window.location.replace('/platform');
+    content = null;
+  } else if (emp.role === 'WAITER') {
+    // Waiters are locked to the Waiter Panel — no back-office at all.
+    content = (
       <div className="flex h-screen flex-col items-center justify-center gap-4 p-8 text-center">
         <div className="text-5xl">🧑‍🍳</div>
         <p className="text-lg font-medium text-slate-700 dark:text-slate-200">Hi {emp.name} — waiters work from the Waiter Panel</p>
@@ -88,44 +89,50 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <button onClick={logout} className="text-xs text-slate-400 underline">Sign out</button>
       </div>
     );
+  } else {
+    const perm = ROUTE_PERM[path];
+    const denied = !!perm && !emp[perm];
+    content = (
+      <div className="flex h-screen flex-col overflow-hidden md:flex-row">
+        {/* Mobile top bar with hamburger */}
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800 md:hidden">
+          <button onClick={() => setNavOpen(true)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-lg leading-none dark:border-slate-600" aria-label="Open menu">☰</button>
+          <span className="font-bold text-brand-700">🍰 s3vyaPOS</span>
+          <span className="text-xs text-slate-400">{emp.name}</span>
+        </div>
+
+        {/* Sidebar: static on desktop, slide-over drawer on mobile */}
+        <div className="hidden h-full md:block [&>aside]:h-full">
+          <Sidebar emp={emp} onLogout={logout} />
+        </div>
+        {navOpen && (
+          <div className="fixed inset-0 z-50 flex md:hidden">
+            <div className="h-full [&>aside]:h-full" onClick={() => setNavOpen(false)}>
+              <Sidebar emp={emp} onLogout={logout} />
+            </div>
+            <div className="flex-1 bg-black/50" onClick={() => setNavOpen(false)} />
+          </div>
+        )}
+
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          {denied ? (
+            <div className="flex h-full flex-col items-center justify-center p-8 text-center text-slate-400">
+              <div className="mb-2 text-5xl">🔒</div>
+              <p className="text-lg font-medium text-slate-600 dark:text-slate-300">Access denied</p>
+              <p className="text-sm">Your role ({emp.role}) doesn&apos;t have permission for this section.</p>
+            </div>
+          ) : (
+            children
+          )}
+        </main>
+      </div>
+    );
   }
 
-  const perm = ROUTE_PERM[path];
-  const denied = !!perm && !emp[perm];
-
   return (
-    <div className="flex h-screen flex-col overflow-hidden md:flex-row">
-      {/* Mobile top bar with hamburger */}
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800 md:hidden">
-        <button onClick={() => setNavOpen(true)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-lg leading-none dark:border-slate-600" aria-label="Open menu">☰</button>
-        <span className="font-bold text-brand-700">🍰 s3vyaPOS</span>
-        <span className="text-xs text-slate-400">{emp.name}</span>
-      </div>
-
-      {/* Sidebar: static on desktop, slide-over drawer on mobile */}
-      <div className="hidden h-full md:block [&>aside]:h-full">
-        <Sidebar emp={emp} onLogout={logout} />
-      </div>
-      {navOpen && (
-        <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="h-full [&>aside]:h-full" onClick={() => setNavOpen(false)}>
-            <Sidebar emp={emp} onLogout={logout} />
-          </div>
-          <div className="flex-1 bg-black/50" onClick={() => setNavOpen(false)} />
-        </div>
-      )}
-
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        {denied ? (
-          <div className="flex h-full flex-col items-center justify-center p-8 text-center text-slate-400">
-            <div className="mb-2 text-5xl">🔒</div>
-            <p className="text-lg font-medium text-slate-600 dark:text-slate-300">Access denied</p>
-            <p className="text-sm">Your role ({emp.role}) doesn&apos;t have permission for this section.</p>
-          </div>
-        ) : (
-          children
-        )}
-      </main>
-    </div>
+    <>
+      {content}
+      <DialogHost />
+    </>
   );
 }

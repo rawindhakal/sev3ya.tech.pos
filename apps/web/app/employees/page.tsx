@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import type { Employee, StaffRole } from '@/lib/types';
 import Modal from '@/components/Modal';
+import { confirmDialog, notify } from '@/lib/dialog';
 
 const ROLES: StaffRole[] = ['ADMIN', 'MANAGER', 'CASHIER', 'BARISTA', 'WAITER'];
 type PermKey = 'canVoid' | 'canDiscount' | 'canManageInventory' | 'canViewReports' | 'canManageStaff';
@@ -100,7 +101,7 @@ export default function EmployeesPage() {
       setModal(false);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -111,11 +112,11 @@ export default function EmployeesPage() {
       await api.post(`/employees/${e.id}/clock-${dir}`, {});
       load();
     } catch (err) {
-      alert((err as Error).message);
+      notify((err as Error).message, 'error');
     }
   }
   async function remove(e: Employee) {
-    if (!confirm(`Deactivate ${e.name}?`)) return;
+    if (!(await confirmDialog(`Deactivate ${e.name}?`, { danger: true, confirmLabel: 'Deactivate' }))) return;
     await api.delete(`/employees/${e.id}`);
     load();
   }

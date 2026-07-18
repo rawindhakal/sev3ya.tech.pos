@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { CashDrawerState, CashDrawerSession } from '@/lib/types';
+import { promptDialog, notify } from '@/lib/dialog';
 
 export default function CashDrawerPage() {
   const [state, setState] = useState<CashDrawerState | null>(null);
@@ -42,14 +43,14 @@ export default function CashDrawerPage() {
 
   async function adjustOpeningFloat() {
     const current = ((state?.session?.openingFloatCents ?? 0) / 100).toFixed(2);
-    const v = prompt('New opening balance (Rs):', current);
+    const v = await promptDialog('New opening balance (Rs):', current, { title: 'Adjust opening balance' });
     if (v === null) return;
     const cents = dollarsToCents(parseFloat(v) || 0);
     try {
       await api.patch('/cash-drawer/opening-float', { openingFloatCents: cents });
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
@@ -60,7 +61,7 @@ export default function CashDrawerPage() {
       setFloatRs('');
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -68,7 +69,7 @@ export default function CashDrawerPage() {
 
   async function move(type: 'PAY_IN' | 'PAY_OUT') {
     const amt = dollarsToCents(parseFloat(moveRs || '0'));
-    if (amt <= 0) return alert('Enter an amount');
+    if (amt <= 0) return notify('Enter an amount', 'error');
     setBusy(true);
     try {
       await api.post('/cash-drawer/movement', { type, amountCents: amt, reason: moveReason || undefined });
@@ -76,21 +77,21 @@ export default function CashDrawerPage() {
       setMoveReason('');
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
   }
 
   async function closeDrawer() {
-    if (countRs === '') return alert('Enter the counted cash amount');
+    if (countRs === '') return notify('Enter the counted cash amount', 'error');
     setBusy(true);
     try {
       await api.post('/cash-drawer/close', { countedCents: dollarsToCents(parseFloat(countRs)) });
       setCountRs('');
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }

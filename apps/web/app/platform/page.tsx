@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
+import { confirmDialog, notify } from '@/lib/dialog';
 
 // Platform-owner console (SaaS control plane): tenants with their own
 // isolated databases, subscription plans, the manual payment gateway
@@ -77,11 +78,11 @@ export default function PlatformPage() {
     setBusy(true);
     try {
       const t = await api.post<Tenant & { loginHint: string }>('/platform/tenants', { ...form, trialDays: Number(form.trialDays) });
-      alert(`Restaurant provisioned with its own database (${t.dbName}).\n${(t as any).loginHint}`);
+      await confirmDialog(`Restaurant provisioned with its own database (${t.dbName}).\n${(t as any).loginHint}`, { title: 'Restaurant provisioned', confirmLabel: 'OK, got it' });
       setCreateOpen(false);
       setForm({ name: '', slug: '', planCode: 'PRO', ownerName: '', ownerPhone: '', adminUsername: '', adminPassword: '', trialDays: 14 });
       load();
-    } catch (er) { alert((er as Error).message); } finally { setBusy(false); }
+    } catch (er) { notify((er as Error).message, 'error'); } finally { setBusy(false); }
   }
 
   async function recordPayment(e: React.FormEvent) {
@@ -98,11 +99,11 @@ export default function PlatformPage() {
       setPayFor(null);
       setPay({ amount: '', method: 'CASH', reference: '', months: 1, planCode: '', note: '' });
       load();
-    } catch (er) { alert((er as Error).message); } finally { setBusy(false); }
+    } catch (er) { notify((er as Error).message, 'error'); } finally { setBusy(false); }
   }
 
   async function setStatus(t: Tenant, status: string) {
-    if (status === 'SUSPENDED' && !confirm(`Suspend ${t.name}? Their POS stops working immediately.`)) return;
+    if (status === 'SUSPENDED' && !(await confirmDialog(`Suspend ${t.name}? Their POS stops working immediately.`, { danger: true, confirmLabel: 'Suspend' }))) return;
     await api.post(`/platform/tenants/${t.id}/status`, { status });
     load();
   }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { MenuItem } from '@/lib/types';
 import Modal from '@/components/Modal';
+import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
 
 interface Ingredient {
   id: string;
@@ -82,40 +83,40 @@ export default function InventoryPage() {
       setAddOpen(false);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
   }
 
   async function movement(i: Ingredient, type: 'PURCHASE' | 'WASTAGE') {
-    const qty = prompt(`${type === 'PURCHASE' ? 'Add stock' : 'Log wastage'} for ${i.name} (${i.unit}):`);
+    const qty = await promptDialog(`${type === 'PURCHASE' ? 'Add stock' : 'Log wastage'} for ${i.name} (${i.unit}):`, '', { title: type === 'PURCHASE' ? 'Add stock' : 'Log wastage' });
     if (!qty) return;
-    const reason = type === 'WASTAGE' ? prompt('Reason (optional):') ?? undefined : undefined;
+    const reason = type === 'WASTAGE' ? (await promptDialog('Reason (optional):', '', { title: 'Wastage reason' })) ?? undefined : undefined;
     try {
       await api.post(`/inventory/ingredients/${i.id}/movement`, { type, quantity: Math.abs(parseFloat(qty)), reason });
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function stockTake(i: Ingredient) {
-    const counted = prompt(`Physical count for ${i.name} (${i.unit}), system shows ${i.stockQty}:`);
+    const counted = await promptDialog(`Physical count for ${i.name} (${i.unit}), system shows ${i.stockQty}:`, String(i.stockQty), { title: 'Stock take' });
     if (counted === null) return;
     try {
       await api.post(`/inventory/ingredients/${i.id}/stock-take`, { countedQty: parseFloat(counted) });
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function removeIngredient(i: Ingredient) {
-    if (!confirm(`Delete ${i.name}?`)) return;
+    if (!(await confirmDialog(`Delete ${i.name}?`, { danger: true, confirmLabel: 'Delete' }))) return;
     try {
       await api.delete(`/inventory/ingredients/${i.id}`);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
@@ -131,7 +132,7 @@ export default function InventoryPage() {
       setRecipeForm({ ingredientId: '', quantity: '' });
       loadRecipe(selMenu);
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function removeRecipeLine(id: string) {

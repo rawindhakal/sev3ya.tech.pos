@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { playDing } from '@/lib/sound';
 import { api } from '@/lib/api';
+import { notify } from '@/lib/dialog';
 
 interface KdsItem {
   id: string;
@@ -65,14 +66,14 @@ export default function KdsPage() {
     try {
       setTickets(await api.post<KdsTicket[]>(`/kds/items/${id}/ready`, {}));
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
   async function bump(id: string) {
     try {
       setTickets(await api.post<KdsTicket[]>(`/kds/orders/${id}/bump`, {}));
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 

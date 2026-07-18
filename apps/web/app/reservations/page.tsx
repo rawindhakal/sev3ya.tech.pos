@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import type { Reservation, RestaurantTable } from '@/lib/types';
 import Modal from '@/components/Modal';
+import { notify } from '@/lib/dialog';
 
 const STATUS_BADGE: Record<string, string> = {
   BOOKED: 'bg-indigo-100 text-indigo-700',
@@ -68,7 +69,7 @@ export default function ReservationsPage() {
       setModal(null);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -79,7 +80,7 @@ export default function ReservationsPage() {
       await api.post(`/reservations/${id}/${path}`, {});
       load();
     } catch (e) {
-      alert((e as Error).message);
+      notify((e as Error).message, 'error');
     }
   }
 
