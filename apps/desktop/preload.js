@@ -15,4 +15,9 @@ contextBridge.exposeInMainWorld('cakezakeDesktop', {
   // Pull users + punches from the ZKTeco scanner on the LAN. { ip, port? }
   // → { users: [{deviceUserId,name}], punches: [{deviceUserId,at}] } | { error }
   pullAttendance: (opts) => ipcRenderer.invoke('zk:pull', opts),
+  // Remembered cashier session (Remember me / auto sign-in). Credentials are
+  // OS-keychain encrypted in the main process — never stored in plaintext.
+  saveCreds: (restaurant, username, password) => ipcRenderer.invoke('creds:save', { restaurant, username, password }),
+  loadCreds: () => ipcRenderer.invoke('creds:load'),
+  clearCreds: () => ipcRenderer.invoke('creds:clear'),
 });

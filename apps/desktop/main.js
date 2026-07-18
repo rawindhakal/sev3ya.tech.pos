@@ -5,8 +5,9 @@
 // SAME app as the web /pos route, so it has the exact same features; the
 // cashier's login scopes what they can do (no admin/back-office chrome).
 
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, safeStorage } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 // Where the running web app lives. Defaults to the live production server;
 // override with POS_URL for local dev. Always opens straight to the POS terminal.
@@ -139,6 +140,49 @@ ipcMain.handle('print:html', async (_event, { html, printerName, widthMm = 80 })
   } finally {
     worker.destroy();
   }
+});
+
+// ── Remembered cashier session (Remember me / auto sign-in) ─────────────
+// Credentials are encrypted with the OS keychain (safeStorage) before ever
+// touching disk — the renderer never sees plaintext outside the login form.
+const credsPath = () => path.join(app.getPath('userData'), 'cashier-session.json');
+
+ipcMain.handle('creds:save', (_event, { restaurant, username, password }) => {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { ok: false, error: 'Secure storage is not available on this device' };
+    }
+    const encrypted = safeStorage.encryptString(password || '');
+    fs.writeFileSync(
+      credsPath(),
+      JSON.stringify({ restaurant: restaurant || '', username: username || '', password: encrypted.toString('base64') }),
+      'utf8',
+    );
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
+ipcMain.handle('creds:load', () => {
+  try {
+    if (!fs.existsSync(credsPath())) return null;
+    const raw = JSON.parse(fs.readFileSync(credsPath(), 'utf8'));
+    if (!raw.username || !raw.password) return null;
+    const password = safeStorage.decryptString(Buffer.from(raw.password, 'base64'));
+    return { restaurant: raw.restaurant || '', username: raw.username, password };
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('creds:clear', () => {
+  try {
+    fs.unlinkSync(credsPath());
+  } catch {
+    /* nothing saved */
+  }
+  return { ok: true };
 });
 
 app.whenReady().then(() => {

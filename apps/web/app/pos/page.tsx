@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, formatMoney, dollarsToCents, setCurrencySymbol } from '@/lib/api';
+import { api, formatMoney, dollarsToCents, setCurrencySymbol, tenantSlug, setTenantSlug } from '@/lib/api';
 import type {
   Category,
   Employee,
@@ -28,7 +28,7 @@ import AutoPrintAgent from '@/components/AutoPrintAgent';
 import AttendanceBridge from '@/components/AttendanceBridge';
 import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
 import { formatBsLong } from '@/lib/bs-date';
-import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea } from '@/lib/printing';
+import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea, isDesktopShell } from '@/lib/printing';
 import { getStatus } from '@/lib/offline';
 import { playDing } from '@/lib/sound';
 
@@ -123,11 +123,15 @@ export default function PosPage() {
   const [waiters, setWaiters] = useState<Waiter[]>([]);
   const [now, setNow] = useState(new Date());
 
-  // Terminal session (username + password login)
+  // Terminal session (restaurant code + username + password login)
   const [emp, setEmp] = useState<Employee | null>(null);
+  const [restaurant, setRestaurant] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [pinErr, setPinErr] = useState('');
+  const [remember, setRemember] = useState(true);
+  const [autoSigningIn, setAutoSigningIn] = useState(false);
+  const desktop = isDesktopShell();
 
 
   // active order context
@@ -201,20 +205,40 @@ export default function PosPage() {
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
     api.get<Waiter[]>('/waiters').then(setWaiters).catch(() => {});
     const clock = setInterval(() => setNow(new Date()), 1000);
-    // Restore a previous terminal session.
+    setRestaurant(tenantSlug());
+    // Restore a previous terminal session (still within its token lifetime).
     try {
       const saved = localStorage.getItem('cakezake-emp');
-      if (saved) setEmp(JSON.parse(saved));
+      if (saved) { setEmp(JSON.parse(saved)); return () => clearInterval(clock); }
     } catch {
       /* ignore */
+    }
+    // No active session — the desktop till may have a securely remembered
+    // cashier login (Remember me) to sign back in with automatically. This
+    // only runs on cold start; an explicit Lock never re-triggers it because
+    // it doesn't remount this effect.
+    if (isDesktopShell() && window.cakezakeDesktop?.loadCreds) {
+      window.cakezakeDesktop.loadCreds().then((creds) => {
+        if (!creds?.username || !creds?.password) return;
+        setRestaurant(creds.restaurant);
+        setUsername(creds.username);
+        setAutoSigningIn(true);
+        doLogin(creds.restaurant, creds.username, creds.password, true).finally(() => setAutoSigningIn(false));
+      }).catch(() => {});
     }
     return () => clearInterval(clock);
   }, []);
 
-  async function login() {
-    if (!username.trim() || !password) return setPinErr('Enter your username and password');
+  async function doLogin(restaurantCode: string, user: string, pass: string, isAutoLogin = false) {
+    if (!user.trim() || !pass) return setPinErr('Enter your username and password');
     try {
-      const e = await api.post<Employee & { token?: string }>('/employees/login', { username: username.trim(), password });
+      setTenantSlug(restaurantCode);
+      const e = await api.post<Employee & { token?: string }>('/employees/login', { username: user.trim(), password: pass });
+      if (desktop && e.role !== 'CASHIER') {
+        setPassword('');
+        if (isAutoLogin) await window.cakezakeDesktop?.clearCreds?.();
+        return setPinErr('This till is for cashiers only — managers and admins should sign in from the back office.');
+      }
       if (e.role === 'WAITER') {
         setPassword('');
         return setPinErr('Waiters use the Waiter Panel — the POS terminal is for cashiers and managers.');
@@ -222,14 +246,23 @@ export default function PosPage() {
       setEmp(e);
       localStorage.setItem('cakezake-emp', JSON.stringify(e));
       if (e.token) localStorage.setItem('cakezake-token', e.token);
+      if (desktop) {
+        if (remember) await window.cakezakeDesktop?.saveCreds?.(restaurantCode, user.trim(), pass);
+        else await window.cakezakeDesktop?.clearCreds?.();
+      }
       setUsername('');
       setPassword('');
       setPinErr('');
     } catch {
-      setPinErr('Invalid username or password');
+      // A saved (Remember me) login can go stale after a password change —
+      // clear it instead of silently failing on every future app launch.
+      if (isAutoLogin) await window.cakezakeDesktop?.clearCreds?.();
+      setPinErr(isAutoLogin ? '' : 'Invalid username or password');
       setPassword('');
     }
   }
+  const login = () => doLogin(restaurant, username, password);
+
   function lock() {
     setEmp(null);
     localStorage.removeItem('cakezake-emp');
@@ -974,16 +1007,34 @@ export default function PosPage() {
 
   const custLabel = order?.customerName ? `${order.customerName}${order.customerPhone ? ` · ${order.customerPhone}` : ''}` : null;
 
-  // ── Username + password login gate ──────────────
+  // ── Restaurant code + username + password login gate ──────────────
   if (!emp) {
+    if (autoSigningIn) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-3 bg-[var(--pos-bg)] text-[var(--pos-text)]">
+          <div className="text-3xl">🍰</div>
+          <p className="text-sm text-[var(--pos-text-40)]">Signing you in…</p>
+        </div>
+      );
+    }
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[var(--pos-bg)] text-[var(--pos-text)]">
         <div className="w-80 rounded-2xl border border-[var(--pos-line)] bg-[var(--pos-card)] p-6 text-center">
           <div className="mb-1 text-3xl">🍰</div>
           <div className="mb-1 font-bold tracking-wide">POS TERMINAL</div>
-          <p className="mb-4 text-xs text-[var(--pos-text-40)]">Sign in with your username &amp; password</p>
+          <p className="mb-4 text-xs text-[var(--pos-text-40)]">
+            {desktop ? 'Cashiers sign in with their username & password' : 'Sign in with your username & password'}
+          </p>
           {pinErr && <p className="mb-3 text-xs text-[#E74C3C]">{pinErr}</p>}
           <div className="space-y-2 text-left">
+            <input
+              value={restaurant}
+              onChange={(e) => setRestaurant(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && login()}
+              autoComplete="off"
+              placeholder="Restaurant code (blank = s3vya HQ)"
+              className="w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2.5 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]/60"
+            />
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -1003,6 +1054,12 @@ export default function PosPage() {
               className="w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2.5 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]/60"
             />
           </div>
+          {desktop && (
+            <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-left text-xs text-[var(--pos-text-40)]">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              Remember me &amp; sign in automatically on this till
+            </label>
+          )}
           <button onClick={login} className="mt-3 w-full rounded-lg bg-[#2ECC71] py-2.5 text-sm font-bold text-black hover:bg-[#28b463]">Sign in</button>
         </div>
       </div>
