@@ -3,6 +3,7 @@
 // shell's silent printer.
 
 import type { Settings } from './types';
+import { notify } from './dialog';
 
 // ── Desktop bridge typing (exposed by apps/desktop/preload.js) ──
 export interface DesktopPrinter { name: string; displayName: string; isDefault: boolean }
@@ -12,7 +13,7 @@ declare global {
       isDesktop: boolean;
       platform: string;
       listPrinters?: () => Promise<DesktopPrinter[]>;
-      printHtml?: (opts: { html: string; printerName?: string; widthMm?: number }) => Promise<{ ok: boolean; error?: string }>;
+      printHtml?: (opts: { html: string; printerName?: string; widthMm?: number }) => Promise<{ ok: boolean; error?: string; warning?: string }>;
       pullAttendance?: (opts: { ip: string; port?: number }) => Promise<{
         users?: { deviceUserId: string; name: string }[];
         punches?: { deviceUserId: string; at: string }[];
@@ -147,7 +148,7 @@ const esc = (s: unknown) =>
 // inline styles, so the captured markup is self-contained. Returns false when
 // not in the desktop shell (caller falls back to window.print()).
 export async function silentPrintArea(opts: { printer?: string; widthMm?: number; fontSize?: number }): Promise<boolean> {
-  if (typeof window === 'undefined' || !window.cakezakeDesktop?.printHtml) return false;
+  if (typeof window === 'undefined' || !window.cakezakeDesktop?.printHtml) return false; // not the desktop shell — caller falls back to window.print()
   const el = document.getElementById('print-area');
   if (!el) return false;
   const w = opts.widthMm ?? 80;
@@ -161,8 +162,14 @@ export async function silentPrintArea(opts: { printer?: string; widthMm?: number
   </style></head><body>${el.outerHTML}</body></html>`;
   try {
     const res = await window.cakezakeDesktop.printHtml!({ html, printerName: opts.printer, widthMm: w });
-    return !!res?.ok;
-  } catch {
+    if (!res?.ok) {
+      notify(`Silent print failed: ${res?.error || 'unknown error'} — falling back to the print dialog.`, 'error');
+      return false;
+    }
+    if (res.warning) notify(res.warning, 'info');
+    return true;
+  } catch (err) {
+    notify(`Silent print failed: ${(err as Error).message} — falling back to the print dialog.`, 'error');
     return false;
   }
 }

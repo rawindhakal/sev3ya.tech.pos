@@ -27,9 +27,27 @@ interface Valuation {
   ingredientCount: number;
   lowStockCount: number;
 }
+interface Warehouse {
+  id: string;
+  name: string;
+  address?: string | null;
+  isActive: boolean;
+  isDefault: boolean;
+  itemCount: number;
+  valuationCents: number;
+}
+interface WarehouseStockLine {
+  id: string;
+  ingredientId: string;
+  name: string;
+  unit: string;
+  qty: number;
+  lowStock: boolean;
+  valuationCents: number;
+}
 
 export default function InventoryPage() {
-  const [tab, setTab] = useState<'stock' | 'recipes'>('stock');
+  const [tab, setTab] = useState<'stock' | 'recipes' | 'warehouses'>('stock');
   const [ings, setIngs] = useState<Ingredient[]>([]);
   const [val, setVal] = useState<Valuation | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +62,17 @@ export default function InventoryPage() {
   const [recipe, setRecipe] = useState<RecipeLine[]>([]);
   const [recipeForm, setRecipeForm] = useState({ ingredientId: '', quantity: '' });
 
+  // warehouses
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [selWarehouse, setSelWarehouse] = useState('');
+  const [whStock, setWhStock] = useState<WarehouseStockLine[]>([]);
+  const [whAddOpen, setWhAddOpen] = useState(false);
+  const [whForm, setWhForm] = useState({ name: '', address: '' });
+  const [whSaving, setWhSaving] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferForm, setTransferForm] = useState({ ingredientId: '', fromWarehouseId: '', toWarehouseId: '', quantity: '', reason: '' });
+  const [transferSaving, setTransferSaving] = useState(false);
+
   async function load() {
     try {
       const [i, v] = await Promise.all([
@@ -57,10 +86,88 @@ export default function InventoryPage() {
       setError((e as Error).message);
     }
   }
+  async function loadWarehouses() {
+    try {
+      setWarehouses(await api.get<Warehouse[]>('/inventory/warehouses'));
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    }
+  }
   useEffect(() => {
     load();
+    loadWarehouses();
     api.get<MenuItem[]>('/menu-items').then(setMenuItems).catch(() => {});
   }, []);
+
+  async function selectWarehouse(id: string) {
+    setSelWarehouse(id);
+    if (!id) return setWhStock([]);
+    try {
+      setWhStock(await api.get<WarehouseStockLine[]>(`/inventory/warehouses/${id}/stock`));
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    }
+  }
+  async function createWarehouseSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setWhSaving(true);
+    try {
+      await api.post('/inventory/warehouses', { name: whForm.name.trim(), address: whForm.address.trim() || undefined });
+      setWhForm({ name: '', address: '' });
+      setWhAddOpen(false);
+      loadWarehouses();
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    } finally {
+      setWhSaving(false);
+    }
+  }
+  async function toggleWarehouseActive(w: Warehouse) {
+    try {
+      await api.patch(`/inventory/warehouses/${w.id}`, { isActive: !w.isActive });
+      loadWarehouses();
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    }
+  }
+  async function removeWarehouse(w: Warehouse) {
+    if (!(await confirmDialog(`Delete ${w.name}? Any stock must be transferred out first.`, { danger: true, confirmLabel: 'Delete' }))) return;
+    try {
+      await api.delete(`/inventory/warehouses/${w.id}`);
+      if (selWarehouse === w.id) {
+        setSelWarehouse('');
+        setWhStock([]);
+      }
+      loadWarehouses();
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    }
+  }
+  function openTransfer(prefill?: Partial<typeof transferForm>) {
+    setTransferForm({ ingredientId: '', fromWarehouseId: selWarehouse || '', toWarehouseId: '', quantity: '', reason: '', ...prefill });
+    setTransferOpen(true);
+  }
+  async function submitTransfer(e: React.FormEvent) {
+    e.preventDefault();
+    setTransferSaving(true);
+    try {
+      await api.post('/inventory/transfer', {
+        ingredientId: transferForm.ingredientId,
+        fromWarehouseId: transferForm.fromWarehouseId,
+        toWarehouseId: transferForm.toWarehouseId,
+        quantity: parseFloat(transferForm.quantity),
+        reason: transferForm.reason.trim() || undefined,
+      });
+      setTransferOpen(false);
+      loadWarehouses();
+      if (selWarehouse) selectWarehouse(selWarehouse);
+      notify('Stock transferred.', 'success');
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    } finally {
+      setTransferSaving(false);
+    }
+  }
 
   async function loadRecipe(menuItemId: string) {
     setSelMenu(menuItemId);
@@ -148,6 +255,12 @@ export default function InventoryPage() {
           <p className="text-sm text-slate-500">Stock auto-deducts from recipes on every sale</p>
         </div>
         {tab === 'stock' && <button className="btn-primary" onClick={() => setAddOpen(true)}>+ Ingredient</button>}
+        {tab === 'warehouses' && (
+          <div className="flex gap-2">
+            <button className="btn-ghost" onClick={() => openTransfer()}>⇄ Transfer stock</button>
+            <button className="btn-primary" onClick={() => setWhAddOpen(true)}>+ Warehouse</button>
+          </div>
+        )}
       </header>
 
       {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error} — is the API running on port 4000?</div>}
@@ -162,14 +275,90 @@ export default function InventoryPage() {
       )}
 
       <div className="mb-4 flex gap-2">
-        {(['stock', 'recipes'] as const).map((t) => (
+        {(['stock', 'recipes', 'warehouses'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`badge px-3 py-1.5 ${tab === t ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
-            {t === 'stock' ? 'Stock' : 'Recipes (BOM)'}
+            {t === 'stock' ? 'Stock' : t === 'recipes' ? 'Recipes (BOM)' : 'Warehouses'}
           </button>
         ))}
       </div>
 
-      {tab === 'stock' ? (
+      {tab === 'warehouses' ? (
+        <div className="grid grid-cols-3 gap-6">
+          <div className="col-span-1 space-y-2">
+            {warehouses.map((w) => (
+              <div
+                key={w.id}
+                onClick={() => selectWarehouse(w.id)}
+                className={`card cursor-pointer p-4 transition-colors ${selWarehouse === w.id ? 'border-brand-500 ring-1 ring-brand-500' : ''} ${!w.isActive ? 'opacity-50' : ''}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-800">
+                      {w.name}
+                      {w.isDefault && <span className="badge ml-2 bg-slate-100 text-slate-500">default</span>}
+                      {!w.isActive && <span className="badge ml-2 bg-red-50 text-red-500">inactive</span>}
+                    </div>
+                    {w.address && <div className="text-xs text-slate-400">{w.address}</div>}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-sm">
+                  <span className="text-slate-500">{w.itemCount} item{w.itemCount === 1 ? '' : 's'}</span>
+                  <span className="font-semibold text-slate-700">{formatMoney(w.valuationCents)}</span>
+                </div>
+                <div className="mt-3 flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                  <button className="rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-100" onClick={() => toggleWarehouseActive(w)}>
+                    {w.isActive ? 'Deactivate' : 'Activate'}
+                  </button>
+                  {!w.isDefault && (
+                    <button className="rounded-md px-2 py-1 text-xs text-red-500 hover:bg-red-50" onClick={() => removeWarehouse(w)}>Delete</button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {warehouses.length === 0 && <p className="p-4 text-sm text-slate-400">No warehouses yet.</p>}
+          </div>
+
+          <div className="col-span-2">
+            {selWarehouse ? (
+              <div className="card overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+                      <th className="p-3 font-semibold">Ingredient</th>
+                      <th className="p-3 font-semibold">On hand</th>
+                      <th className="p-3 font-semibold">Value</th>
+                      <th className="p-3 text-right font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {whStock.map((r) => (
+                      <tr key={r.id} className={r.lowStock ? 'bg-amber-50/50' : ''}>
+                        <td className="p-3 font-medium text-slate-700">
+                          {r.name}
+                          {r.lowStock && <span className="badge ml-2 bg-amber-100 text-amber-700">low</span>}
+                        </td>
+                        <td className="p-3 text-slate-600">{r.qty} {r.unit}</td>
+                        <td className="p-3 font-semibold text-slate-700">{formatMoney(r.valuationCents)}</td>
+                        <td className="p-3 text-right">
+                          <button
+                            className="rounded-md px-2 py-1 text-xs text-brand-600 hover:bg-brand-50"
+                            onClick={() => openTransfer({ ingredientId: r.ingredientId, fromWarehouseId: selWarehouse })}
+                          >
+                            ⇄ Transfer
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {whStock.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Nothing stocked here yet.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="card flex h-40 items-center justify-center text-sm text-slate-400">Select a warehouse to see its stock breakdown.</div>
+            )}
+          </div>
+        </div>
+      ) : tab === 'stock' ? (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -280,6 +469,65 @@ export default function InventoryPage() {
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={() => setAddOpen(false)}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* add warehouse modal */}
+      <Modal open={whAddOpen} title="Add warehouse" onClose={() => setWhAddOpen(false)}>
+        <form onSubmit={createWarehouseSubmit} className="space-y-4">
+          <div>
+            <label className="label">Name</label>
+            <input className="input" value={whForm.name} onChange={(e) => setWhForm({ ...whForm, name: e.target.value })} placeholder="e.g. Central Kitchen" required autoFocus />
+          </div>
+          <div>
+            <label className="label">Address (optional)</label>
+            <input className="input" value={whForm.address} onChange={(e) => setWhForm({ ...whForm, address: e.target.value })} placeholder="e.g. Warehouse Rd, Kathmandu" />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={() => setWhAddOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={whSaving}>{whSaving ? 'Saving…' : 'Add'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* transfer stock modal */}
+      <Modal open={transferOpen} title="Transfer stock" onClose={() => setTransferOpen(false)}>
+        <form onSubmit={submitTransfer} className="space-y-4">
+          <div>
+            <label className="label">Ingredient</label>
+            <select className="input" value={transferForm.ingredientId} onChange={(e) => setTransferForm({ ...transferForm, ingredientId: e.target.value })} required>
+              <option value="">Select…</option>
+              {ings.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">From</label>
+              <select className="input" value={transferForm.fromWarehouseId} onChange={(e) => setTransferForm({ ...transferForm, fromWarehouseId: e.target.value })} required>
+                <option value="">Select…</option>
+                {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">To</label>
+              <select className="input" value={transferForm.toWarehouseId} onChange={(e) => setTransferForm({ ...transferForm, toWarehouseId: e.target.value })} required>
+                <option value="">Select…</option>
+                {warehouses.filter((w) => w.id !== transferForm.fromWarehouseId).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Quantity</label>
+            <input className="input" type="number" step="0.01" min="0" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} required />
+          </div>
+          <div>
+            <label className="label">Reason (optional)</label>
+            <input className="input" value={transferForm.reason} onChange={(e) => setTransferForm({ ...transferForm, reason: e.target.value })} placeholder="e.g. Restocking branch" />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={() => setTransferOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={transferSaving}>{transferSaving ? 'Transferring…' : 'Transfer'}</button>
           </div>
         </form>
       </Modal>

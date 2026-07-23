@@ -27,6 +27,7 @@ export class KdsService {
         firedAt: o.kotFiredAt,
         items: o.items.map((it) => ({
           id: it.id,
+          menuItemId: it.menuItemId,
           name: it.nameSnapshot,
           quantity: it.quantity,
           modifiers: it.modifiers,
@@ -50,9 +51,9 @@ export class KdsService {
     const item = await this.prisma.orderItem.findUnique({ where: { id: itemId } });
     if (!item) throw new BadRequestException('Order item not found');
     await this.prisma.orderItem.update({ where: { id: itemId }, data: { kotStatus: status } });
-    // If every item on the order is READY, advance the order to READY.
+    // If every (non-cancelled) item on the order is READY, advance the order.
     const remaining = await this.prisma.orderItem.count({
-      where: { orderId: item.orderId, kotStatus: { in: ['PENDING', 'PREPARING'] } },
+      where: { orderId: item.orderId, cancelledAt: null, kotStatus: { in: ['PENDING', 'PREPARING'] } },
     });
     if (remaining === 0) {
       await this.prisma.order.update({ where: { id: item.orderId }, data: { status: 'READY' } });
@@ -60,10 +61,37 @@ export class KdsService {
     return this.tickets();
   }
 
-  // Bump (complete) a whole ticket off the board.
-  async bump(orderId: string) {
-    await this.prisma.orderItem.updateMany({ where: { orderId }, data: { kotStatus: 'SERVED' } });
-    await this.prisma.order.update({ where: { id: orderId }, data: { status: 'SERVED' } });
+  // Undo an accidental "ready" tap — puts the item back in progress and, if
+  // the order had already advanced to READY on the strength of it, reopens
+  // the order too so it doesn't quietly fall off a chef's board mid-cook.
+  async unmarkItem(itemId: string) {
+    const item = await this.prisma.orderItem.findUnique({ where: { id: itemId } });
+    if (!item) throw new BadRequestException('Order item not found');
+    await this.prisma.orderItem.update({ where: { id: itemId }, data: { kotStatus: 'PREPARING' } });
+    const order = await this.prisma.order.findUnique({ where: { id: item.orderId } });
+    if (order?.status === 'READY') {
+      await this.prisma.order.update({ where: { id: item.orderId }, data: { status: 'SENT_TO_KITCHEN' } });
+    }
+    return this.tickets();
+  }
+
+  // Bump (complete) a ticket off the board. With no station, closes the
+  // whole order (original behaviour). With a station, only that station's
+  // items are marked done — the order itself only closes once every
+  // station's items are finished, so e.g. the kitchen finishing first
+  // doesn't silently drop the bar's half of the ticket.
+  async bump(orderId: string, station?: 'KITCHEN' | 'BAR' | 'BILLING') {
+    await this.prisma.orderItem.updateMany({
+      where: { orderId, cancelledAt: null, ...(station ? { station } : {}) },
+      data: { kotStatus: 'SERVED' },
+    });
+    const remaining = await this.prisma.orderItem.count({
+      where: { orderId, cancelledAt: null, kotStatus: { in: ['PENDING', 'PREPARING'] } },
+    });
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { status: remaining === 0 ? 'SERVED' : 'SENT_TO_KITCHEN' },
+    });
     return this.tickets();
   }
 

@@ -192,6 +192,13 @@ export default function PosPage() {
   const [picker, setPicker] = useState<{ item: MenuItem; variants: MenuItemVariant[] } | null>(null);
   const [pickSel, setPickSel] = useState<Record<string, string[]>>({});
   const [openItem, setOpenItem] = useState<{ name: string; price: string; station: 'KITCHEN' | 'BAR' | 'BILLING' } | null>(null);
+  // Quick "add a permanent menu item" from the till itself — managers/admins
+  // shouldn't have to leave the POS mid-service to grow the catalogue.
+  const [newMenuItem, setNewMenuItem] = useState<{
+    name: string; price: string; station: 'KITCHEN' | 'BAR' | 'BILLING';
+    categoryId: string; newCategory: string; useNewCategory: boolean;
+  } | null>(null);
+  const [savingMenuItem, setSavingMenuItem] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -671,6 +678,45 @@ export default function PosPage() {
     if (!openItem.name.trim() || priceCents <= 0) return flash('Enter a name and price above zero');
     setCart((prev) => [...prev, { key: `open::${openItem.name}::${Date.now()}`, name: openItem.name.trim(), unitPriceCents: priceCents, modifiers: [], quantity: 1, station: openItem.station }]);
     setOpenItem(null);
+  }
+
+  // Add a permanent menu item right from the till — grows the real catalogue
+  // (unlike "+ Custom", which is a one-off unlisted line for this bill only).
+  async function saveNewMenuItem() {
+    if (!newMenuItem) return;
+    const priceCents = Math.round((parseFloat(newMenuItem.price) || 0) * 100);
+    if (!newMenuItem.name.trim()) return notify('Enter an item name', 'error');
+    if (priceCents <= 0) return notify('Enter a price above zero', 'error');
+    if (newMenuItem.useNewCategory ? !newMenuItem.newCategory.trim() : !newMenuItem.categoryId) {
+      return notify('Choose or name a category', 'error');
+    }
+    setSavingMenuItem(true);
+    try {
+      let categoryId = newMenuItem.categoryId;
+      if (newMenuItem.useNewCategory) {
+        const cat = await api.post<Category>('/categories', { name: newMenuItem.newCategory.trim(), sortOrder: categories.length });
+        categoryId = cat.id;
+      }
+      const created = await api.post<MenuItem>('/menu-items', {
+        name: newMenuItem.name.trim(),
+        priceCents,
+        categoryId,
+        station: newMenuItem.station,
+      });
+      const [freshCategories, freshItems] = await Promise.all([
+        api.get<Category[]>('/categories'),
+        api.get<MenuItem[]>('/menu-items'),
+      ]);
+      setCategories(freshCategories);
+      setItems(freshItems);
+      setActiveCat(categoryId);
+      setNewMenuItem(null);
+      flash(`${created.name} added to the menu`);
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    } finally {
+      setSavingMenuItem(false);
+    }
   }
 
   function setLineNote(key: string, note: string) {
@@ -1363,9 +1409,18 @@ export default function PosPage() {
                   onChange={(e) => setSearch(e.target.value)}
                   autoFocus
                 />
-                <button className="rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-xs text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]" onClick={() => setOpenItem({ name: '', price: '', station: 'KITCHEN' })}>
+                <button className="rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-xs text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]" onClick={() => setOpenItem({ name: '', price: '', station: 'KITCHEN' })} title="One-off item for this bill only">
                   + Custom
                 </button>
+                {emp?.canManageStaff && (
+                  <button
+                    className="rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-xs text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]"
+                    onClick={() => setNewMenuItem({ name: '', price: '', station: 'KITCHEN', categoryId: categories[0]?.id ?? '', newCategory: '', useNewCategory: categories.length === 0 })}
+                    title="Add a permanent item to the menu catalogue"
+                  >
+                    + Add Item
+                  </button>
+                )}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 <button onClick={() => setActiveCat('all')} className={`rounded-md px-3 py-1 text-xs font-medium ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>All</button>
@@ -1837,6 +1892,56 @@ export default function PosPage() {
             <div className="flex justify-end gap-2">
               <button className="btn-ghost" onClick={() => setOpenItem(null)}>Cancel</button>
               <button className="btn-primary" onClick={addOpenItem}>Add</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* + Add Item — adds a permanent catalogue item without leaving the till */}
+      <Modal open={!!newMenuItem} title="Add menu item" onClose={() => setNewMenuItem(null)}>
+        {newMenuItem && (
+          <div className="space-y-4">
+            <p className="text-xs text-[var(--pos-text-40)]">This adds a real, permanent menu item — it&apos;ll show up in the grid and in Menu management too.</p>
+            <div>
+              <label className="label">Item name</label>
+              <input className="input" value={newMenuItem.name} onChange={(e) => setNewMenuItem({ ...newMenuItem, name: e.target.value })} autoFocus />
+            </div>
+            <div>
+              <label className="label">Price (Rs)</label>
+              <input className="input" type="number" step="0.01" min="0" value={newMenuItem.price} onChange={(e) => setNewMenuItem({ ...newMenuItem, price: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Category</label>
+              {!newMenuItem.useNewCategory && categories.length > 0 ? (
+                <div className="flex gap-2">
+                  <select className="input flex-1" value={newMenuItem.categoryId} onChange={(e) => setNewMenuItem({ ...newMenuItem, categoryId: e.target.value })}>
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <button type="button" className="btn-ghost shrink-0 text-xs" onClick={() => setNewMenuItem({ ...newMenuItem, useNewCategory: true })}>+ New</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input className="input flex-1" value={newMenuItem.newCategory} onChange={(e) => setNewMenuItem({ ...newMenuItem, newCategory: e.target.value })} placeholder="New category name" />
+                  {categories.length > 0 && (
+                    <button type="button" className="btn-ghost shrink-0 text-xs" onClick={() => setNewMenuItem({ ...newMenuItem, useNewCategory: false })}>Pick existing</button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="label">Prepared at (prints the ticket there)</label>
+              <div className="flex gap-2">
+                {(['KITCHEN', 'BAR', 'BILLING'] as const).map((st) => (
+                  <button key={st} type="button" onClick={() => setNewMenuItem({ ...newMenuItem, station: st })}
+                    className={`flex-1 rounded-lg border px-2 py-2 text-xs font-semibold ${newMenuItem.station === st ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-500'}`}>
+                    {st === 'KITCHEN' ? 'Kitchen (KOT)' : st === 'BAR' ? 'Bar (BOT)' : 'Billing only'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost" onClick={() => setNewMenuItem(null)}>Cancel</button>
+              <button className="btn-primary" disabled={savingMenuItem} onClick={saveNewMenuItem}>{savingMenuItem ? 'Adding…' : 'Add to menu'}</button>
             </div>
           </div>
         )}

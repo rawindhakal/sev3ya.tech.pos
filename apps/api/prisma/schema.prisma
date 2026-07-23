@@ -678,7 +678,10 @@ model Ingredient {
   id           String  @id @default(cuid())
   name         String
   unit         String  @default("g") // base stock unit: g / ml / pcs
-  stockQty     Float   @default(0)   // current on-hand in base unit
+  // Global on-hand total across all warehouses — kept in sync with the sum of
+  // WarehouseStock rows below; stays authoritative for existing code that
+  // doesn't care about location (recipe costing, reorder alerts, etc.).
+  stockQty     Float   @default(0)
   reorderLevel Float   @default(0)   // low-stock threshold (#58)
   // Cost per base unit, in cents (paisa) — drives valuation (#75).
   costPerUnitCents Int  @default(0)
@@ -688,10 +691,44 @@ model Ingredient {
   recipeItems  RecipeItem[]
   movements    StockMovement[]
   poLines      PurchaseOrderLine[]
+  warehouseStocks WarehouseStock[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@map("ingredients")
+}
+
+// ─────────────────────────────────────────────────────────────
+// WAREHOUSES / MULTI-LOCATION STOCK — additive layer on top of the
+// existing global Ingredient.stockQty. A restaurant with one location can
+// ignore this entirely (everything lives in the seeded "Main Store");
+// multi-location operators get a per-warehouse breakdown + transfers.
+// ─────────────────────────────────────────────────────────────
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  isActive  Boolean  @default(true)
+  isDefault Boolean  @default(false) // the auto-seeded "Main Store"; can't be deleted
+  stocks    WarehouseStock[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("warehouses")
+}
+
+model WarehouseStock {
+  id           String     @id @default(cuid())
+  warehouseId  String
+  warehouse    Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  qty          Float      @default(0)
+
+  @@unique([warehouseId, ingredientId])
+  @@index([ingredientId])
+  @@map("warehouse_stocks")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -770,6 +807,7 @@ enum StockMovementType {
   WASTAGE
   STOCK_TAKE
   ADJUSTMENT
+  TRANSFER
 }
 
 model StockMovement {
@@ -779,9 +817,15 @@ model StockMovement {
   type         StockMovementType
   quantity     Float             // signed delta in base unit (− for consumption)
   reason       String?
+  // Which warehouse this movement applies to (null = legacy/global-only
+  // movement predating this feature). For TRANSFER, warehouseId is the
+  // source (its delta is negative) and toWarehouseId is the destination.
+  warehouseId   String?
+  toWarehouseId String?
   createdAt    DateTime          @default(now())
 
   @@index([ingredientId])
+  @@index([warehouseId])
   @@map("stock_movements")
 }
 

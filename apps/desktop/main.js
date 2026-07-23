@@ -74,8 +74,16 @@ function createWindow() {
 // same pattern as the KOT auto-printer.
 const Zkteco = require('zkteco-js');
 
-const withTimeout = (p, ms) =>
-  Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timed out after ${ms / 1000}s`)), ms))]);
+// A promise that always settles within `ms`, even if the underlying promise
+// never resolves/rejects (e.g. a device or print driver that hangs forever).
+// Without this, one stuck operation can freeze the whole till indefinitely.
+function withTimeout(p, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label ? label + ' ' : ''}timed out after ${ms / 1000}s`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 ipcMain.handle('zk:pull', async (_event, { ip, port = 4370 }) => {
   if (!ip) return { error: 'No device IP configured' };
@@ -113,28 +121,55 @@ ipcMain.handle('printers:list', async (event) => {
 });
 
 // Print ticket HTML silently to a chosen printer (thermal-receipt style).
-// A hidden window renders the HTML, prints, then closes.
-ipcMain.handle('print:html', async (_event, { html, printerName, widthMm = 80 }) => {
+// A hidden window renders the HTML, prints, then closes. Hardened against
+// the two failure modes that used to hang or silently no-op the till:
+//  1. A printer that was renamed/unplugged/uninstalled since it was chosen
+//     in Settings → Printing — we now check it still exists first and fall
+//     back to the OS default instead of Electron just swallowing the print.
+//  2. `webContents.print()` on a hidden (`show:false`) window can stall
+//     indefinitely on some Windows printer drivers because a backgrounded
+//     renderer gets throttled before it finishes painting — fixed with
+//     `backgroundThrottling:false` plus a hard timeout as a last resort.
+ipcMain.handle('print:html', async (event, { html, printerName, widthMm = 80 }) => {
+  let resolvedPrinter = printerName || undefined;
+  let printerWarning;
+  if (printerName) {
+    try {
+      const available = await event.sender.getPrintersAsync();
+      const stillThere = available.some((p) => p.name === printerName);
+      if (!stillThere) {
+        resolvedPrinter = undefined; // let the OS pick its default instead
+        printerWarning = `Printer "${printerName}" is no longer available (unplugged, renamed, or driver removed) — used the system default instead. Re-select it under Settings → Printing.`;
+      }
+    } catch {
+      // If we can't even list printers, just try with what we were given.
+    }
+  }
+
   const worker = new BrowserWindow({
     show: false,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
   });
   try {
-    await worker.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    await withTimeout(worker.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)), 10000, 'Ticket render');
     const micronsWide = Math.round(widthMm * 1000);
-    await new Promise((resolve, reject) => {
-      worker.webContents.print(
-        {
-          silent: true,
-          printBackground: true,
-          deviceName: printerName || undefined,
-          margins: { marginType: 'none' },
-          pageSize: { width: micronsWide, height: 297000 }, // receipt roll
-        },
-        (success, reason) => (success ? resolve() : reject(new Error(reason || 'print failed'))),
-      );
-    });
-    return { ok: true };
+    await withTimeout(
+      new Promise((resolve, reject) => {
+        worker.webContents.print(
+          {
+            silent: true,
+            printBackground: true,
+            deviceName: resolvedPrinter,
+            margins: { marginType: 'none' },
+            pageSize: { width: micronsWide, height: 297000 }, // receipt roll
+          },
+          (success, reason) => (success ? resolve() : reject(new Error(reason || 'Printer rejected the job — check it has paper and is powered on.'))),
+        );
+      }),
+      20000,
+      'Print',
+    );
+    return { ok: true, warning: printerWarning };
   } catch (err) {
     return { ok: false, error: String(err.message || err) };
   } finally {

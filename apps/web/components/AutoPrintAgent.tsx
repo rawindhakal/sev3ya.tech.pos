@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import type { Settings } from '@/lib/types';
+import { notify } from '@/lib/dialog';
 import {
   getPrinterPrefs,
   isDesktopShell,
@@ -17,6 +18,10 @@ import {
 // Renders nothing; does nothing outside the Electron shell.
 export default function AutoPrintAgent() {
   const settingsRef = useRef<Settings | null>(null);
+  // Throttle failure notifications — without this, a KOT stuck behind a
+  // broken printer would silently retry forever every 6s with the cashier
+  // never finding out the kitchen isn't getting tickets.
+  const lastWarnedRef = useRef<{ message: string; at: number } | null>(null);
 
   useEffect(() => {
     if (!isDesktopShell() || !window.cakezakeDesktop?.printHtml) return;
@@ -25,6 +30,13 @@ export default function AutoPrintAgent() {
     let busy = false;
 
     api.get<Settings>('/settings').then((s) => (settingsRef.current = s)).catch(() => {});
+
+    function warnOnce(message: string) {
+      const last = lastWarnedRef.current;
+      if (last && last.message === message && Date.now() - last.at < 120000) return; // same failure, keep quiet for 2min
+      lastWarnedRef.current = { message, at: Date.now() };
+      notify(message, 'error');
+    }
 
     async function tick() {
       if (stopped || busy) return;
@@ -63,7 +75,12 @@ export default function AutoPrintAgent() {
             printerName: printer,
             widthMm: template.paperWidthMm,
           });
-          if (res?.ok) printedIds.push(...items.map((i) => i.id));
+          if (res?.ok) {
+            printedIds.push(...items.map((i) => i.id));
+            if (res.warning) warnOnce(res.warning);
+          } else {
+            warnOnce(`Auto-print failed for order #${first.orderNumber} (${station.toLowerCase()}): ${res?.error || 'unknown error'}. It will keep retrying — check the printer under Settings → Printing.`);
+          }
         }
         if (printedIds.length) await api.post('/orders/kot-queue/printed', { itemIds: printedIds });
       } catch {

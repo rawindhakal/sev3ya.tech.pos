@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import type { Settings } from '@/lib/types';
+import { notify } from '@/lib/dialog';
 import {
   billTemplateOf,
   kotTemplateOf,
@@ -32,6 +33,14 @@ export default function PrintingPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [refreshingPrinters, setRefreshingPrinters] = useState(false);
+  const [testing, setTesting] = useState<string | null>(null); // which printer role is mid-test
+
+  function refreshPrinters() {
+    if (!window.cakezakeDesktop?.listPrinters) return;
+    setRefreshingPrinters(true);
+    window.cakezakeDesktop.listPrinters().then(setPrinters).catch(() => {}).finally(() => setRefreshingPrinters(false));
+  }
 
   useEffect(() => {
     api.get<Settings>('/settings').then((s) => {
@@ -42,10 +51,40 @@ export default function PrintingPage() {
     setPrefs(getPrinterPrefs());
     const d = isDesktopShell();
     setDesktop(d);
-    if (d && window.cakezakeDesktop?.listPrinters) {
-      window.cakezakeDesktop.listPrinters().then(setPrinters).catch(() => {});
-    }
+    if (d) refreshPrinters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Print a small sample ticket to the given printer role — lets staff verify
+  // a printer actually works (paper loaded, driver OK, correct printer
+  // selected) without needing to ring up a real order first.
+  async function testPrint(role: 'kot' | 'bot' | 'bill', printerName: string | undefined) {
+    if (!window.cakezakeDesktop?.printHtml || !bill || !kot) return;
+    setTesting(role);
+    const label = role === 'bill' ? 'BILL PRINTER TEST' : role === 'bot' ? 'BOT PRINTER TEST' : 'KOT PRINTER TEST';
+    const width = role === 'bill' ? bill.paperWidthMm : kot.paperWidthMm;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+      @page { margin: 0; }
+      body { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #000;
+             width: ${width - 6}mm; margin: 0 auto; padding: 4px 2px; text-align: center; }
+      .ttl { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
+    </style></head><body>
+      <div class="ttl">${label}</div>
+      <div>${settings?.restaurantName ?? 's3vyaPOS'}</div>
+      <div>${printerName || 'System default'}</div>
+      <div>${new Date().toLocaleString()}</div>
+      <div style="border-top:1px dashed #000;margin-top:6px;padding-top:6px">If this printed cleanly, this printer is good to go.</div>
+    </body></html>`;
+    try {
+      const res = await window.cakezakeDesktop.printHtml({ html, printerName, widthMm: width });
+      if (res?.ok) notify(res.warning || `Test ticket sent to ${printerName || 'the system default printer'}.`, res.warning ? 'info' : 'success');
+      else notify(`Test print failed: ${res?.error || 'unknown error'}`, 'error');
+    } catch (e) {
+      notify(`Test print failed: ${(e as Error).message}`, 'error');
+    } finally {
+      setTesting(null);
+    }
+  }
 
   function setPref<K extends keyof PrinterPrefs>(key: K, value: PrinterPrefs[K]) {
     const next = { ...prefs, [key]: value };
@@ -76,7 +115,7 @@ export default function PrintingPage() {
     return <div className="p-8 text-sm text-slate-400">{err ?? 'Loading…'}</div>;
   }
 
-  const PrinterSelect = ({ label, value, onChange }: { label: string; value?: string; onChange: (v: string) => void }) => (
+  const PrinterSelect = ({ label, value, onChange, role }: { label: string; value?: string; onChange: (v: string) => void; role: 'kot' | 'bot' | 'bill' }) => (
     <div>
       <label className="label">{label}</label>
       <select className="input" value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
@@ -85,6 +124,14 @@ export default function PrintingPage() {
           <option key={p.name} value={p.name}>{p.displayName || p.name}{p.isDefault ? ' (default)' : ''}</option>
         ))}
       </select>
+      <button
+        type="button"
+        onClick={() => testPrint(role, value)}
+        disabled={testing === role}
+        className="mt-1.5 w-full rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700/40"
+      >
+        {testing === role ? 'Printing test ticket…' : '🖨 Test print'}
+      </button>
     </div>
   );
 
@@ -107,14 +154,24 @@ export default function PrintingPage() {
 
       {/* ── Printers (per device) ── */}
       <div className="card mb-6 p-6">
-        <h2 className="mb-1 text-sm font-semibold text-slate-700">Printers — this device</h2>
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700">Printers — this device</h2>
+          {desktop && (
+            <button type="button" onClick={refreshPrinters} disabled={refreshingPrinters} className="text-xs text-brand-600 hover:underline disabled:opacity-50">
+              {refreshingPrinters ? 'Refreshing…' : '↻ Refresh printer list'}
+            </button>
+          )}
+        </div>
         {desktop ? (
           <>
-            <p className="mb-4 text-xs text-slate-400">Installed printers detected by the desktop app. Saved on this till only.</p>
+            <p className="mb-4 text-xs text-slate-400">
+              Installed printers detected by the desktop app. Saved on this till only. Just plugged one in? Hit refresh — the
+              list is only read once when the app starts.
+            </p>
             <div className="grid gap-4 sm:grid-cols-3">
-              <PrinterSelect label="KOT (kitchen) printer" value={prefs.kot} onChange={(v) => setPref('kot', v || undefined)} />
-              <PrinterSelect label="BOT (bar) printer" value={prefs.bot} onChange={(v) => setPref('bot', v || undefined)} />
-              <PrinterSelect label="Bill printer" value={prefs.bill} onChange={(v) => setPref('bill', v || undefined)} />
+              <PrinterSelect role="kot" label="KOT (kitchen) printer" value={prefs.kot} onChange={(v) => setPref('kot', v || undefined)} />
+              <PrinterSelect role="bot" label="BOT (bar) printer" value={prefs.bot} onChange={(v) => setPref('bot', v || undefined)} />
+              <PrinterSelect role="bill" label="Bill printer" value={prefs.bill} onChange={(v) => setPref('bill', v || undefined)} />
             </div>
             <div className="mt-4 max-w-md">
               <Toggle label="Auto-print KOTs fired by waiters (this till acts as the print server)" on={prefs.autoPrintKot} onChange={(v) => setPref('autoPrintKot', v)} />
