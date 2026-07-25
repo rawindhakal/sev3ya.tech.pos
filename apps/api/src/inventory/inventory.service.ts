@@ -246,7 +246,30 @@ export class InventoryService {
     });
     if (!items.length) return;
     const menuIds = [...new Set(items.map((i) => i.menuItemId!))];
-    const recipes = await tx.recipeItem.findMany({ where: { menuItemId: { in: menuIds } } });
+
+    // Expand any sold combos into their components — a combo's OWN recipe
+    // (if it has one, e.g. a packaging box) still applies at the sold qty,
+    // and each component's recipe applies at sold qty × component qty.
+    const combos = await tx.menuItem.findMany({
+      where: { id: { in: menuIds }, isCombo: true },
+      include: { comboComponents: { select: { componentMenuItemId: true, quantity: true } } },
+    });
+    const comboByMenuId = new Map(combos.map((c) => [c.id, c.comboComponents]));
+
+    const effective = new Map<string, number>(); // menuItemId -> total qty to deduct recipes for
+    for (const item of items) {
+      const mid = item.menuItemId!;
+      const components = comboByMenuId.get(mid);
+      if (components?.length) {
+        for (const comp of components) {
+          effective.set(comp.componentMenuItemId, (effective.get(comp.componentMenuItemId) ?? 0) + comp.quantity * item.quantity);
+        }
+      }
+      effective.set(mid, (effective.get(mid) ?? 0) + item.quantity);
+    }
+
+    const effectiveMenuIds = [...effective.keys()];
+    const recipes = await tx.recipeItem.findMany({ where: { menuItemId: { in: effectiveMenuIds } } });
     if (!recipes.length) return;
     const byMenu = new Map<string, typeof recipes>();
     for (const r of recipes) {
@@ -254,13 +277,15 @@ export class InventoryService {
       arr.push(r);
       byMenu.set(r.menuItemId, arr);
     }
+    const menuNames = await tx.menuItem.findMany({ where: { id: { in: effectiveMenuIds } }, select: { id: true, name: true } });
+    const nameByMenuId = new Map(menuNames.map((m) => [m.id, m.name]));
     // Sale deductions aren't tied to a specific till/warehouse, so they
     // always come out of the default "Main Store" location — same
     // backward-compatible default used by movement()/stockTake().
     const defaultWarehouse = await tx.warehouse.findFirst({ where: { isDefault: true } });
-    for (const item of items) {
-      for (const r of byMenu.get(item.menuItemId!) ?? []) {
-        const consume = r.quantity * item.quantity;
+    for (const [menuItemId, qty] of effective) {
+      for (const r of byMenu.get(menuItemId) ?? []) {
+        const consume = r.quantity * qty;
         await tx.ingredient.update({ where: { id: r.ingredientId }, data: { stockQty: { decrement: consume } } });
         if (defaultWarehouse) {
           await tx.warehouseStock.upsert({
@@ -274,7 +299,7 @@ export class InventoryService {
             ingredientId: r.ingredientId,
             type: 'SALE_DEDUCTION',
             quantity: -consume,
-            reason: `Sold ${item.quantity}× ${item.nameSnapshot}`,
+            reason: `Sold ${qty}× ${nameByMenuId.get(menuItemId) ?? menuItemId}`,
             warehouseId: defaultWarehouse?.id,
           },
         });

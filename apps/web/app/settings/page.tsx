@@ -15,6 +15,7 @@ const FEATURES: { key: keyof Features; col: string; label: string }[] = [
   { key: 'crm', col: 'featCrm', label: 'Customers (CRM & loyalty)' },
   { key: 'finance', col: 'featFinance', label: 'Finance & P&L' },
   { key: 'kds', col: 'featKds', label: 'Kitchen display (KDS)' },
+  { key: 'selfOrder', col: 'featSelfOrder', label: 'QR self-ordering (table QR codes)' },
 ];
 
 // Danger zone: what a reset can clear, and whether it's checked by default.
@@ -45,7 +46,7 @@ export default function SettingsPage() {
     Object.fromEntries(RESET_CATEGORIES.map((c) => [c.key, c.defaultOn])),
   );
   // RestroX-style settings hub: left sub-nav, one section at a time.
-  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'modules' | 'prefs' | 'desktop' | 'about' | 'discounts' | 'danger'>('details');
+  const [section, setSection] = useState<'details' | 'tax' | 'invoice' | 'ird' | 'gateways' | 'modules' | 'prefs' | 'desktop' | 'about' | 'discounts' | 'danger'>('details');
 
   const selectedCats = Object.entries(resetCats).filter(([, v]) => v).map(([k]) => k);
   const allSelected = RESET_CATEGORIES.every((c) => resetCats[c.key]);
@@ -82,6 +83,8 @@ export default function SettingsPage() {
         taxId: form.taxId,
         vatRate: form.vatRate,
         serviceChargeRate: form.serviceChargeRate,
+        packagingChargeCents: form.packagingChargeCents,
+        deliveryChargeCents: form.deliveryChargeCents,
         receiptHeader: form.receiptHeader,
         receiptFooter: form.receiptFooter,
         wifiPassword: form.wifiPassword,
@@ -134,6 +137,7 @@ export default function SettingsPage() {
         { href: '/printing', label: 'KOT & Printer' },
         { id: 'discounts', label: 'Discounts' },
         { id: 'ird', label: 'IRD Nepal (CBMS)' },
+        { id: 'gateways', label: 'Payments & SMS' },
       ],
     },
     {
@@ -249,6 +253,30 @@ export default function SettingsPage() {
                 onChange={(e) => setForm({ ...form, serviceChargeRate: (parseFloat(e.target.value) || 0) / 100 })}
               />
             </div>
+            <div>
+              <label className="label">Packaging charge ({form.currencySymbol || 'Rs'})</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="1"
+                value={((form.packagingChargeCents ?? 0) / 100).toString()}
+                onChange={(e) => setForm({ ...form, packagingChargeCents: Math.round((parseFloat(e.target.value) || 0) * 100) })}
+              />
+              <p className="mt-1 text-xs text-slate-400">Auto-added to Takeaway &amp; Delivery orders.</p>
+            </div>
+            <div>
+              <label className="label">Delivery charge ({form.currencySymbol || 'Rs'})</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="1"
+                value={((form.deliveryChargeCents ?? 0) / 100).toString()}
+                onChange={(e) => setForm({ ...form, deliveryChargeCents: Math.round((parseFloat(e.target.value) || 0) * 100) })}
+              />
+              <p className="mt-1 text-xs text-slate-400">Auto-added to Delivery orders only.</p>
+            </div>
           </div>
           <div className="mt-3">
             <button
@@ -319,6 +347,9 @@ export default function SettingsPage() {
 
       {/* ── Discount presets (POS discount modal) ── */}
       {section === 'discounts' && <DiscountsCard />}
+
+      {/* ── Payment gateways (eSewa/Khalti/FonePay) + SMS ── */}
+      {section === 'gateways' && form && <GatewaysCard settings={form} onSaved={setForm} />}
 
       {/* ── Preferences (dynamic runtime settings) ── */}
       {section === 'prefs' && (
@@ -558,6 +589,119 @@ function IrdCard({ settings, onSaved }: { settings: Settings; onSaved: (s: Setti
           <span className="text-slate-700">{enabled ? 'Sync enabled' : 'Sync disabled'}</span>
         </button>
         <button className="btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save IRD settings'}</button>
+        {note && <span className="text-xs font-medium text-slate-500">{note}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Payment gateways (eSewa/Khalti/FonePay) + SMS gateway ──
+// Secret keys are write-only (never sent back from the API) — same masking
+// pattern as the IRD password above. Blank = that gateway stays inactive
+// and the POS falls back to its existing manual "record as X" flow.
+function GatewaysCard({ settings, onSaved }: { settings: Settings; onSaved: (s: Settings) => void }) {
+  const gw = settings.paymentGateways;
+  const sms = settings.sms;
+  const [esewaMerchantCode, setEsewaMerchantCode] = useState(gw?.esewa.merchantCode ?? '');
+  const [esewaSecretKey, setEsewaSecretKey] = useState('');
+  const [khaltiPublicKey, setKhaltiPublicKey] = useState(gw?.khalti.publicKey ?? '');
+  const [khaltiSecretKey, setKhaltiSecretKey] = useState('');
+  const [fonepayMerchantCode, setFonepayMerchantCode] = useState(gw?.fonepay.merchantCode ?? '');
+  const [fonepaySecretKey, setFonepaySecretKey] = useState('');
+  const [smsSenderId, setSmsSenderId] = useState(sms?.senderId ?? '');
+  const [smsApiKey, setSmsApiKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setNote(null);
+    try {
+      const updated = await api.patch<Settings>('/settings', {
+        esewaMerchantCode: esewaMerchantCode || undefined,
+        ...(esewaSecretKey ? { esewaSecretKey } : {}),
+        khaltiPublicKey: khaltiPublicKey || undefined,
+        ...(khaltiSecretKey ? { khaltiSecretKey } : {}),
+        fonepayMerchantCode: fonepayMerchantCode || undefined,
+        ...(fonepaySecretKey ? { fonepaySecretKey } : {}),
+        smsGatewaySenderId: smsSenderId || undefined,
+        ...(smsApiKey ? { smsGatewayApiKey: smsApiKey } : {}),
+      });
+      onSaved(updated);
+      setEsewaSecretKey(''); setKhaltiSecretKey(''); setFonepaySecretKey(''); setSmsApiKey('');
+      setNote('Saved ✓');
+    } catch (e) {
+      setNote((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card mt-6 space-y-6 p-6">
+      <div>
+        <h2 className="mb-1 text-sm font-semibold text-slate-700">Payment gateways</h2>
+        <p className="text-xs text-slate-400">
+          Real merchant integration for online/QR payment — until configured, the POS keeps using its existing
+          manual &quot;record as eSewa/Khalti/FonePay&quot; flow.
+        </p>
+      </div>
+
+      <div className="border-t border-slate-100 pt-4 dark:border-slate-700">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="font-medium text-slate-700">eSewa</span>
+          <span className={`badge ${gw?.esewa.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{gw?.esewa.configured ? 'Configured' : 'Not configured'}</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div><label className="label">Merchant code (product code)</label>
+            <input className="input" value={esewaMerchantCode} onChange={(e) => setEsewaMerchantCode(e.target.value)} placeholder="EPAYTEST" /></div>
+          <div><label className="label">Secret key {gw?.esewa.configured && '— saved, blank to keep'}</label>
+            <input className="input" type="password" value={esewaSecretKey} onChange={(e) => setEsewaSecretKey(e.target.value)} autoComplete="new-password" placeholder={gw?.esewa.configured ? '••••••••' : ''} /></div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 pt-4 dark:border-slate-700">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="font-medium text-slate-700">Khalti</span>
+          <span className={`badge ${gw?.khalti.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{gw?.khalti.configured ? 'Configured' : 'Not configured'}</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div><label className="label">Public key (optional)</label>
+            <input className="input" value={khaltiPublicKey} onChange={(e) => setKhaltiPublicKey(e.target.value)} placeholder="live_public_key_..." /></div>
+          <div><label className="label">Secret key {gw?.khalti.configured && '— saved, blank to keep'}</label>
+            <input className="input" type="password" value={khaltiSecretKey} onChange={(e) => setKhaltiSecretKey(e.target.value)} autoComplete="new-password" placeholder={gw?.khalti.configured ? '••••••••' : 'live_secret_key_...'} /></div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 pt-4 dark:border-slate-700">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="font-medium text-slate-700">FonePay</span>
+          <span className={`badge ${gw?.fonepay.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{gw?.fonepay.configured ? 'Configured' : 'Not configured'}</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div><label className="label">Merchant code (PID)</label>
+            <input className="input" value={fonepayMerchantCode} onChange={(e) => setFonepayMerchantCode(e.target.value)} /></div>
+          <div><label className="label">Secret key {gw?.fonepay.configured && '— saved, blank to keep'}</label>
+            <input className="input" type="password" value={fonepaySecretKey} onChange={(e) => setFonepaySecretKey(e.target.value)} autoComplete="new-password" placeholder={gw?.fonepay.configured ? '••••••••' : ''} /></div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 pt-4 dark:border-slate-700">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="font-medium text-slate-700">SMS notifications</span>
+          <span className={`badge ${sms?.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{sms?.configured ? 'Configured' : 'Not configured'}</span>
+        </div>
+        <p className="mb-2 text-xs text-slate-400">Sparrow-SMS-style gateway — sends &quot;order ready&quot; and self-order confirmation texts.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div><label className="label">Sender ID</label>
+            <input className="input" value={smsSenderId} onChange={(e) => setSmsSenderId(e.target.value)} placeholder="INFO" /></div>
+          <div><label className="label">API token {sms?.configured && '— saved, blank to keep'}</label>
+            <input className="input" type="password" value={smsApiKey} onChange={(e) => setSmsApiKey(e.target.value)} autoComplete="new-password" placeholder={sms?.configured ? '••••••••' : ''} /></div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 border-t border-slate-100 pt-4 dark:border-slate-700">
+        <button className="btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
         {note && <span className="text-xs font-medium text-slate-500">{note}</span>}
       </div>
     </div>

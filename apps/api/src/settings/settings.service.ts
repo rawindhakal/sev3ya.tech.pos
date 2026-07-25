@@ -40,6 +40,8 @@ export class SettingsService {
       wifiPassword: s.wifiPassword,
       billTemplate: s.billTemplate ?? null,
       kotTemplate: s.kotTemplate ?? null,
+      packagingChargeCents: s.packagingChargeCents,
+      deliveryChargeCents: s.deliveryChargeCents,
       // IRD config — the password is write-only (never returned to clients).
       attendanceDevice: { ip: s.zkDeviceIp, port: s.zkDevicePort },
       ird: {
@@ -49,6 +51,16 @@ export class SettingsService {
         apiUrl: s.irdApiUrl,
         hasPassword: !!s.irdPassword,
       },
+      // Payment-gateway merchant config — secret keys are write-only
+      // (never returned), same masking pattern as the IRD password above.
+      // `configured` tells the POS whether it can offer a real gateway QR
+      // for that provider or should fall back to manual "record as X".
+      paymentGateways: {
+        esewa: { merchantCode: s.esewaMerchantCode, configured: !!(s.esewaMerchantCode && s.esewaSecretKey) },
+        khalti: { publicKey: s.khaltiPublicKey, configured: !!(s.khaltiPublicKey && s.khaltiSecretKey) },
+        fonepay: { merchantCode: s.fonepayMerchantCode, configured: !!(s.fonepayMerchantCode && s.fonepaySecretKey) },
+      },
+      sms: { senderId: s.smsGatewaySenderId, configured: !!s.smsGatewayApiKey },
       features: {
         reservations: s.featReservations,
         inventory: s.featInventory,
@@ -58,6 +70,7 @@ export class SettingsService {
         crm: s.featCrm,
         finance: s.featFinance,
         kds: s.featKds,
+        selfOrder: s.featSelfOrder,
       },
     };
   }
@@ -65,7 +78,25 @@ export class SettingsService {
   // Rates used by the order money math (single source of truth).
   async getRates() {
     const s = await this.ensure();
-    return { vatRate: s.vatRate, serviceChargeRate: s.serviceChargeRate, pricesIncludeVat: s.pricesIncludeVat };
+    return {
+      vatRate: s.vatRate,
+      serviceChargeRate: s.serviceChargeRate,
+      pricesIncludeVat: s.pricesIncludeVat,
+      packagingChargeCents: s.packagingChargeCents,
+      deliveryChargeCents: s.deliveryChargeCents,
+    };
+  }
+
+  // Gateway credentials for the payments-gateway/notifications modules —
+  // never sent to the browser, only read server-side.
+  async getGatewayConfig() {
+    const s = await this.ensure();
+    return {
+      esewa: { merchantCode: s.esewaMerchantCode, secretKey: s.esewaSecretKey },
+      khalti: { publicKey: s.khaltiPublicKey, secretKey: s.khaltiSecretKey },
+      fonepay: { merchantCode: s.fonepayMerchantCode, secretKey: s.fonepaySecretKey },
+      sms: { apiKey: s.smsGatewayApiKey, senderId: s.smsGatewaySenderId },
+    };
   }
 
   // Danger zone: wipe SELECTED sales / operational data categories while
@@ -185,6 +216,7 @@ export class SettingsService {
     featCrm?: boolean;
     featFinance?: boolean;
     featKds?: boolean;
+    featSelfOrder?: boolean;
     billTemplate?: object;
     kotTemplate?: object;
     irdEnabled?: boolean;
@@ -194,6 +226,16 @@ export class SettingsService {
     irdApiUrl?: string;
     zkDeviceIp?: string;
     zkDevicePort?: number;
+    packagingChargeCents?: number;
+    deliveryChargeCents?: number;
+    esewaMerchantCode?: string;
+    esewaSecretKey?: string;
+    khaltiPublicKey?: string;
+    khaltiSecretKey?: string;
+    fonepayMerchantCode?: string;
+    fonepaySecretKey?: string;
+    smsGatewayApiKey?: string;
+    smsGatewaySenderId?: string;
   }) {
     await this.ensure();
     await this.prisma.cafeSetting.update({ where: { id: SINGLETON }, data });

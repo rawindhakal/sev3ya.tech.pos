@@ -11,6 +11,7 @@ import type { PaymentMethod } from '@/lib/types';
 interface TenderLine {
   method: PaymentMethod;
   amount: string; // rupees, as typed
+  giftCardCode?: string;
 }
 
 export default function PaymentPanel({
@@ -22,7 +23,7 @@ export default function PaymentPanel({
   totalCents: number;
   busy: boolean;
   onCancel: () => void;
-  onConfirm: (payments: { method: PaymentMethod; amountCents: number }[]) => void;
+  onConfirm: (payments: { method: PaymentMethod; amountCents: number; giftCardCode?: string }[]) => void;
 }) {
   const [lines, setLines] = useState<TenderLine[]>([
     { method: 'CASH', amount: (totalCents / 100).toFixed(2) },
@@ -58,13 +59,14 @@ export default function PaymentPanel({
   }
 
   function confirm() {
+    if (lines.some((l) => l.method === 'GIFTCARD' && !l.giftCardCode?.trim())) return;
     // Cap cash overpayment to the exact due (change is returned physically).
     let left = totalCents;
     const payments = lines
       .map((l) => {
         const c = Math.min(toCents(l.amount), Math.max(0, left));
         left -= c;
-        return { method: l.method, amountCents: c };
+        return { method: l.method, amountCents: c, giftCardCode: l.method === 'GIFTCARD' ? l.giftCardCode?.trim().toUpperCase() : undefined };
       })
       .filter((p) => p.amountCents > 0);
     // Ensure rounding never leaves the bill short.
@@ -73,6 +75,7 @@ export default function PaymentPanel({
       payments[payments.length - 1].amountCents += totalCents - sum;
     onConfirm(payments);
   }
+  const giftCardMissing = lines.some((l) => l.method === 'GIFTCARD' && !l.giftCardCode?.trim());
 
   return (
     <div className="space-y-4">
@@ -121,6 +124,15 @@ export default function PaymentPanel({
               className="input mt-2 text-right"
               placeholder="0.00"
             />
+            {line.method === 'GIFTCARD' && (
+              <input
+                type="text"
+                value={line.giftCardCode ?? ''}
+                onChange={(e) => update(i, { giftCardCode: e.target.value.toUpperCase() })}
+                className="input mt-2 font-mono uppercase"
+                placeholder="Gift card code"
+              />
+            )}
           </div>
         ))}
       </div>
@@ -167,8 +179,8 @@ export default function PaymentPanel({
         <button className="btn-ghost" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
-        <button className="btn-primary" onClick={confirm} disabled={busy || !covered}>
-          {busy ? 'Processing…' : covered ? `Settle ${formatMoney(totalCents)}` : 'Amount short'}
+        <button className="btn-primary" onClick={confirm} disabled={busy || !covered || giftCardMissing}>
+          {busy ? 'Processing…' : giftCardMissing ? 'Enter gift card code' : covered ? `Settle ${formatMoney(totalCents)}` : 'Amount short'}
         </button>
       </div>
     </div>

@@ -11,6 +11,8 @@ import { SettingsService } from '../settings/settings.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
 import { CrmService } from '../crm/crm.service';
+import { PromotionsService } from '../promotions/promotions.service';
+import { GiftCardsService } from '../giftcards/giftcards.service';
 import type { TokenPayload } from '../common/token';
 import { ForbiddenException } from '@nestjs/common';
 import { OrderType } from '@prisma/client';
@@ -39,6 +41,8 @@ export class OrdersService {
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
     private readonly crm: CrmService,
+    private readonly promotions: PromotionsService,
+    private readonly giftCards: GiftCardsService,
   ) {}
 
   // Pick the price for a menu item based on the order type (matrix #15).
@@ -49,6 +53,15 @@ export class OrdersService {
     if (type === 'TAKEAWAY') return mi.takeawayPriceCents ?? mi.priceCents;
     if (type === 'DELIVERY') return mi.deliveryPriceCents ?? mi.priceCents;
     return mi.priceCents;
+  }
+
+  // Packaging applies to TAKEAWAY/DELIVERY; delivery charge to DELIVERY only.
+  // Defaults come from Settings → Tax & Charges and can be overridden per
+  // order (SaveCartDto.packagingChargeCents/deliveryChargeCents).
+  private chargesForType(type: OrderType, rates: { packagingChargeCents: number; deliveryChargeCents: number }) {
+    if (type === 'TAKEAWAY') return { packagingChargeCents: rates.packagingChargeCents, deliveryChargeCents: 0 };
+    if (type === 'DELIVERY') return { packagingChargeCents: rates.packagingChargeCents, deliveryChargeCents: rates.deliveryChargeCents };
+    return { packagingChargeCents: 0, deliveryChargeCents: 0 };
   }
 
   private async resolveLines(lines: CartLineDto[], type: OrderType) {
@@ -107,7 +120,8 @@ export class OrdersService {
   async create(dto: CreateOrderDto) {
     const resolved = await this.resolveLines(dto.items ?? [], dto.type);
     const rates = await this.settings.getRates();
-    const totals = computeTotals(resolved, rates);
+    const charges = this.chargesForType(dto.type, rates);
+    const totals = computeTotals(resolved, { ...rates, ...charges });
     const isDineIn = dto.type === 'DINE_IN' && dto.tableId;
 
     // Max-occupancy guard (matrix #36).
@@ -150,6 +164,8 @@ export class OrdersService {
           seatedAt: isDineIn ? new Date() : null,
           subtotalCents: totals.subtotalCents,
           serviceChargeCents: totals.serviceChargeCents,
+          packagingChargeCents: totals.packagingChargeCents,
+          deliveryChargeCents: totals.deliveryChargeCents,
           taxCents: totals.taxCents,
           totalCents: totals.totalCents,
           items: { create: resolved },
@@ -251,8 +267,11 @@ export class OrdersService {
       }
       // Recompute from non-cancelled items.
       const rates = await this.settings.getRates();
+      const defaultCharges = this.chargesForType(existing.type, rates);
+      const packagingChargeCents = dto.packagingChargeCents ?? defaultCharges.packagingChargeCents;
+      const deliveryChargeCents = dto.deliveryChargeCents ?? defaultCharges.deliveryChargeCents;
       const items = await tx.orderItem.findMany({ where: { orderId: id, cancelledAt: null } });
-      const totals = computeTotals(items, { ...rates, discountCents: dto.discountCents ?? 0 });
+      const totals = computeTotals(items, { ...rates, discountCents: dto.discountCents ?? 0, packagingChargeCents, deliveryChargeCents });
       await tx.order.update({
         where: { id },
         data: {
@@ -267,6 +286,8 @@ export class OrdersService {
           isComplimentary: existing.isComplimentary && !!dto.isComplimentary,
           subtotalCents: totals.subtotalCents,
           serviceChargeCents: totals.serviceChargeCents,
+          packagingChargeCents: totals.packagingChargeCents,
+          deliveryChargeCents: totals.deliveryChargeCents,
           taxCents: totals.taxCents,
           totalCents: totals.totalCents,
         },
@@ -290,7 +311,12 @@ export class OrdersService {
     // Discount the full subtotal so tax/service/total all fall to zero.
     const gross = computeTotals(items, rates).subtotalCents;
     const label = reason?.trim() ? `Complimentary — ${reason.trim()}` : 'Complimentary';
-    const totals = computeTotals(items, { ...rates, discountCents: gross });
+    const totals = computeTotals(items, {
+      ...rates,
+      discountCents: gross,
+      packagingChargeCents: order.packagingChargeCents,
+      deliveryChargeCents: order.deliveryChargeCents,
+    });
     const updated = await this.prisma.order.update({
       where: { id },
       data: {
@@ -455,13 +481,16 @@ export class OrdersService {
         `Payment ${paid} is less than order total ${order.totalCents}`,
       );
     return this.prisma.$transaction(async (tx) => {
-      await tx.payment.createMany({
-        data: dto.payments.map((p) => ({
-          orderId: id,
-          method: p.method,
-          amountCents: p.amountCents,
-        })),
-      });
+      for (const p of dto.payments) {
+        let giftCardId: string | undefined;
+        if (p.method === 'GIFTCARD') {
+          if (!p.giftCardCode) throw new BadRequestException('Gift card code is required for a GIFTCARD payment');
+          giftCardId = await this.giftCards.redeem(tx, p.giftCardCode, p.amountCents, id);
+        }
+        await tx.payment.create({
+          data: { orderId: id, method: p.method, amountCents: p.amountCents, giftCardId, gatewayRef: p.gatewayRef },
+        });
+      }
       const now = new Date();
       const updated = await tx.order.update({
         where: { id },
@@ -502,6 +531,25 @@ export class OrdersService {
     });
   }
 
+  // ── Post-order guest feedback ───────────────────────
+  async submitFeedback(orderId: string, rating: number, comment?: string) {
+    await this.findOne(orderId);
+    return this.prisma.orderFeedback.upsert({
+      where: { orderId },
+      create: { orderId, rating, comment },
+      update: { rating, comment },
+    });
+  }
+
+  feedbackSummary(days = 30) {
+    const since = new Date(Date.now() - days * 86400000);
+    return this.prisma.orderFeedback.findMany({
+      where: { createdAt: { gte: since } },
+      orderBy: { createdAt: 'desc' },
+      include: { order: { select: { number: true, type: true } } },
+    });
+  }
+
   // Attach (or create) a customer to an order while billing.
   async attachCustomer(id: string, dto: { name?: string; phone: string }) {
     await this.findOne(id);
@@ -510,6 +558,67 @@ export class OrdersService {
       where: { id },
       data: { customerId: cust.id, customerName: cust.name, customerPhone: cust.phone },
       include: orderInclude,
+    });
+  }
+
+  // Apply (or replace) a coupon on this order — reuses the existing single
+  // discountCents/discountLabel fields (same as the staff "Custom discount"
+  // flow); only one discount can be active on an order at a time.
+  async applyCoupon(id: string, code: string) {
+    const order = await this.findOne(id);
+    if (order.status === 'PAID') throw new BadRequestException('Order is already paid');
+    const items = order.items.filter((i) => !i.cancelledAt);
+    if (!items.length) throw new BadRequestException('Cannot apply a coupon to an empty order');
+    const rates = await this.settings.getRates();
+    const grossSubtotal = computeTotals(items, rates).subtotalCents;
+    return this.prisma.$transaction(async (tx) => {
+      await this.promotions.unredeem(tx, id); // replace any coupon already on this order
+      const { coupon, discountCents } = await this.promotions.redeem(tx, code, grossSubtotal, id, order.customerId ?? undefined);
+      const totals = computeTotals(items, {
+        ...rates,
+        discountCents,
+        packagingChargeCents: order.packagingChargeCents,
+        deliveryChargeCents: order.deliveryChargeCents,
+      });
+      await tx.order.update({
+        where: { id },
+        data: {
+          discountCents: totals.discountCents,
+          discountLabel: `Coupon ${coupon.code}`,
+          subtotalCents: totals.subtotalCents,
+          serviceChargeCents: totals.serviceChargeCents,
+          taxCents: totals.taxCents,
+          totalCents: totals.totalCents,
+        },
+      });
+      return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
+    });
+  }
+
+  async removeCoupon(id: string) {
+    const order = await this.findOne(id);
+    const items = order.items.filter((i) => !i.cancelledAt);
+    const rates = await this.settings.getRates();
+    return this.prisma.$transaction(async (tx) => {
+      await this.promotions.unredeem(tx, id);
+      const totals = computeTotals(items, {
+        ...rates,
+        discountCents: 0,
+        packagingChargeCents: order.packagingChargeCents,
+        deliveryChargeCents: order.deliveryChargeCents,
+      });
+      await tx.order.update({
+        where: { id },
+        data: {
+          discountCents: 0,
+          discountLabel: null,
+          subtotalCents: totals.subtotalCents,
+          serviceChargeCents: totals.serviceChargeCents,
+          taxCents: totals.taxCents,
+          totalCents: totals.totalCents,
+        },
+      });
+      return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
   }
 
@@ -577,6 +686,8 @@ export class OrdersService {
     const totals = computeTotals(order.items, {
       ...rates,
       discountCents: order.discountCents,
+      packagingChargeCents: order.packagingChargeCents,
+      deliveryChargeCents: order.deliveryChargeCents,
     });
     await tx.order.update({
       where: { id: orderId },

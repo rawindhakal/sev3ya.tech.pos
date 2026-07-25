@@ -8,6 +8,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -68,15 +69,32 @@ export class SaveCartDto {
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() waiterId?: string;
   @IsOptional() @IsInt() @Min(1) guestCount?: number;
+  // Override the auto-applied-by-order-type packaging/delivery charge.
+  @IsOptional() @IsInt() @Min(0) packagingChargeCents?: number;
+  @IsOptional() @IsInt() @Min(0) deliveryChargeCents?: number;
 }
 
 export class ComplimentaryDto {
   @IsOptional() @IsString() reason?: string;
 }
 
+export class CouponDto {
+  @IsString() @IsNotEmpty() code: string;
+}
+
+export class FeedbackDto {
+  @IsInt() @Min(1) @Max(5) rating: number;
+  @IsOptional() @IsString() comment?: string;
+}
+
 export class PaymentLineDto {
   @IsEnum(PaymentMethod) method: PaymentMethod;
   @IsInt() @Min(0) amountCents: number;
+  // Required when method = GIFTCARD — which card to redeem.
+  @IsOptional() @IsString() giftCardCode?: string;
+  // Real gateway transaction reference when method = ESEWA/KHALTI/FONEPAY
+  // and paid via the live gateway integration (not a manual tag).
+  @IsOptional() @IsString() gatewayRef?: string;
 }
 
 export class PayDto {

@@ -13,6 +13,7 @@ export const PAYMENT_METHODS: {
   { value: 'BANK', label: 'Bank', color: 'bg-blue-600' },
   { value: 'CARD', label: 'Card', color: 'bg-indigo-500' },
   { value: 'CREDIT', label: 'Credit', color: 'bg-amber-500' },
+  { value: 'GIFTCARD', label: 'Gift card', color: 'bg-pink-500' },
   { value: 'OFFLINE', label: 'Offline', color: 'bg-slate-400' },
 ];
 

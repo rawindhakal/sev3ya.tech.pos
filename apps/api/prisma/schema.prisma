@@ -45,6 +45,13 @@ model MenuItem {
   isAvailable Boolean  @default(true)
   imageUrl    String?
 
+  // Combo/meal-deal: this item is sold as a single line (one price, one KOT
+  // entry) but bundles other menu items — see ComboComponent. Inventory
+  // deduction expands a combo into its components' recipes at sale time.
+  isCombo Boolean @default(false)
+  comboComponents ComboComponent[] @relation("ComboOwner")
+  usedInCombos    ComboComponent[] @relation("ComboComponentItem")
+
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
@@ -60,6 +67,20 @@ model MenuItem {
 
   @@index([categoryId])
   @@map("menu_items")
+}
+
+// A component menu item that makes up a combo (MenuItem.isCombo = true).
+// e.g. Combo "Burger Meal" -> [Burger x1, Fries x1, Coke x1].
+model ComboComponent {
+  id                  String   @id @default(cuid())
+  comboMenuItemId     String
+  comboMenuItem       MenuItem @relation("ComboOwner", fields: [comboMenuItemId], references: [id], onDelete: Cascade)
+  componentMenuItemId String
+  componentMenuItem   MenuItem @relation("ComboComponentItem", fields: [componentMenuItemId], references: [id])
+  quantity            Int      @default(1)
+
+  @@index([comboMenuItemId])
+  @@map("combo_components")
 }
 
 // A priced portion/variant of a menu item (replaces the base price when chosen).
@@ -125,12 +146,37 @@ model RestaurantTable {
   // Floor-plan canvas position within its area (matrix #26).
   posX      Int?
   posY      Int?
+  // Public QR-ordering token — printed on a table QR code, resolves to this
+  // table with no login required (apps/web/app/order/[token]). Generated
+  // on-demand (Tables → "Get QR"), not backfilled — null = QR not set up yet.
+  qrToken   String?     @unique
   orders    Order[]
   reservations Reservation[]
+  waiterCalls  WaiterCall[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
   @@map("restaurant_tables")
+}
+
+enum WaiterCallStatus {
+  PENDING
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+// "Call waiter" button on the QR self-order page — software equivalent of a
+// table buzzer. Surfaced to staff on the waiter/POS screens.
+model WaiterCall {
+  id         String           @id @default(cuid())
+  tableId    String
+  table      RestaurantTable  @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  status     WaiterCallStatus @default(PENDING)
+  createdAt  DateTime         @default(now())
+  resolvedAt DateTime?
+
+  @@index([status])
+  @@map("waiter_calls")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -173,6 +219,24 @@ enum OrderType {
   DINE_IN
   TAKEAWAY
   DELIVERY
+}
+
+enum OrderSource {
+  STAFF
+  SELF_ORDER
+}
+
+// Post-order guest feedback (rating + optional comment), collected via a
+// link/QR shown after the bill on the self-order page.
+model OrderFeedback {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@map("order_feedback")
 }
 
 enum OrderStatus {
@@ -229,8 +293,18 @@ model Order {
   subtotalCents      Int @default(0)
   discountCents      Int @default(0)
   serviceChargeCents Int @default(0)
+  packagingChargeCents Int @default(0) // flat charge, TAKEAWAY/DELIVERY
+  deliveryChargeCents  Int @default(0) // flat charge, DELIVERY only
   taxCents           Int @default(0)
   totalCents         Int @default(0)
+
+  // Where this order originated — a self-order (QR) came in with no staff
+  // member present, which some UI/permission flows care about.
+  source OrderSource @default(STAFF)
+
+  feedback             OrderFeedback?
+  giftCardTransactions GiftCardTransaction[]
+  couponRedemption     CouponRedemption?
 
   notes     String?
 
@@ -532,6 +606,7 @@ enum PaymentMethod {
   KHALTI
   CARD
   CREDIT
+  GIFTCARD
 }
 
 model Payment {
@@ -540,11 +615,92 @@ model Payment {
   order      Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   amountCents Int
   method     PaymentMethod @default(CASH)
+  // Set when method = GIFTCARD — which card was redeemed against.
+  giftCardId String?
+  giftCard   GiftCard?     @relation(fields: [giftCardId], references: [id])
+  // Set when method = ESEWA/KHALTI/FONEPAY and paid via the real gateway
+  // integration (not just a manual "received via X" tag) — the provider's
+  // transaction reference, for reconciliation.
+  gatewayRef String?
   createdAt  DateTime      @default(now())
 
   @@index([orderId])
   @@index([method, createdAt])
   @@map("payments")
+}
+
+// ── Coupons (rule-based promo codes) ────────────────────────────────
+enum CouponType {
+  PCT
+  RS
+}
+
+model Coupon {
+  id                 String     @id @default(cuid())
+  code               String     @unique
+  type               CouponType @default(PCT)
+  value              Int        // percent (whole number) or Rs in cents, per `type`
+  minOrderCents      Int        @default(0)
+  maxUsesTotal       Int?       // null = unlimited
+  maxUsesPerCustomer Int?       // null = unlimited
+  usedCount          Int        @default(0)
+  startsAt           DateTime?
+  expiresAt          DateTime?
+  isActive           Boolean    @default(true)
+  redemptions        CouponRedemption[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@map("coupons")
+}
+
+// One row per order a coupon was applied to — enforces usage limits and
+// gives an audit trail. The actual discount amount lives on Order
+// (discountCents/discountLabel, reusing the existing discount pipeline).
+model CouponRedemption {
+  id         String   @id @default(cuid())
+  couponId   String
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId String?
+  createdAt  DateTime @default(now())
+
+  @@index([couponId])
+  @@map("coupon_redemptions")
+}
+
+// ── Gift cards / store credit ───────────────────────────────────────
+model GiftCard {
+  id                String   @id @default(cuid())
+  code              String   @unique
+  initialValueCents Int
+  balanceCents      Int
+  isActive          Boolean  @default(true)
+  issuedToName      String?
+  issuedToPhone     String?
+  payments          Payment[]
+  transactions      GiftCardTransaction[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("gift_cards")
+}
+
+// Ledger of balance changes — positive = issued/topped-up, negative =
+// redeemed against an order.
+model GiftCardTransaction {
+  id          String   @id @default(cuid())
+  giftCardId  String
+  giftCard    GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  orderId     String?
+  order       Order?   @relation(fields: [orderId], references: [id])
+  amountCents Int
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([giftCardId])
+  @@map("gift_card_transactions")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -585,6 +741,27 @@ model CafeSetting {
   zkDeviceIp   String?
   zkDevicePort Int     @default(4370)
 
+  // Default flat packaging / delivery charges, auto-applied by order type
+  // (TAKEAWAY/DELIVERY get packaging; DELIVERY also gets delivery) and
+  // editable per order at checkout, same pattern as service charge.
+  packagingChargeCents Int @default(0)
+  deliveryChargeCents  Int @default(0)
+
+  // Real payment-gateway merchant credentials (blank = gateway inactive —
+  // POS falls back to the existing manual "record as ESEWA/KHALTI/FONEPAY"
+  // flow). Filled in once the restaurant has its own merchant account.
+  esewaMerchantCode   String?
+  esewaSecretKey      String?
+  khaltiPublicKey     String?
+  khaltiSecretKey     String?
+  fonepayMerchantCode String?
+  fonepaySecretKey    String?
+
+  // SMS gateway (Sparrow-SMS-style HTTP API) for order-ready / self-order
+  // confirmations. Blank = SMS sending is a silent no-op.
+  smsGatewayApiKey   String?
+  smsGatewaySenderId String?
+
   // Module feature toggles — admin enables/disables sections app-wide.
   featReservations Boolean @default(true)
   featInventory    Boolean @default(true)
@@ -594,6 +771,7 @@ model CafeSetting {
   featCrm          Boolean @default(true)
   featFinance      Boolean @default(true)
   featKds          Boolean @default(true)
+  featSelfOrder    Boolean @default(true)
 
   updatedAt         DateTime @updatedAt
 

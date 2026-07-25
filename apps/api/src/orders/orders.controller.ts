@@ -17,7 +17,9 @@ import {
   AttachCustomerDto,
   CancelItemDto,
   ComplimentaryDto,
+  CouponDto,
   CreateOrderDto,
+  FeedbackDto,
   PayDto,
   RefundDto,
   SaveCartDto,
@@ -49,6 +51,12 @@ export class OrdersController {
   @Post('kot-queue/printed')
   markKotPrinted(@Body('itemIds') itemIds: string[]) {
     return this.orders.markKotPrinted(itemIds ?? []);
+  }
+
+  // Must stay before @Get(':id') — otherwise "feedback" would match :id.
+  @Get('feedback/summary')
+  feedbackSummary(@Query('days') days?: string) {
+    return this.orders.feedbackSummary(days ? parseInt(days, 10) : 30);
   }
 
   @Get(':id')
@@ -110,6 +118,23 @@ export class OrdersController {
   @Post(':id/pay')
   pay(@Param('id') id: string, @Body() dto: PayDto) {
     return this.orders.pay(id, dto);
+  }
+
+  // Apply/remove a coupon code — reuses the order's discount fields.
+  @Post(':id/coupon')
+  applyCoupon(@Param('id') id: string, @Body() dto: CouponDto) {
+    return this.orders.applyCoupon(id, dto.code);
+  }
+  @Delete(':id/coupon')
+  removeCoupon(@Param('id') id: string) {
+    return this.orders.removeCoupon(id);
+  }
+
+  // Post-order guest feedback (no auth — reachable from the self-order flow
+  // after a bill closes).
+  @Post(':id/feedback')
+  submitFeedback(@Param('id') id: string, @Body() dto: FeedbackDto) {
+    return this.orders.submitFeedback(id, dto.rating, dto.comment);
   }
 
   @Post(':id/refund')

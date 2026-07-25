@@ -18,6 +18,11 @@ export class VariantDto {
   @IsOptional() @IsInt() sortOrder?: number;
 }
 
+export class ComboComponentDto {
+  @IsString() @IsNotEmpty() menuItemId: string;
+  @IsOptional() @IsInt() @Min(1) quantity?: number;
+}
+
 export class CreateMenuItemDto {
   @IsString()
   @IsNotEmpty()
@@ -70,6 +75,18 @@ export class CreateMenuItemDto {
   @ValidateNested({ each: true })
   @Type(() => VariantDto)
   variants?: VariantDto[];
+
+  // Combo/meal-deal (matrix gap #2): sold as one line, but bundles other
+  // menu items — their recipes get deducted from inventory on sale.
+  @IsOptional()
+  @IsBoolean()
+  isCombo?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ComboComponentDto)
+  comboItems?: ComboComponentDto[];
 }
 
 export class UpdateMenuItemDto {
@@ -124,4 +141,14 @@ export class UpdateMenuItemDto {
   @ValidateNested({ each: true })
   @Type(() => VariantDto)
   variants?: VariantDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  isCombo?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ComboComponentDto)
+  comboItems?: ComboComponentDto[];
 }

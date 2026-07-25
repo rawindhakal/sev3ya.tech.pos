@@ -30,6 +30,12 @@ export interface ModifierGroup {
   modifiers: Modifier[];
 }
 
+export interface ComboComponent {
+  id: string;
+  quantity: number;
+  componentMenuItem: { id: string; name: string; priceCents: number };
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -44,6 +50,8 @@ export interface MenuItem {
   category?: { id: string; name: string };
   modifierGroups?: ModifierGroupRef[];
   variants?: MenuItemVariant[];
+  isCombo?: boolean;
+  comboComponents?: ComboComponent[];
 }
 
 export interface MenuItemVariant {
@@ -79,7 +87,8 @@ export type PaymentMethod =
   | 'ESEWA'
   | 'KHALTI'
   | 'CARD'
-  | 'CREDIT';
+  | 'CREDIT'
+  | 'GIFTCARD';
 
 export interface Waiter {
   id: string;
@@ -120,6 +129,7 @@ export interface RestaurantTable {
     seatedAt?: string | null;
     status: OrderStatus;
   } | null;
+  qrToken?: string | null;
 }
 
 export interface TableArea {
@@ -154,6 +164,8 @@ export interface Payment {
   id: string;
   method: PaymentMethod;
   amountCents: number;
+  giftCardId?: string | null;
+  gatewayRef?: string | null;
 }
 
 export interface Order {
@@ -172,6 +184,8 @@ export interface Order {
   discountLabel?: string | null;
   isComplimentary?: boolean;
   serviceChargeCents: number;
+  packagingChargeCents?: number;
+  deliveryChargeCents?: number;
   totalCents: number;
   notes?: string | null;
   voidReason?: string | null;
@@ -227,6 +241,7 @@ export interface Features {
   crm: boolean;
   finance: boolean;
   kds: boolean;
+  selfOrder: boolean;
 }
 
 export interface Settings {
@@ -247,6 +262,68 @@ export interface Settings {
   billTemplate?: Record<string, unknown> | null;
   kotTemplate?: Record<string, unknown> | null;
   ird?: { enabled: boolean; username?: string | null; sellerPan?: string | null; apiUrl?: string | null; hasPassword: boolean };
+  packagingChargeCents?: number;
+  deliveryChargeCents?: number;
+  paymentGateways?: {
+    esewa: { merchantCode?: string | null; configured: boolean };
+    khalti: { publicKey?: string | null; configured: boolean };
+    fonepay: { merchantCode?: string | null; configured: boolean };
+  };
+  sms?: { senderId?: string | null; configured: boolean };
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  type: 'PCT' | 'RS';
+  value: number;
+  minOrderCents: number;
+  maxUsesTotal?: number | null;
+  maxUsesPerCustomer?: number | null;
+  usedCount: number;
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface GiftCard {
+  id: string;
+  code: string;
+  initialValueCents: number;
+  balanceCents: number;
+  isActive: boolean;
+  issuedToName?: string | null;
+  issuedToPhone?: string | null;
+  createdAt: string;
+}
+
+export interface GiftCardTransaction {
+  id: string;
+  giftCardId: string;
+  orderId?: string | null;
+  amountCents: number;
+  note?: string | null;
+  createdAt: string;
+}
+
+export interface OrderFeedback {
+  id: string;
+  orderId: string;
+  rating: number;
+  comment?: string | null;
+  createdAt: string;
+  order?: { number: number; type: OrderType };
+}
+
+export type WaiterCallStatus = 'PENDING' | 'ACKNOWLEDGED' | 'RESOLVED';
+export interface WaiterCall {
+  id: string;
+  tableId: string;
+  status: WaiterCallStatus;
+  createdAt: string;
+  resolvedAt?: string | null;
+  table?: { name: string; area?: string | null };
 }
 
 export interface CreditLedgerEntry {

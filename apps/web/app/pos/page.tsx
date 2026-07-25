@@ -145,7 +145,8 @@ export default function PosPage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [discount, setDiscount] = useState('');
   const [discountMode, setDiscountMode] = useState<'rs' | 'pct'>('rs');
-  const [discountLabel, setDiscountLabel] = useState(''); // preset name, or 'Custom'
+  const [discountLabel, setDiscountLabel] = useState(''); // preset name, 'Custom', or 'Coupon <code>'
+  const [couponCode, setCouponCode] = useState('');
   const [discountApproved, setDiscountApproved] = useState(false); // manager override
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
   const [discountPresets, setDiscountPresets] = useState<DiscountPreset[]>([]);
@@ -177,6 +178,10 @@ export default function PosPage() {
   // table management (folded into the POS floor)
   const [manage, setManage] = useState(false);
   const [addTableOpen, setAddTableOpen] = useState(false);
+  const [qrTable, setQrTable] = useState<{ table: RestaurantTable; url: string } | null>(null);
+  const [waiterCalls, setWaiterCalls] = useState<{ id: string; table?: { name: string; area?: string | null }; createdAt: string }[]>([]);
+  const [callsOpen, setCallsOpen] = useState(false);
+  const [gatewayQr, setGatewayQr] = useState<{ provider: string; label: string } | null>(null);
   const [tableForm, setTableForm] = useState({ name: '', seats: 4, area: '', isVip: false });
   const [transferOpen, setTransferOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -364,6 +369,9 @@ export default function PosPage() {
   const vatRate = settings?.vatRate ?? 0.13;
   const serviceChargeRate = settings?.serviceChargeRate ?? 0;
   const pointsAvail = custInfo?.found ? custInfo.loyaltyPoints ?? 0 : 0;
+  const orderType: OrderType = mode === 'DELIVERY' ? 'DELIVERY' : mode === 'DINE_IN' ? 'DINE_IN' : 'TAKEAWAY';
+  const packagingChargeCents = orderType !== 'DINE_IN' ? settings?.packagingChargeCents ?? 0 : 0;
+  const deliveryChargeCents = orderType === 'DELIVERY' ? settings?.deliveryChargeCents ?? 0 : 0;
   const totals = useMemo(() => {
     let subtotal = 0;
     let count = 0;
@@ -376,7 +384,7 @@ export default function PosPage() {
     // A complimentary bill is simply "discount = the whole subtotal" — every
     // downstream figure (service charge, tax, total) already falls to zero.
     if (isComplimentary) {
-      return { count, subtotal, discountCents: subtotal, redeemCents: 0, redeemPoints: 0, serviceCharge: 0, tax: 0, total: 0 };
+      return { count, subtotal, discountCents: subtotal, redeemCents: 0, redeemPoints: 0, serviceCharge: 0, packaging: 0, delivery: 0, tax: 0, total: 0 };
     }
     const discountRaw = parseFloat(discount) || 0;
     const discountCents = Math.min(
@@ -389,11 +397,10 @@ export default function PosPage() {
     const redeemPoints = Math.floor(redeemCents / 100);
     const taxable = subtotal - discountCents - redeemCents;
     const serviceCharge = Math.round(taxable * serviceChargeRate);
-    const tax = Math.round((taxable + serviceCharge) * vatRate);
-    return { count, subtotal, discountCents, redeemCents, redeemPoints, serviceCharge, tax, total: taxable + serviceCharge + tax };
-  }, [cart, vatRate, serviceChargeRate, discount, discountMode, redeemPts, pointsAvail, isComplimentary]);
-
-  const orderType: OrderType = mode === 'DELIVERY' ? 'DELIVERY' : mode === 'DINE_IN' ? 'DINE_IN' : 'TAKEAWAY';
+    const chargeableBase = taxable + serviceCharge + packagingChargeCents + deliveryChargeCents;
+    const tax = Math.round(chargeableBase * vatRate);
+    return { count, subtotal, discountCents, redeemCents, redeemPoints, serviceCharge, packaging: packagingChargeCents, delivery: deliveryChargeCents, tax, total: chargeableBase + tax };
+  }, [cart, vatRate, serviceChargeRate, discount, discountMode, redeemPts, pointsAvail, isComplimentary, packagingChargeCents, deliveryChargeCents]);
 
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => i.isAvailable);
@@ -503,6 +510,30 @@ export default function PosPage() {
       notify((e as Error).message, 'error');
     }
   }
+  // Generate (or fetch the existing) QR self-order token for a table, and
+  // build the customer-facing link — includes ?tenant= so the QR works even
+  // when scanned outside the tenant's own subdomain (e.g. local dev/testing).
+  async function showTableQr(t: RestaurantTable) {
+    try {
+      const updated = await api.post<RestaurantTable>(`/tables/${t.id}/qr`, {});
+      const slug = tenantSlug();
+      const url = `${window.location.origin}/order/${updated.qrToken}${slug ? `?tenant=${slug}` : ''}`;
+      setQrTable({ table: updated, url });
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    }
+  }
+  async function acknowledgeCall(id: string) {
+    try {
+      await api.post(`/tables/waiter-calls/${id}/acknowledge`, {});
+    } catch (e) { notify((e as Error).message, 'error'); }
+  }
+  async function resolveCall(id: string) {
+    try {
+      await api.post(`/tables/waiter-calls/${id}/resolve`, {});
+      setWaiterCalls((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) { notify((e as Error).message, 'error'); }
+  }
   async function doTransfer(tableId: string) {
     if (!order) return;
     try {
@@ -594,6 +625,24 @@ export default function PosPage() {
   }, [emp]);
   useEffect(() => { if (!order && emp) loadActiveOrders(); /* refresh after settle/void */ // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order]);
+
+  // "Call waiter" from a table's QR self-order page — poll for pending calls.
+  useEffect(() => {
+    if (!emp) return;
+    const prevCount = { current: null as number | null };
+    async function poll() {
+      try {
+        const rows = await api.get<typeof waiterCalls>('/tables/waiter-calls');
+        if (prevCount.current !== null && rows.length > prevCount.current) playDing();
+        prevCount.current = rows.length;
+        setWaiterCalls(rows);
+      } catch { /* offline */ }
+    }
+    poll();
+    const iv = setInterval(poll, 8000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emp]);
 
   async function resumeActive(id: string) {
     setBusy(true);
@@ -760,6 +809,34 @@ export default function PosPage() {
     setDiscountLabel('');
     setIsComplimentary(false);
     setDiscountModalOpen(false);
+  }
+
+  // Coupon codes go through the dedicated, usage-tracked endpoint (min-order/
+  // expiry/usage-limit rules + a CouponRedemption audit row) rather than the
+  // plain preset/custom discount path — but the resulting discount still
+  // lands in the same discountCents/discountLabel fields so cart edits and
+  // checkout behave exactly like any other discount from here on.
+  async function applyCouponCode() {
+    if (!couponCode.trim()) return;
+    if (cart.length === 0) return flash('Add at least one item first');
+    setBusy(true);
+    try {
+      const saved = await persistCart();
+      const updated = await api.post<Order>(`/orders/${saved.id}/coupon`, { code: couponCode.trim().toUpperCase() });
+      setOrder(updated);
+      setCart(orderToCart(updated));
+      setDiscountMode('rs');
+      setDiscount((updated.discountCents / 100).toFixed(2));
+      setDiscountLabel(updated.discountLabel ?? `Coupon ${couponCode.trim().toUpperCase()}`);
+      setIsComplimentary(false);
+      setCouponCode('');
+      setDiscountModalOpen(false);
+      flash('Coupon applied ✓');
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Comp the whole bill to Rs 0 — a distinctly audited action (not just a
@@ -1001,7 +1078,7 @@ export default function PosPage() {
     }
   }
 
-  async function confirmPayment(payments: { method: PaymentMethod; amountCents: number }[]) {
+  async function confirmPayment(payments: { method: PaymentMethod; amountCents: number; giftCardCode?: string }[]) {
     if (!order) return;
     setBusy(true);
     try {
@@ -1265,6 +1342,11 @@ export default function PosPage() {
             ))}
           </nav>
           <ConnBadge />
+          {waiterCalls.length > 0 && (
+            <button onClick={() => setCallsOpen(true)} className="relative rounded-md bg-[#F39C12]/20 px-2 py-1 text-[#F39C12] hover:bg-[#F39C12]/30" title="Tables calling for a waiter">
+              🔔 {waiterCalls.length}
+            </button>
+          )}
           <span className="text-[var(--pos-text-60)] tabular-nums" title={now.toLocaleDateString()}>
             {formatBsLong(now)} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
@@ -1351,6 +1433,7 @@ export default function PosPage() {
                           {t.status !== 'AVAILABLE' && <button onClick={() => tablePatch(t.id, { status: 'AVAILABLE' })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">Free</button>}
                           {t.status !== 'CLEANING' && <button onClick={() => tablePatch(t.id, { status: 'CLEANING' })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">Clean</button>}
                           {t.status !== 'RESERVED' && <button onClick={() => tablePatch(t.id, { status: 'RESERVED' })} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50">Reserve</button>}
+                          <button onClick={() => showTableQr(t)} className="rounded bg-black/30 px-1.5 py-0.5 text-[9px] hover:bg-black/50" title="Get QR self-order code">📱 QR</button>
                         </div>
                       </div>
                     );
@@ -1571,6 +1654,8 @@ export default function PosPage() {
                   <div className="flex justify-between text-amber-300"><span>Points redeemed</span><span>−{formatMoney(totals.redeemCents)}</span></div>
                 )}
                 {serviceChargeRate > 0 && <div className="flex justify-between text-[var(--pos-text-50)]"><span>Service ({Math.round(serviceChargeRate * 100)}%)</span><span>{formatMoney(totals.serviceCharge)}</span></div>}
+                {totals.packaging > 0 && <div className="flex justify-between text-[var(--pos-text-50)]"><span>Packaging</span><span>{formatMoney(totals.packaging)}</span></div>}
+                {totals.delivery > 0 && <div className="flex justify-between text-[var(--pos-text-50)]"><span>Delivery</span><span>{formatMoney(totals.delivery)}</span></div>}
                 <div className="flex justify-between text-[var(--pos-text-50)]"><span>VAT ({Math.round(vatRate * 100)}%)</span><span>{formatMoney(totals.tax)}</span></div>
                 <div className="flex justify-between border-t border-[var(--pos-line)] pt-1.5 text-lg font-bold text-[#2ECC71]"><span>TOTAL DUE</span><span>{formatMoney(totals.total)}</span></div>
               </div>
@@ -1630,6 +1715,19 @@ export default function PosPage() {
                       </div>
                     </div>
                   )}
+                  <div>
+                    <label className="label">Coupon code</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={couponCode}
+                        onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                        placeholder="WELCOME10"
+                        className="input flex-1 font-mono uppercase"
+                      />
+                      <button onClick={applyCouponCode} disabled={busy} className="btn-primary shrink-0">Apply</button>
+                    </div>
+                  </div>
                   <div>
                     <label className="label">Custom</label>
                     <div className="flex items-center gap-2">
@@ -1717,6 +1815,46 @@ export default function PosPage() {
             <button type="submit" className="btn-primary">Add</button>
           </div>
         </form>
+      </Modal>
+
+      {/* Table QR self-order code — scan to browse the menu and order
+          straight to this table, no waiter needed. */}
+      <Modal open={!!qrTable} title={`QR — ${qrTable?.table.name ?? ''}`} onClose={() => setQrTable(null)}>
+        {qrTable && (
+          <div className="space-y-3 text-center">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrTable.url)}`}
+              alt={`QR code for ${qrTable.table.name}`}
+              className="mx-auto rounded-lg border border-slate-200"
+              width={280}
+              height={280}
+            />
+            <p className="break-all font-mono text-xs text-slate-400">{qrTable.url}</p>
+            <div className="flex justify-center gap-2">
+              <button className="btn-ghost" onClick={() => { navigator.clipboard?.writeText(qrTable.url); flash('Link copied'); }}>Copy link</button>
+              <button className="btn-primary" onClick={() => window.print()}>Print</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* "Call waiter" — tables pinging for staff attention via the QR page */}
+      <Modal open={callsOpen} title="Table calls" onClose={() => setCallsOpen(false)}>
+        <div className="space-y-2">
+          {waiterCalls.map((c) => (
+            <div key={c.id} className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/20">
+              <div>
+                <div className="font-semibold text-slate-800 dark:text-slate-100">{c.table?.name ?? 'Table'}{c.table?.area ? ` · ${c.table.area}` : ''}</div>
+                <div className="text-xs text-slate-400">{new Date(c.createdAt).toLocaleTimeString()}</div>
+              </div>
+              <div className="flex gap-1">
+                <button className="rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-100" onClick={() => acknowledgeCall(c.id)}>Ack</button>
+                <button className="rounded-md bg-emerald-100 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-200" onClick={() => resolveCall(c.id)}>Resolved</button>
+              </div>
+            </div>
+          ))}
+          {waiterCalls.length === 0 && <p className="py-4 text-center text-sm text-slate-400">No pending calls.</p>}
+        </div>
       </Modal>
 
       {/* Transfer table */}
@@ -1971,7 +2109,39 @@ export default function PosPage() {
 
       {/* payment */}
       <Modal open={payOpen} title="Settle payment" onClose={() => setPayOpen(false)}>
-        {order && <PaymentPanel totalCents={order.totalCents} busy={busy} onCancel={() => setPayOpen(false)} onConfirm={confirmPayment} />}
+        {order && (
+          <div className="space-y-4">
+            {(settings?.paymentGateways?.esewa.configured || settings?.paymentGateways?.khalti.configured || settings?.paymentGateways?.fonepay.configured) && (
+              <div className="rounded-lg border border-dashed border-slate-200 p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Or let the customer scan to pay</p>
+                <div className="flex flex-wrap gap-2">
+                  {settings.paymentGateways!.esewa.configured && <button className="btn-ghost" onClick={() => setGatewayQr({ provider: 'esewa', label: 'eSewa' })}>eSewa QR</button>}
+                  {settings.paymentGateways!.khalti.configured && <button className="btn-ghost" onClick={() => setGatewayQr({ provider: 'khalti', label: 'Khalti' })}>Khalti QR</button>}
+                  {settings.paymentGateways!.fonepay.configured && <button className="btn-ghost" onClick={() => setGatewayQr({ provider: 'fonepay', label: 'FonePay' })}>FonePay QR</button>}
+                </div>
+              </div>
+            )}
+            <PaymentPanel totalCents={order.totalCents} busy={busy} onCancel={() => setPayOpen(false)} onConfirm={confirmPayment} />
+          </div>
+        )}
+      </Modal>
+
+      {/* Gateway payment QR — customer scans with their phone to pay this
+          order directly via the provider's real checkout; we verify server-side
+          before the order is marked paid (see /pay/callback). */}
+      <Modal open={!!gatewayQr} title={gatewayQr ? `${gatewayQr.label} — scan to pay` : ''} onClose={() => setGatewayQr(null)}>
+        {gatewayQr && order && (
+          <div className="space-y-3 text-center">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(`${window.location.origin}/pay/${gatewayQr.provider}/${order.id}`)}`}
+              alt={`${gatewayQr.label} payment QR`}
+              className="mx-auto rounded-lg border border-slate-200"
+              width={260}
+              height={260}
+            />
+            <p className="text-sm text-slate-500">{formatMoney(order.totalCents)} due — the order settles automatically once {gatewayQr.label} confirms payment.</p>
+          </div>
+        )}
       </Modal>
 
       {/* Day-end: count cash → close → print Z-report */}

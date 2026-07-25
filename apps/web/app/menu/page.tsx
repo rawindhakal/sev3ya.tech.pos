@@ -17,6 +17,8 @@ type ItemForm = {
   categoryId: string;
   isAvailable: boolean;
   variants: { name: string; price: string }[];
+  isCombo: boolean;
+  comboItems: { menuItemId: string; quantity: string }[];
 };
 
 const emptyForm: ItemForm = {
@@ -29,6 +31,8 @@ const emptyForm: ItemForm = {
   categoryId: '',
   isAvailable: true,
   variants: [],
+  isCombo: false,
+  comboItems: [],
 };
 
 export default function MenuPage() {
@@ -95,6 +99,8 @@ export default function MenuPage() {
       categoryId: item.categoryId,
       isAvailable: item.isAvailable,
       variants: (item.variants ?? []).map((v) => ({ name: v.name, price: (v.priceCents / 100).toString() })),
+      isCombo: !!item.isCombo,
+      comboItems: (item.comboComponents ?? []).map((c) => ({ menuItemId: c.componentMenuItem.id, quantity: String(c.quantity) })),
     });
     setItemModal(true);
   }
@@ -115,6 +121,10 @@ export default function MenuPage() {
         categoryId: form.categoryId,
         isAvailable: form.isAvailable,
         variants: form.variants.filter((v) => v.name.trim()).map((v, i) => ({ name: v.name.trim(), priceCents: dollarsToCents(parseFloat(v.price || '0')), sortOrder: i })),
+        isCombo: form.isCombo,
+        comboItems: form.isCombo
+          ? form.comboItems.filter((c) => c.menuItemId).map((c) => ({ menuItemId: c.menuItemId, quantity: Math.max(1, parseInt(c.quantity) || 1) }))
+          : [],
       };
       if (editingId) {
         await api.patch(`/menu-items/${editingId}`, payload);
@@ -358,6 +368,7 @@ export default function MenuPage() {
               </p>
               <div className="mb-3 flex flex-wrap items-center gap-1.5">
                 <span className="badge bg-slate-100 text-slate-500">{item.category?.name}</span>
+                {item.isCombo && <span className="badge bg-purple-100 text-purple-700">🍱 Combo</span>}
               </div>
               <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
                 <button
@@ -495,6 +506,43 @@ export default function MenuPage() {
             </div>
             <button type="button" className="mt-2 text-xs text-brand-600 hover:underline" onClick={() => setForm((f) => ({ ...f, variants: [...f.variants, { name: '', price: '' }] }))}>+ Add portion</button>
           </div>
+
+          <div className="rounded-lg border border-slate-200 p-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={form.isCombo} onChange={(e) => setForm({ ...form, isCombo: e.target.checked })} />
+              This is a combo / meal deal (bundles other menu items at this price)
+            </label>
+            {form.isCombo && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-slate-400">Ingredients for each component still deduct from inventory when this combo is sold.</p>
+                {form.comboItems.map((c, i) => (
+                  <div key={i} className="flex gap-2">
+                    <select
+                      className="input flex-1"
+                      value={c.menuItemId}
+                      onChange={(e) => setForm((f) => ({ ...f, comboItems: f.comboItems.map((x, j) => (j === i ? { ...x, menuItemId: e.target.value } : x)) }))}
+                    >
+                      <option value="">Select item…</option>
+                      {items.filter((mi) => !mi.isCombo && mi.id !== editingId).map((mi) => (
+                        <option key={mi.id} value={mi.id}>{mi.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      className="input w-20"
+                      type="number"
+                      min={1}
+                      value={c.quantity}
+                      placeholder="Qty"
+                      onChange={(e) => setForm((f) => ({ ...f, comboItems: f.comboItems.map((x, j) => (j === i ? { ...x, quantity: e.target.value } : x)) }))}
+                    />
+                    <button type="button" className="rounded-md px-2 text-red-500 hover:bg-red-50" onClick={() => setForm((f) => ({ ...f, comboItems: f.comboItems.filter((_, j) => j !== i) }))}>✕</button>
+                  </div>
+                ))}
+                <button type="button" className="text-xs text-brand-600 hover:underline" onClick={() => setForm((f) => ({ ...f, comboItems: [...f.comboItems, { menuItemId: '', quantity: '1' }] }))}>+ Add component</button>
+              </div>
+            )}
+          </div>
+
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"

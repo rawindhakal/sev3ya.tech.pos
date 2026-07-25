@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SmsService } from '../notifications/sms.service';
 
 @Injectable()
 export class KdsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sms: SmsService,
+  ) {}
 
   // Active kitchen tickets: fired orders not yet served/closed.
   async tickets() {
@@ -56,7 +60,17 @@ export class KdsService {
       where: { orderId: item.orderId, cancelledAt: null, kotStatus: { in: ['PENDING', 'PREPARING'] } },
     });
     if (remaining === 0) {
-      await this.prisma.order.update({ where: { id: item.orderId }, data: { status: 'READY' } });
+      const order = await this.prisma.order.findUnique({ where: { id: item.orderId } });
+      if (order && order.status !== 'READY') {
+        await this.prisma.order.update({ where: { id: item.orderId }, data: { status: 'READY' } });
+        // Text the guest the moment their food is ready — only fires once
+        // per order (guarded by the status !== 'READY' check above) and is
+        // a silent no-op if no SMS gateway is configured or no phone was
+        // captured on the order.
+        if (order.customerPhone) {
+          this.sms.send(order.customerPhone, `Your order #${order.number} is ready!`).catch(() => {});
+        }
+      }
     }
     return this.tickets();
   }

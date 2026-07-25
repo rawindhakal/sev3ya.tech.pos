@@ -10,6 +10,8 @@ export interface OrderTotals {
   subtotalCents: number;
   discountCents: number;
   serviceChargeCents: number;
+  packagingChargeCents: number;
+  deliveryChargeCents: number;
   taxCents: number;
   totalCents: number;
 }
@@ -18,13 +20,17 @@ export interface TotalsOptions {
   discountCents?: number;
   vatRate?: number;
   serviceChargeRate?: number;
+  // Flat charges (not rates) — packaging typically for TAKEAWAY/DELIVERY,
+  // delivery only for DELIVERY. Caller decides which apply by order type.
+  packagingChargeCents?: number;
+  deliveryChargeCents?: number;
   // Menu prices already include VAT → tax is extracted, not added on top.
   pricesIncludeVat?: boolean;
 }
 
 // Single source of truth for money math. All values in integer cents.
 // Order: (line gross − item discount) → subtotal − order discount →
-//        + service charge → + VAT.
+//        + service charge → + packaging/delivery → + VAT.
 export function computeTotals(
   lines: { unitPriceCents: number; quantity: number; modifiers?: any; discountCents?: number }[],
   opts: TotalsOptions = {},
@@ -32,6 +38,8 @@ export function computeTotals(
   const discountCents = opts.discountCents ?? 0;
   const vatRate = opts.vatRate ?? settings.vatRate;
   const serviceChargeRate = opts.serviceChargeRate ?? 0;
+  const packagingChargeCents = opts.packagingChargeCents ?? 0;
+  const deliveryChargeCents = opts.deliveryChargeCents ?? 0;
 
   let subtotalCents = 0;
   let itemCount = 0;
@@ -47,22 +55,25 @@ export function computeTotals(
   }
   const taxable = Math.max(0, subtotalCents - discountCents);
   const serviceChargeCents = Math.round(taxable * serviceChargeRate);
+  const chargeableBase = taxable + serviceChargeCents + packagingChargeCents + deliveryChargeCents;
   let taxCents: number;
   let totalCents: number;
   if (opts.pricesIncludeVat) {
     // Prices carry VAT: the customer pays the menu price; VAT is the embedded
     // portion → tax = gross × r / (1 + r).
-    totalCents = taxable + serviceChargeCents;
+    totalCents = chargeableBase;
     taxCents = Math.round((totalCents * vatRate) / (1 + vatRate));
   } else {
-    taxCents = Math.round((taxable + serviceChargeCents) * vatRate);
-    totalCents = taxable + serviceChargeCents + taxCents;
+    taxCents = Math.round(chargeableBase * vatRate);
+    totalCents = chargeableBase + taxCents;
   }
   return {
     itemCount,
     subtotalCents,
     discountCents,
     serviceChargeCents,
+    packagingChargeCents,
+    deliveryChargeCents,
     taxCents,
     totalCents,
   };

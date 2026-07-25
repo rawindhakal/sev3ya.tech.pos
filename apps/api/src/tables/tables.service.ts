@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { TableStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -88,5 +89,42 @@ export class TablesService {
     const table = await this.prisma.restaurantTable.findUnique({ where: { id } });
     if (!table) throw new NotFoundException(`Table ${id} not found`);
     return this.prisma.restaurantTable.delete({ where: { id } });
+  }
+
+  // ── QR self-ordering ────────────────────────────────
+  // Generates a token the first time (idempotent thereafter) so a printed
+  // QR code keeps working even if "Get QR" is clicked again.
+  async ensureQrToken(id: string) {
+    const table = await this.prisma.restaurantTable.findUnique({ where: { id } });
+    if (!table) throw new NotFoundException(`Table ${id} not found`);
+    if (table.qrToken) return table;
+    return this.prisma.restaurantTable.update({ where: { id }, data: { qrToken: randomUUID() } });
+  }
+
+  async findByQrToken(token: string) {
+    const table = await this.prisma.restaurantTable.findUnique({ where: { qrToken: token } });
+    if (!table) throw new NotFoundException('Table not found — this QR code may be out of date');
+    return table;
+  }
+
+  // ── "Call waiter" (software table buzzer) ───────────
+  waiterCalls() {
+    return this.prisma.waiterCall.findMany({
+      where: { status: { not: 'RESOLVED' } },
+      orderBy: { createdAt: 'asc' },
+      include: { table: { select: { name: true, area: true } } },
+    });
+  }
+
+  createWaiterCall(tableId: string) {
+    return this.prisma.waiterCall.create({ data: { tableId }, include: { table: { select: { name: true, area: true } } } });
+  }
+
+  acknowledgeWaiterCall(id: string) {
+    return this.prisma.waiterCall.update({ where: { id }, data: { status: 'ACKNOWLEDGED' } });
+  }
+
+  resolveWaiterCall(id: string) {
+    return this.prisma.waiterCall.update({ where: { id }, data: { status: 'RESOLVED', resolvedAt: new Date() } });
   }
 }

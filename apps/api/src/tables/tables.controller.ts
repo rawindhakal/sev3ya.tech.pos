@@ -81,4 +81,24 @@ export class TablesController {
   remove(@Param('id') id: string) {
     return this.tables.remove(id);
   }
+
+  // Generate (or return the existing) QR self-order token for a table.
+  @Post(':id/qr')
+  getQr(@Param('id') id: string) {
+    return this.tables.ensureQrToken(id);
+  }
+
+  // "Call waiter" — surfaced to staff (waiter/POS screens poll this).
+  @Get('waiter-calls')
+  waiterCalls() {
+    return this.tables.waiterCalls();
+  }
+  @Post('waiter-calls/:callId/acknowledge')
+  acknowledgeCall(@Param('callId') callId: string) {
+    return this.tables.acknowledgeWaiterCall(callId);
+  }
+  @Post('waiter-calls/:callId/resolve')
+  resolveCall(@Param('callId') callId: string) {
+    return this.tables.resolveWaiterCall(callId);
+  }
 }

@@ -24,13 +24,18 @@ export const ROUTE_PERM: Record<string, keyof Employee> = {
   '/settings': 'canManageStaff',
   '/menu': 'canManageStaff',
   '/printing': 'canManageStaff',
+  '/coupons': 'canManageStaff',
+  '/gift-cards': 'canManageStaff',
+  '/feedback': 'canViewReports',
 };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname() ?? '';
   // Terminals self-gate (their own PIN screens) and run full-screen. The
   // Platform Console is a standalone section with its own layout + login.
-  const fullscreen = path === '/pos' || path === '/kds' || path.startsWith('/waiter') || path.startsWith('/platform');
+  // /order/[token] is the public QR self-order page; /pay/* are the public
+  // payment-gateway redirect/callback bridges — no login, no sidebar.
+  const fullscreen = path === '/pos' || path === '/kds' || path.startsWith('/waiter') || path.startsWith('/platform') || path.startsWith('/order') || path.startsWith('/pay');
   const [emp, setEmp] = useState<Employee | null>(null);
   const [ready, setReady] = useState(false);
   const [navOpen, setNavOpen] = useState(false);

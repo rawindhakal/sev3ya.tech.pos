@@ -38,6 +38,7 @@ class UpdateSettingsDto {
   @IsOptional() @IsBoolean() featCrm?: boolean;
   @IsOptional() @IsBoolean() featFinance?: boolean;
   @IsOptional() @IsBoolean() featKds?: boolean;
+  @IsOptional() @IsBoolean() featSelfOrder?: boolean;
   @IsOptional() @IsObject() billTemplate?: object;
   @IsOptional() @IsObject() kotTemplate?: object;
   @IsOptional() @IsBoolean() irdEnabled?: boolean;
@@ -47,6 +48,16 @@ class UpdateSettingsDto {
   @IsOptional() @IsString() irdApiUrl?: string;
   @IsOptional() @IsString() zkDeviceIp?: string;
   @IsOptional() @IsNumber() zkDevicePort?: number;
+  @IsOptional() @IsInt() @Min(0) packagingChargeCents?: number;
+  @IsOptional() @IsInt() @Min(0) deliveryChargeCents?: number;
+  @IsOptional() @IsString() esewaMerchantCode?: string;
+  @IsOptional() @IsString() esewaSecretKey?: string;
+  @IsOptional() @IsString() khaltiPublicKey?: string;
+  @IsOptional() @IsString() khaltiSecretKey?: string;
+  @IsOptional() @IsString() fonepayMerchantCode?: string;
+  @IsOptional() @IsString() fonepaySecretKey?: string;
+  @IsOptional() @IsString() smsGatewayApiKey?: string;
+  @IsOptional() @IsString() smsGatewaySenderId?: string;
 }
 
 @Controller('settings')

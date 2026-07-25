@@ -27,6 +27,9 @@ import { IrdModule } from './ird/ird.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { PlatformModule } from './platform/platform.module';
+import { SelfOrderModule } from './self-order/self-order.module';
+import { PaymentsGatewayModule } from './payments-gateway/payments-gateway.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -38,6 +41,9 @@ import { PlatformModule } from './platform/platform.module';
     WaitersModule,
     OrdersModule,
     AnalyticsModule,
+    SelfOrderModule,
+    PaymentsGatewayModule,
+    NotificationsModule,
     SettingsModule,
     CashDrawerModule,
     ReservationsModule,
