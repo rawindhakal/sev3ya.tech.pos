@@ -18,6 +18,28 @@ import { AttendanceService } from '../attendance/attendance.service';
 // Tenant is resolved the same way as every other request — TenantMiddleware
 // reads the Host header (the device's "Server Address" is the tenant's own
 // subdomain, e.g. cakezake.s3vya.tech) — so no extra plumbing is needed here.
+
+// Nepal Standard Time is a fixed UTC+5:45 offset, no DST — safe to hardcode.
+const NPT_OFFSET_MIN = 5 * 60 + 45;
+
+// The device's on-screen clock is set correctly to local (Nepal) time, but
+// the ATTLOG wire format has no timezone tag — it's a bare
+// "YYYY-MM-DD HH:MM:SS" string. Handing that straight to `new Date(...)` on
+// the API server (which runs in UTC on the VPS) makes V8 interpret it as
+// already being UTC, silently shifting every punch forward by 5:45h — the
+// device's date stays right (it only crosses a day boundary near midnight)
+// but the time is wrong, which matches exactly what was reported. Parse the
+// components explicitly and build the correct UTC instant instead of
+// trusting the platform's ambient-timezone string parsing.
+function parseDeviceLocalTime(raw: string): Date | null {
+  const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [y, mo, d, h, mi, s] = m.slice(1).map(Number);
+  const utcMs = Date.UTC(y, mo - 1, d, h, mi, s) - NPT_OFFSET_MIN * 60 * 1000;
+  const dt = new Date(utcMs);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
 @Injectable()
 export class IclockService {
   private readonly log = new Logger('ICLOCK');
@@ -101,8 +123,14 @@ export class IclockService {
         .map((line) => {
           const cols = line.split('\t');
           const deviceUserId = cols[0]?.trim();
-          const at = cols[1]?.trim();
-          return deviceUserId && at ? { deviceUserId, at } : null;
+          const atRaw = cols[1]?.trim();
+          if (!deviceUserId || !atRaw) return null;
+          const at = parseDeviceLocalTime(atRaw);
+          if (!at) {
+            this.log.warn(`SN=${sn}: unparseable punch timestamp "${atRaw}" for user ${deviceUserId} — skipped`);
+            return null;
+          }
+          return { deviceUserId, at: at.toISOString() };
         })
         .filter((p): p is { deviceUserId: string; at: string } => !!p);
       try {
