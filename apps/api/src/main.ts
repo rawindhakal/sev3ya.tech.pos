@@ -1,12 +1,23 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
+import { text } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Global URL prefix so every route lives under /api.
-  app.setGlobalPrefix('api');
+  // ZKTeco ADMS devices POST attendance data as Content-Type: text/plain,
+  // not JSON — give that path its own raw-text body parser so req.body is
+  // the literal string the device sent (Nest's default JSON parser just
+  // no-ops for non-JSON content types, so this doesn't conflict with it).
+  app.use('/iclock', text({ type: '*/*', limit: '5mb' }));
+
+  // Global URL prefix so every route lives under /api — except /iclock/*,
+  // which device firmware hits at a hardcoded root-relative path with no
+  // way to configure a prefix (see iclock.controller.ts).
+  app.setGlobalPrefix('api', {
+    exclude: [{ path: 'iclock/(.*)', method: RequestMethod.ALL }],
+  });
 
   // Validate + transform all incoming DTOs automatically.
   app.useGlobalPipes(

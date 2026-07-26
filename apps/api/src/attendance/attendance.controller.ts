@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
 import { AuthGuard, RoleGuard, CurrentEmployee } from '../common/auth.guard';
 import { TokenPayload } from '../common/token';
@@ -32,6 +32,26 @@ export class AttendanceController {
   @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
   manual(@Body() dto: { employeeId: string; at: string }, @CurrentEmployee() emp: TokenPayload) {
     return this.att.addManual(dto.employeeId, dto.at, emp?.name);
+  }
+
+  // Cloud-push (ADMS) devices — registered on first handshake by IclockService,
+  // approved/renamed/deactivated here.
+  @Get('devices')
+  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  devices() {
+    return this.att.devices();
+  }
+
+  @Patch('devices/:id')
+  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  updateDevice(@Param('id') id: string, @Body() dto: { name?: string; isActive?: boolean }) {
+    return this.att.updateDevice(id, dto);
+  }
+
+  @Delete('devices/:id')
+  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  deleteDevice(@Param('id') id: string) {
+    return this.att.deleteDevice(id);
   }
 
   @Get('logs')

@@ -142,6 +142,25 @@ export class AttendanceService {
     return { relinked: updated };
   }
 
+  // ── Cloud-push (ADMS) device registry ────────────────
+  async devices() {
+    return this.prisma.attendanceDevice.findMany({ orderBy: { createdAt: 'desc' } });
+  }
+
+  async updateDevice(id: string, data: { name?: string; isActive?: boolean }) {
+    const device = await this.prisma.attendanceDevice.findUnique({ where: { id } });
+    if (!device) throw new BadRequestException('Device not found');
+    return this.prisma.attendanceDevice.update({
+      where: { id },
+      data: { ...(data.name !== undefined ? { name: data.name } : {}), ...(data.isActive !== undefined ? { isActive: data.isActive } : {}) },
+    });
+  }
+
+  async deleteDevice(id: string) {
+    await this.prisma.attendanceDevice.delete({ where: { id } }).catch(() => null);
+    return { ok: true };
+  }
+
   // ── Raw punch log ────────────────────────────────────
   async logs(from?: string, to?: string, employeeId?: string) {
     const start = from ? new Date(from) : new Date(Date.now() - 7 * 864e5);

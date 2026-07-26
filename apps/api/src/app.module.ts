@@ -30,6 +30,7 @@ import { PlatformModule } from './platform/platform.module';
 import { SelfOrderModule } from './self-order/self-order.module';
 import { PaymentsGatewayModule } from './payments-gateway/payments-gateway.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { IclockModule } from './iclock/iclock.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     IrdModule,
     AccountingModule,
     AttendanceModule,
+    IclockModule,
     PlatformModule,
   ],
   controllers: [HealthController],

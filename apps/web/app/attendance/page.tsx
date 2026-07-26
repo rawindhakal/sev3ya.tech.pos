@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { api, formatMoney } from '@/lib/api';
+import { api, formatMoney, tenantSlug } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { formatBsLong } from '@/lib/bs-date';
 import type { Settings } from '@/lib/types';
@@ -160,11 +160,112 @@ export default function AttendancePage() {
   );
 }
 
-// ── Device configuration (LAN IP of the ZKTeco scanner) ──
+// ── Device configuration: cloud push (recommended) + legacy LAN pull ──
+type CloudDevice = {
+  id: string; serial: string; name: string | null; isActive: boolean;
+  lastSeenAt: string | null; lastPushAt: string | null; pushCount: number;
+};
+
 function DeviceTab({ onRelink, busy }: { onRelink: () => void; busy: boolean }) {
+  return (
+    <div className="max-w-2xl space-y-6">
+      <CloudDevicesCard />
+      <LegacyLanCard onRelink={onRelink} busy={busy} />
+    </div>
+  );
+}
+
+function CloudDevicesCard() {
+  const [devices, setDevices] = useState<CloudDevice[]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  const slug = typeof window !== 'undefined' ? tenantSlug() : '';
+  const serverAddress = slug ? `${slug}.s3vya.tech` : '(sign in with your restaurant subdomain first)';
+
+  const load = useCallback(() => {
+    api.get<CloudDevice[]>('/attendance/devices').then(setDevices).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function toggleActive(d: CloudDevice) {
+    try { await api.patch(`/attendance/devices/${d.id}`, { isActive: !d.isActive }); load(); }
+    catch (e) { setNote((e as Error).message); }
+  }
+  async function rename(d: CloudDevice) {
+    const name = window.prompt('Device name', d.name ?? '');
+    if (name === null) return;
+    try { await api.patch(`/attendance/devices/${d.id}`, { name }); load(); }
+    catch (e) { setNote((e as Error).message); }
+  }
+  async function remove(d: CloudDevice) {
+    if (!window.confirm(`Remove device ${d.serial}? Its punches stay recorded; re-registering needs a new handshake.`)) return;
+    try { await api.delete(`/attendance/devices/${d.id}`); load(); }
+    catch (e) { setNote((e as Error).message); }
+  }
+
+  const seen = (v: string | null) => v ? new Date(v).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+
+  return (
+    <div className="card space-y-4 p-6">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-700">☁ Cloud push (recommended)</h2>
+        <p className="text-xs text-slate-400">
+          The scanner pushes punches to us over the internet — no LAN, no port-forwarding, works from anywhere.
+          On the device: <strong>Menu → Comm. → Cloud Server Setting</strong>, set <strong>Server Mode = ADMS</strong>,
+          then enter:
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+        <div><span className="block text-xs uppercase tracking-wide text-slate-400">Server Address</span><span className="font-mono font-medium text-slate-700">{serverAddress}</span></div>
+        <div><span className="block text-xs uppercase tracking-wide text-slate-400">Server Port</span><span className="font-mono font-medium text-slate-700">80</span></div>
+      </div>
+      <p className="text-xs text-slate-400">
+        Save on the device, then it appears below (as <em>inactive</em>) within a minute — approve it to start
+        accepting its punches. Full setup guide: <code>docs/attendance-cloud-setup.md</code>.
+      </p>
+
+      {note && <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">{note}</div>}
+
+      <div className="overflow-x-auto rounded-lg border border-slate-100">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-slate-100 bg-slate-50">
+            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Serial</th>
+            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Name</th>
+            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Last seen</th>
+            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Punches</th>
+            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Status</th>
+            <th className="p-2" />
+          </tr></thead>
+          <tbody className="divide-y divide-slate-50">
+            {devices.map((d) => (
+              <tr key={d.id}>
+                <td className="p-2 font-mono text-xs text-slate-600">{d.serial}</td>
+                <td className="p-2 text-slate-700">{d.name || <span className="text-slate-300">unnamed</span>}</td>
+                <td className="p-2 text-xs text-slate-500">{seen(d.lastSeenAt)}</td>
+                <td className="p-2 text-xs text-slate-500">{d.pushCount}</td>
+                <td className="p-2">
+                  <button onClick={() => toggleActive(d)} className={`badge ${d.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {d.isActive ? '✓ Active' : '⏳ Pending approval'}
+                  </button>
+                </td>
+                <td className="p-2 whitespace-nowrap text-right">
+                  <button className="btn-ghost mr-1 px-2 py-1 text-xs" onClick={() => rename(d)}>Rename</button>
+                  <button className="btn-ghost px-2 py-1 text-xs text-red-500" onClick={() => remove(d)}>Remove</button>
+                </td>
+              </tr>
+            ))}
+            {devices.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-xs text-slate-400">No device has connected yet — configure the Cloud Server Setting above on the scanner.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LegacyLanCard({ onRelink, busy }: { onRelink: () => void; busy: boolean }) {
   const [ip, setIp] = useState('');
   const [port, setPort] = useState('4370');
   const [note, setNote] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     api.get<Settings & { attendanceDevice?: { ip?: string | null; port?: number } }>('/settings').then((s) => {
@@ -181,23 +282,30 @@ function DeviceTab({ onRelink, busy }: { onRelink: () => void; busy: boolean }) 
   }
 
   return (
-    <div className="card max-w-xl space-y-4 p-6">
-      <h2 className="text-sm font-semibold text-slate-700">ZKTeco device (local network)</h2>
-      <p className="text-xs text-slate-400">
-        The scanner speaks TCP on port 4370, so the server running this API must be on the
-        same network as the device. Find the IP on the device: Menu → Comm. → Ethernet.
-      </p>
-      <div className="grid grid-cols-2 gap-3">
-        <div><label className="label">Device IP</label>
-          <input className="input" value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.1.201" /></div>
-        <div><label className="label">Port</label>
-          <input className="input" value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" /></div>
-      </div>
-      <div className="flex items-center gap-2">
-        <button className="btn-primary" onClick={save}>Save device</button>
-        <button className="btn-ghost" onClick={onRelink} disabled={busy} title="Attach unmapped punches to employees after setting their Fingerprint device IDs">↻ Re-link punches</button>
-        {note && <span className="text-xs font-medium text-slate-500">{note}</span>}
-      </div>
+    <div className="card space-y-4 p-6">
+      <button className="flex w-full items-center justify-between text-left" onClick={() => setOpen((o) => !o)}>
+        <h2 className="text-sm font-semibold text-slate-700">📡 Legacy LAN pull <span className="ml-1 font-normal text-slate-400">— fallback for scanners without Cloud Server / ADMS support</span></h2>
+        <span className="text-slate-400">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <>
+          <p className="text-xs text-slate-400">
+            Only works when this app runs on the same network as the scanner (e.g. the desktop till at the
+            restaurant) — it will not work for a server hosted elsewhere. Find the IP on the device: Menu → Comm. → Ethernet.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Device IP</label>
+              <input className="input" value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.1.201" /></div>
+            <div><label className="label">Port</label>
+              <input className="input" value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" /></div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="btn-primary" onClick={save}>Save device</button>
+            <button className="btn-ghost" onClick={onRelink} disabled={busy} title="Attach unmapped punches to employees after setting their Fingerprint device IDs">↻ Re-link punches</button>
+            {note && <span className="text-xs font-medium text-slate-500">{note}</span>}
+          </div>
+        </>
+      )}
       <p className="text-xs text-slate-400">
         Map each staff member to their scanner ID via Employees → Edit → <strong>Fingerprint device ID</strong>,
         and set their <strong>Monthly salary</strong> there for payroll.

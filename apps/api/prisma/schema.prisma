@@ -1096,6 +1096,26 @@ model AttendanceLog {
   @@map("attendance_logs")
 }
 
+// A ZKTeco device configured to push attendance over the internet (ADMS/Cloud
+// Server mode) instead of requiring a LAN-bound puller. The device's only
+// identifier on the wire is its serial number (SN=...), and the protocol has
+// no real authentication, so we allow-list serials here: an unregistered or
+// deactivated device's pushes are acknowledged (so it doesn't retry-storm)
+// but discarded — see IclockService.
+model AttendanceDevice {
+  id         String    @id @default(cuid())
+  serial     String    @unique
+  name       String?
+  isActive   Boolean   @default(true)
+  lastSeenAt DateTime? // any handshake/heartbeat/push
+  lastPushAt DateTime? // last successful ATTLOG push
+  pushCount  Int       @default(0) // total punches accepted, lifetime
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@map("attendance_devices")
+}
+
 // ─────────────────────────────────────────────────────────────
 // SAAS CONTROL PLANE (only meaningful in the platform/control DB)
 // Each tenant restaurant gets its OWN PostgreSQL database created from this
