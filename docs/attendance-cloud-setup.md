@@ -1,40 +1,38 @@
 # ZKTeco Cloud Attendance Setup (ADMS Push)
 
-How to connect a ZKTeco fingerprint/face scanner to s3vyaPOS **over the internet**, so
-punches sync automatically without the scanner needing to be on the same network as
-the server.
+How to connect a ZKTeco fingerprint/ID scanner (including the **K40/ID**, and any
+other ADMS-capable ZKTeco terminal) to s3vyaPOS **over the internet**, so punches
+sync automatically. This is the **only** supported connection method — there is no
+LAN/local-network mode.
 
 ---
 
-## 1. Why cloud push instead of the old "Sync from device" button
+## 1. Why cloud push, and why there's no LAN option
 
-The original **Settings → Attendance → Device** flow connects *from the API server*
-to the scanner's LAN IP (`192.168.x.x:4370`). That only works when the API and the
-scanner are on the same local network — true for local development, but **not true
-in production**, where the API runs on a remote VPS with no path into the
-restaurant's router. Pressing "Sync from device" on the live site will fail or
-time out.
+s3vyaPOS's API runs on a remote server, not inside the restaurant. A scanner sitting
+on the restaurant's local network has no way for that remote server to reach it
+directly — there's no local IP the internet can dial into without the restaurant
+opening ports on their router, which isn't realistic to ask of restaurant owners.
 
 Cloud push flips the direction: the **scanner** connects *out* to the API, the same
 way any device on the internet reaches a website. This is a real, documented ZKTeco
-firmware feature called **ADMS** ("Cloud Server" in the on-device menu), not a
-workaround — the same mechanism ZKTeco's own cloud attendance products use.
+firmware feature called **ADMS** ("Cloud Server" in the on-device menu) — the same
+mechanism ZKTeco's own cloud attendance products use, confirmed present on the K40/ID
+and the wider iClock/ZKTime/SilkBio device families.
 
 Benefits:
 - Works from any restaurant with internet access — no static IP, no port-forwarding,
-  no VPN.
-- The scanner can be anywhere; even at a different branch than the server.
-- No polling — punches arrive within seconds of being scanned.
-
-The old LAN pull (and the desktop till's LAN bridge) still work and remain as a
-fallback for scanners whose firmware doesn't support Cloud Server / ADMS mode.
+  no VPN, nothing to configure on the restaurant's router.
+- The scanner can be anywhere, even a different branch than the server.
+- Continuous, not polled — the device pushes each punch immediately as it's
+  scanned, and the Attendance page updates live to match.
 
 ---
 
 ## 2. How it works (architecture)
 
 ```
-ZKTeco scanner  --HTTP-->  https://<your-restaurant>.s3vya.tech/iclock/*  -->  s3vyaPOS API
+ZKTeco scanner  --HTTP-->  http://<your-restaurant>.s3vya.tech/iclock/*  -->  s3vyaPOS API
 ```
 
 - The device makes plain HTTP GET/POST requests to a handful of fixed paths
@@ -43,15 +41,25 @@ ZKTeco scanner  --HTTP-->  https://<your-restaurant>.s3vya.tech/iclock/*  -->  s
 - **Tenant resolution** works exactly like every other request in s3vyaPOS: by the
   subdomain in the URL. Point the device at `<your-slug>.s3vya.tech` and punches
   land in your restaurant's own database automatically — no extra setup.
+- **Continuous push**: the handshake tells the device `Realtime=1`, meaning it
+  sends each punch to the server the moment it's scanned rather than batching or
+  waiting on a timer. The Attendance page's Punch Log and Device tabs poll the API
+  every few seconds while open, so new punches and device activity show up without
+  a manual page reload.
 - **Security / device approval**: the ADMS protocol has no real authentication (the
   device only sends its serial number). s3vyaPOS compensates with an allow-list —
   the first time a device connects it's auto-registered as **inactive**; go to
   **Attendance → Device** and click its status badge to approve it before its
   punches start being stored. An unapproved device is acknowledged (so it doesn't
-  retry-storm) but its data is discarded.
+  retry-storm) but its data is discarded, and a warning is logged server-side.
 - **Idempotent ingestion**: punches are keyed by `(deviceUserId, timestamp)`, so a
   device re-sending a batch (e.g. after a brief network drop) never creates
   duplicates.
+- **Error handling**: every `/iclock/*` request is wrapped so an unexpected server
+  hiccup (e.g. a momentary database blip) still replies with a plain "OK" the
+  device understands, instead of an HTML/JSON error page it can't parse — the
+  device just retries normally and the failure is logged server-side for a human
+  to notice, instead of the device getting confused and retry-storming.
 
 ---
 
@@ -69,8 +77,9 @@ On the scanner's own screen/keypad:
    | **Server Port** | `80` |
    | **Enable Domain Name** | On (if the device asks — Server Address is a hostname, not an IP) |
    | **Enable Proxy Server** | Off |
-3. Confirm the device has a working internet connection (Menu → Comm. → Ethernet
-   or Wi‑Fi — it needs outbound internet access, same as any smart device).
+3. Under **Menu → Comm. → Ethernet** (or Wi-Fi), confirm the device has a working
+   internet connection — it needs outbound internet access, same as any smart
+   device. DHCP is fine; a static IP works too if your network requires it.
 4. Save. The device will attempt to connect within a minute or so.
 
 **Finding your Server Address**: it's shown for you already on
@@ -78,27 +87,27 @@ On the scanner's own screen/keypad:
 in at `cakezake.s3vya.tech`, the Server Address is `cakezake.s3vya.tech`.
 
 > Devices are typically HTTP-only (no reliable TLS support in ZKTeco firmware), so
-> use plain port 80, not 443 — the server accepts the ADMS protocol over both.
+> use plain port 80, not 443 — the server accepts the ADMS protocol over both, so
+> either works, but port 80 is the safer default for older firmware.
 
 ---
 
 ## 4. Approve the device
 
 1. Go to **Attendance → Device** in s3vyaPOS.
-2. Under **Cloud push**, the device should appear within a minute of saving the
-   settings on the scanner — serial number, last-seen time, status
-   **"⏳ Pending approval"**.
+2. The device should appear within a minute of saving the settings on the scanner
+   — serial number, last-seen time, status **"⏳ Pending approval"**. This list
+   updates live; you don't need to refresh the page.
 3. Click the status badge to flip it to **"✓ Active"**. Optionally click **Rename**
    to give it a friendly name (e.g. "Front desk").
-4. Punches scanned *after* approval start flowing into the **Punch Log** tab
-   automatically. (Punches scanned before approval are not retroactively stored —
-   the device doesn't resend history once it believes a batch was delivered.)
+4. Punches scanned *after* approval flow into the **Punch Log** tab continuously —
+   it also updates live. (Punches scanned before approval are not retroactively
+   stored — the device doesn't resend history once it believes a batch was
+   delivered.)
 
 ---
 
 ## 5. Map employees to the device
-
-Same as before — this step doesn't change with cloud push:
 
 1. **Employees → Edit** each staff member → set **Fingerprint device ID** to the
    ID number they're enrolled under on the scanner.
@@ -112,24 +121,9 @@ Same as before — this step doesn't change with cloud push:
 
 | Symptom | Likely cause / fix |
 |---|---|
-| Device never appears on the Device tab | No internet on the device, or Server Address/Port typed wrong. Double-check the device can reach the internet (try a different Wi-Fi/Ethernet if unsure). |
+| Device never appears on the Device tab | No internet on the device, or Server Address/Port typed wrong. Double-check the device can reach the internet (try a different Wi-Fi/Ethernet if unsure), and that Server Mode is set to ADMS (not left on the default/off setting). |
 | Device appears but stays "Pending approval" forever | That's expected until you approve it — click the status badge. |
-| Approved device, but no punches show up | Check the device clock is roughly correct (wildly wrong timestamps can look like duplicates of old punches). Confirm staff are actually scanning (device screen should show a success beep/checkmark per scan). |
+| Approved device, but no punches show up | Check the device clock is roughly correct (wildly wrong timestamps can look like duplicates of old punches). Confirm staff are actually scanning (device screen should show a success beep/checkmark per scan). Check "Last seen" on the Device tab — if it's not updating at all, the device has stopped reaching the server (network dropped, or Cloud Server setting got reset). |
 | Punches show under "(unmapped #123)" in the Punch Log | The `deviceUserId` (123) isn't linked to an employee yet — see step 5 above, then use Re-link punches. |
 | Multiple restaurants, multiple scanners | Each scanner points at *its own* restaurant's subdomain — e.g. `cakezake.s3vya.tech` for one branch, `otherbranch.s3vya.tech` for another. Each tenant's Device tab only shows its own devices. |
-
----
-
-## 7. Legacy fallback — LAN pull
-
-If a scanner's firmware genuinely has no Cloud Server / ADMS option (older
-low-end models), it can still be used the old way:
-
-1. Set the device's LAN IP under **Attendance → Device → Legacy LAN pull**.
-2. This only works when whatever is running s3vyaPOS is on the *same local
-   network* as the scanner — in practice this means the **desktop till app**
-   (Electron), which bridges the scanner over the LAN and pushes punches up to the
-   cloud API itself (`AttendanceBridge`, polls every 5 minutes). It will not work
-   against the hosted API directly from a remote server.
-3. Everything else (employee mapping, payroll) is identical either way — ingestion
-   ends up in the same `AttendanceLog` table regardless of source.
+| An error banner appears on the Attendance page | The page shows the exact error and a Retry button — the automatic live-refresh will also keep retrying in the background on its own. |

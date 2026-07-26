@@ -332,16 +332,28 @@ Loyalty points, `totalSpentCents`, `visitCount` accrue automatically at `pay()` 
 
 `StaffRole`: `ADMIN | MANAGER | CASHIER | BARISTA | WAITER`.
 
-### Attendance (ZKTeco fingerprint) — `/attendance`
+### Attendance (ZKTeco fingerprint, cloud push only) — `/attendance`
+Punches arrive exclusively via the `/iclock/*` ADMS cloud-push endpoint (see below)
+— there is no LAN-pull endpoint.
+
 | Method | Path | Guard | Body |
 |---|---|---|---|
-| POST | `/attendance/sync` | `RoleGuard(['ADMIN','MANAGER'])` | — pull punches directly from the device (LAN-only; only reachable from the desktop till) |
-| POST | `/attendance/ingest` | `AuthGuard()` | `{ punches: [{deviceUserId, at}] }` — pushed by the desktop app's LAN bridge |
+| GET | `/attendance/devices` | `RoleGuard(['ADMIN','MANAGER'])` | — list registered cloud-push devices |
+| PATCH | `/attendance/devices/:id` | `RoleGuard(['ADMIN','MANAGER'])` | `{ name?, isActive? }` — approve/rename a device |
+| DELETE | `/attendance/devices/:id` | `RoleGuard(['ADMIN','MANAGER'])` | — remove a device (punches already recorded are kept) |
 | POST | `/attendance/relink` | `RoleGuard(['ADMIN','MANAGER'])` | — re-attach previously-unmapped punches after assigning device IDs |
 | POST | `/attendance/manual` | `RoleGuard(['ADMIN','MANAGER'])` | `{ employeeId, at }` |
 | GET | `/attendance/logs` | — | query `from?`, `to?`, `employeeId?` |
 | GET | `/attendance/summary` | — | query `from?`, `to?` |
 | GET | `/attendance/payroll` | — | query `month?` — salary ÷ 26 × present days |
+
+### ZKTeco ADMS cloud-push — `/iclock` (not under `/api`, no auth — see `docs/attendance-cloud-setup.md`)
+| Method | Path | Body |
+|---|---|---|
+| GET | `/iclock/cdata?SN=...` | — device handshake |
+| POST | `/iclock/cdata?SN=...&table=ATTLOG` | tab-separated punch lines |
+| GET | `/iclock/getrequest?SN=...` | — heartbeat |
+| POST | `/iclock/devicecmd?SN=...` | — command-result ack (unused, always OK) |
 
 ---
 
@@ -443,7 +455,7 @@ System accounts (cash, bank, sales, VAT, debtors) are seeded and undeletable; th
 }
 ```
 
-**`UpdateSettingsDto`** fields (all optional): `restaurantName, address, phone, taxId, vatRate (0–1 fraction), serviceChargeRate (0–1), pricesIncludeVat, currencySymbol, defaultGuestCount, receiptHeader, receiptFooter, wifiPassword, featReservations, featInventory, featPurchasing, featRoastery, featModifiers, featCrm, featFinance, featKds, billTemplate (object), kotTemplate (object), irdEnabled, irdUsername, irdPassword, irdSellerPan, irdApiUrl, zkDeviceIp, zkDevicePort`.
+**`UpdateSettingsDto`** fields (all optional): `restaurantName, address, phone, taxId, vatRate (0–1 fraction), serviceChargeRate (0–1), pricesIncludeVat, currencySymbol, defaultGuestCount, receiptHeader, receiptFooter, wifiPassword, featReservations, featInventory, featPurchasing, featRoastery, featModifiers, featCrm, featFinance, featKds, billTemplate (object), kotTemplate (object), irdEnabled, irdUsername, irdPassword, irdSellerPan, irdApiUrl`.
 
 **Reset data categories** (`SettingsService.RESET_CATEGORIES`): `transactions, reservations, purchasing, inventory, menu, customers, expenses, roastery, attendance, auditLog`. Omitting `categories` (or sending `[]`) resets **everything**. Staff logins and settings are never touched by this endpoint regardless of selection. `transactions` covers orders/items/payments/cash sessions/journal vouchers — everything every report reads from. `menu` and `customers` are the two destructive-to-master-data categories (menu catalogue, customer profiles) and are opt-in only in the UI.
 

@@ -46,8 +46,6 @@ class UpdateSettingsDto {
   @IsOptional() @IsString() irdPassword?: string;
   @IsOptional() @IsString() irdSellerPan?: string;
   @IsOptional() @IsString() irdApiUrl?: string;
-  @IsOptional() @IsString() zkDeviceIp?: string;
-  @IsOptional() @IsNumber() zkDevicePort?: number;
   @IsOptional() @IsInt() @Min(0) packagingChargeCents?: number;
   @IsOptional() @IsInt() @Min(0) deliveryChargeCents?: number;
   @IsOptional() @IsString() esewaMerchantCode?: string;

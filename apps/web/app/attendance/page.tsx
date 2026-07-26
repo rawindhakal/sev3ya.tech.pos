@@ -1,19 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatMoney, tenantSlug } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { formatBsLong } from '@/lib/bs-date';
-import type { Settings } from '@/lib/types';
 
-// ZKTeco fingerprint attendance + payroll. The scanner lives on the LAN
-// (TCP 4370); "Sync now" pulls users + punches from it. Punches map to
-// employees via the Fingerprint device ID on the Employees page.
+// ZKTeco fingerprint attendance + payroll — cloud push (ADMS) only. The
+// scanner (e.g. K40/ID and any other ADMS-capable ZKTeco model) connects out
+// to us over the internet; there is no LAN-pull path, since the API is
+// hosted remotely and has no network route into a restaurant. See
+// docs/attendance-cloud-setup.md for full device setup.
 
 const TABS = ['Punch Log', 'Day Summary', 'Payroll', 'Device'] as const;
 type Tab = (typeof TABS)[number];
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const hm = (v: string | Date) => new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const POLL_MS = 8000; // how often "live" tabs re-fetch, so incoming cloud punches show up without a manual reload
 
 export default function AttendancePage() {
   const [tab, setTab] = useState<Tab>('Punch Log');
@@ -23,30 +25,44 @@ export default function AttendancePage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [summary, setSummary] = useState<any[]>([]);
   const [payroll, setPayroll] = useState<any>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     try {
       if (tab === 'Punch Log') setLogs(await api.get(`/attendance/logs?from=${from}&to=${to}`));
       if (tab === 'Day Summary') setSummary(await api.get(`/attendance/summary?from=${from}&to=${to}`));
       if (tab === 'Payroll') setPayroll(await api.get(`/attendance/payroll?month=${month}`));
-    } catch (e) { setMsg((e as Error).message); }
+      setErr(null);
+    } catch (e) {
+      // Don't clobber the page with an error banner on a background poll —
+      // only surface it if we truly have nothing to show yet.
+      const message = (e as Error).message || 'Could not reach the server';
+      if (!silent) setErr(message);
+      else setErr((prev) => prev ?? message);
+    }
   }, [tab, from, to, month]);
+
   useEffect(() => { load(); }, [load]);
 
-  async function syncNow() {
-    setBusy(true); setMsg(null);
-    try {
-      const r = await api.post<any>('/attendance/sync', {});
-      setMsg(`✓ Device ${r.device.ip}: ${r.newPunches} new punch(es) of ${r.totalOnDevice} on device · ${r.deviceUsers.length} device users · ${r.mappedEmployees} mapped employees`);
-      load();
-    } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
-  }
+  // Keep Punch Log "live" — cloud-pushed punches should appear without the
+  // admin needing to refresh the page.
+  useEffect(() => {
+    if (tab !== 'Punch Log') return;
+    const iv = window.setInterval(() => load(true), POLL_MS);
+    return () => window.clearInterval(iv);
+  }, [tab, load]);
+
   async function relink() {
-    setBusy(true);
-    try { const r = await api.post<any>('/attendance/relink', {}); setMsg(`✓ Re-linked ${r.relinked} punch(es)`); load(); }
-    catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+    setBusy(true); setNotice(null); setErr(null);
+    try {
+      const r = await api.post<any>('/attendance/relink', {});
+      setNotice(`✓ Re-linked ${r.relinked} punch(es) to employees`);
+      load();
+    } catch (e) {
+      setErr(`Could not re-link punches — ${(e as Error).message}`);
+    } finally { setBusy(false); }
   }
 
   const th = 'p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400';
@@ -57,20 +73,21 @@ export default function AttendancePage() {
       <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Attendance &amp; Payroll</h1>
-          <p className="text-sm text-slate-500">ZKTeco fingerprint device · {formatBsLong(new Date())} BS</p>
+          <p className="text-sm text-slate-500">Cloud-connected ZKTeco fingerprint device · {formatBsLong(new Date())} BS</p>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
-          {tab === 'Payroll' ? (
-            <input type="month" className="input w-auto" value={month} onChange={(e) => setMonth(e.target.value)} />
-          ) : tab !== 'Device' && (
-            <>
-              <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} />
-              <span className="text-slate-400">→</span>
-              <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} />
-            </>
-          )}
-          <button className="btn-primary" onClick={syncNow} disabled={busy}>{busy ? 'Syncing…' : '⭮ Sync from device'}</button>
-        </div>
+        {tab !== 'Device' && (
+          <div className="flex flex-wrap items-end gap-2">
+            {tab === 'Payroll' ? (
+              <input type="month" className="input w-auto" value={month} onChange={(e) => setMonth(e.target.value)} />
+            ) : (
+              <>
+                <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} />
+                <span className="text-slate-400">→</span>
+                <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} />
+              </>
+            )}
+          </div>
+        )}
       </header>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -79,10 +96,20 @@ export default function AttendancePage() {
         ))}
       </div>
 
-      {msg && <div className={`mb-4 rounded-lg border p-3 text-sm ${msg.startsWith('✓') ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{msg}</div>}
+      {err && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <span>⚠ {err}</span>
+          <button className="btn-ghost shrink-0 px-2 py-1 text-xs" onClick={() => load()}>Retry</button>
+        </div>
+      )}
+      {notice && <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</div>}
 
       {tab === 'Punch Log' && (
         <div className="card overflow-x-auto">
+          <div className="flex items-center justify-between border-b border-slate-100 p-2 px-3">
+            <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> Live — updates automatically as punches arrive</span>
+            <button className="btn-ghost px-2 py-1 text-xs" onClick={() => load()}>↻ Refresh now</button>
+          </div>
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100"><th className={th}>Date (BS)</th><th className={th}>Time</th><th className={th}>Employee</th><th className={th}>Device ID</th><th className={th}>Source</th></tr></thead>
             <tbody className="divide-y divide-slate-50">
@@ -95,7 +122,7 @@ export default function AttendancePage() {
                   <td className={td}><span className={`badge ${l.source === 'DEVICE' ? 'bg-slate-100 text-slate-500' : 'bg-indigo-50 text-indigo-600'}`}>{l.source}</span></td>
                 </tr>
               ))}
-              {logs.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No punches — press &quot;Sync from device&quot;.</td></tr>}
+              {logs.length === 0 && !err && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No punches yet — approve your scanner under the <strong>Device</strong> tab, then have someone scan in.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -121,7 +148,7 @@ export default function AttendancePage() {
               </div>
             </div>
           ))}
-          {summary.length === 0 && <p className="p-8 text-center text-sm text-slate-400">No attendance in range.</p>}
+          {summary.length === 0 && !err && <p className="p-8 text-center text-sm text-slate-400">No attendance in range.</p>}
         </div>
       )}
 
@@ -155,161 +182,165 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {tab === 'Device' && <DeviceTab onRelink={relink} busy={busy} />}
+      {tab === 'Device' && <CloudDevicesCard onRelink={relink} busy={busy} />}
     </div>
   );
 }
 
-// ── Device configuration: cloud push (recommended) + legacy LAN pull ──
+// ── Device: cloud push (ADMS) only — the only supported connection method ──
 type CloudDevice = {
   id: string; serial: string; name: string | null; isActive: boolean;
   lastSeenAt: string | null; lastPushAt: string | null; pushCount: number;
 };
 
-function DeviceTab({ onRelink, busy }: { onRelink: () => void; busy: boolean }) {
-  return (
-    <div className="max-w-2xl space-y-6">
-      <CloudDevicesCard />
-      <LegacyLanCard onRelink={onRelink} busy={busy} />
-    </div>
-  );
-}
-
-function CloudDevicesCard() {
+function CloudDevicesCard({ onRelink, busy }: { onRelink: () => void; busy: boolean }) {
   const [devices, setDevices] = useState<CloudDevice[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const slug = typeof window !== 'undefined' ? tenantSlug() : '';
-  const serverAddress = slug ? `${slug}.s3vya.tech` : '(sign in with your restaurant subdomain first)';
+  const serverAddress = slug ? `${slug}.s3vya.tech` : null;
+  const busyIds = useRef<Set<string>>(new Set());
+  const [, forceRender] = useState(0);
 
-  const load = useCallback(() => {
-    api.get<CloudDevice[]>('/attendance/devices').then(setDevices).catch(() => {});
+  const load = useCallback(async (silent = false) => {
+    try {
+      const d = await api.get<CloudDevice[]>('/attendance/devices');
+      setDevices(d);
+      setErr(null);
+    } catch (e) {
+      const message = `Could not load devices — ${(e as Error).message}`;
+      if (!silent || !loaded) setErr(message);
+    } finally {
+      setLoaded(true);
+    }
+  }, [loaded]);
+
+  // Poll continuously so newly-connecting devices and updated push counts
+  // show up live, without the admin needing to reload the page.
+  useEffect(() => {
+    load();
+    const iv = window.setInterval(() => load(true), POLL_MS);
+    return () => window.clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => { load(); }, [load]);
+
+  async function withBusy(id: string, fn: () => Promise<void>) {
+    busyIds.current.add(id); forceRender((n) => n + 1);
+    try { await fn(); } finally { busyIds.current.delete(id); forceRender((n) => n + 1); }
+  }
 
   async function toggleActive(d: CloudDevice) {
-    try { await api.patch(`/attendance/devices/${d.id}`, { isActive: !d.isActive }); load(); }
-    catch (e) { setNote((e as Error).message); }
+    await withBusy(d.id, async () => {
+      try { await api.patch(`/attendance/devices/${d.id}`, { isActive: !d.isActive }); setNote(null); await load(); }
+      catch (e) { setNote(`Could not update "${d.name || d.serial}" — ${(e as Error).message}`); }
+    });
   }
   async function rename(d: CloudDevice) {
     const name = window.prompt('Device name', d.name ?? '');
     if (name === null) return;
-    try { await api.patch(`/attendance/devices/${d.id}`, { name }); load(); }
-    catch (e) { setNote((e as Error).message); }
+    await withBusy(d.id, async () => {
+      try { await api.patch(`/attendance/devices/${d.id}`, { name }); setNote(null); await load(); }
+      catch (e) { setNote(`Could not rename device — ${(e as Error).message}`); }
+    });
   }
   async function remove(d: CloudDevice) {
-    if (!window.confirm(`Remove device ${d.serial}? Its punches stay recorded; re-registering needs a new handshake.`)) return;
-    try { await api.delete(`/attendance/devices/${d.id}`); load(); }
-    catch (e) { setNote((e as Error).message); }
+    if (!window.confirm(`Remove device ${d.serial}? Its recorded punches stay in the Punch Log; re-connecting the scanner will register it again as a new pending device.`)) return;
+    await withBusy(d.id, async () => {
+      try { await api.delete(`/attendance/devices/${d.id}`); setNote(null); await load(); }
+      catch (e) { setNote(`Could not remove device — ${(e as Error).message}`); }
+    });
   }
 
   const seen = (v: string | null) => v ? new Date(v).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
   return (
-    <div className="card space-y-4 p-6">
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700">☁ Cloud push (recommended)</h2>
-        <p className="text-xs text-slate-400">
-          The scanner pushes punches to us over the internet — no LAN, no port-forwarding, works from anywhere.
-          On the device: <strong>Menu → Comm. → Cloud Server Setting</strong>, set <strong>Server Mode = ADMS</strong>,
-          then enter:
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
-        <div><span className="block text-xs uppercase tracking-wide text-slate-400">Server Address</span><span className="font-mono font-medium text-slate-700">{serverAddress}</span></div>
-        <div><span className="block text-xs uppercase tracking-wide text-slate-400">Server Port</span><span className="font-mono font-medium text-slate-700">80</span></div>
-      </div>
-      <p className="text-xs text-slate-400">
-        Save on the device, then it appears below (as <em>inactive</em>) within a minute — approve it to start
-        accepting its punches. Full setup guide: <code>docs/attendance-cloud-setup.md</code>.
-      </p>
-
-      {note && <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">{note}</div>}
-
-      <div className="overflow-x-auto rounded-lg border border-slate-100">
-        <table className="w-full text-sm">
-          <thead><tr className="border-b border-slate-100 bg-slate-50">
-            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Serial</th>
-            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Name</th>
-            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Last seen</th>
-            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Punches</th>
-            <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Status</th>
-            <th className="p-2" />
-          </tr></thead>
-          <tbody className="divide-y divide-slate-50">
-            {devices.map((d) => (
-              <tr key={d.id}>
-                <td className="p-2 font-mono text-xs text-slate-600">{d.serial}</td>
-                <td className="p-2 text-slate-700">{d.name || <span className="text-slate-300">unnamed</span>}</td>
-                <td className="p-2 text-xs text-slate-500">{seen(d.lastSeenAt)}</td>
-                <td className="p-2 text-xs text-slate-500">{d.pushCount}</td>
-                <td className="p-2">
-                  <button onClick={() => toggleActive(d)} className={`badge ${d.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                    {d.isActive ? '✓ Active' : '⏳ Pending approval'}
-                  </button>
-                </td>
-                <td className="p-2 whitespace-nowrap text-right">
-                  <button className="btn-ghost mr-1 px-2 py-1 text-xs" onClick={() => rename(d)}>Rename</button>
-                  <button className="btn-ghost px-2 py-1 text-xs text-red-500" onClick={() => remove(d)}>Remove</button>
-                </td>
-              </tr>
-            ))}
-            {devices.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-xs text-slate-400">No device has connected yet — configure the Cloud Server Setting above on the scanner.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function LegacyLanCard({ onRelink, busy }: { onRelink: () => void; busy: boolean }) {
-  const [ip, setIp] = useState('');
-  const [port, setPort] = useState('4370');
-  const [note, setNote] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    api.get<Settings & { attendanceDevice?: { ip?: string | null; port?: number } }>('/settings').then((s) => {
-      setIp(s.attendanceDevice?.ip ?? '');
-      setPort(String(s.attendanceDevice?.port ?? 4370));
-    }).catch(() => {});
-  }, []);
-
-  async function save() {
-    try {
-      await api.patch('/settings', { zkDeviceIp: ip.trim() || undefined, zkDevicePort: Number(port) || 4370 });
-      setNote('Saved ✓');
-    } catch (e) { setNote((e as Error).message); }
-  }
-
-  return (
-    <div className="card space-y-4 p-6">
-      <button className="flex w-full items-center justify-between text-left" onClick={() => setOpen((o) => !o)}>
-        <h2 className="text-sm font-semibold text-slate-700">📡 Legacy LAN pull <span className="ml-1 font-normal text-slate-400">— fallback for scanners without Cloud Server / ADMS support</span></h2>
-        <span className="text-slate-400">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <>
+    <div className="max-w-2xl space-y-4">
+      <div className="card space-y-4 p-6">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-700">☁ Cloud-connected scanner</h2>
           <p className="text-xs text-slate-400">
-            Only works when this app runs on the same network as the scanner (e.g. the desktop till at the
-            restaurant) — it will not work for a server hosted elsewhere. Find the IP on the device: Menu → Comm. → Ethernet.
+            Compatible with any ADMS-capable ZKTeco terminal, including the <strong>K40/ID</strong> — the scanner
+            pushes punches to us continuously over the internet, no LAN or port-forwarding required. On the device:
+            <strong> Menu → Comm. → Cloud Server Setting</strong>, set <strong>Server Mode = ADMS</strong>, then enter:
           </p>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Device IP</label>
-              <input className="input" value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.1.201" /></div>
-            <div><label className="label">Port</label>
-              <input className="input" value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" /></div>
+        </div>
+
+        {!serverAddress ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+            ⚠ Sign in with your restaurant's subdomain (e.g. <code>yourslug.s3vya.tech</code>) to see the exact
+            Server Address to enter on the scanner.
           </div>
-          <div className="flex items-center gap-2">
-            <button className="btn-primary" onClick={save}>Save device</button>
-            <button className="btn-ghost" onClick={onRelink} disabled={busy} title="Attach unmapped punches to employees after setting their Fingerprint device IDs">↻ Re-link punches</button>
-            {note && <span className="text-xs font-medium text-slate-500">{note}</span>}
+        ) : (
+          <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+            <div><span className="block text-xs uppercase tracking-wide text-slate-400">Server Address</span><span className="font-mono font-medium text-slate-700">{serverAddress}</span></div>
+            <div><span className="block text-xs uppercase tracking-wide text-slate-400">Server Port</span><span className="font-mono font-medium text-slate-700">80</span></div>
           </div>
-        </>
-      )}
-      <p className="text-xs text-slate-400">
-        Map each staff member to their scanner ID via Employees → Edit → <strong>Fingerprint device ID</strong>,
-        and set their <strong>Monthly salary</strong> there for payroll.
-      </p>
+        )}
+
+        <p className="text-xs text-slate-400">
+          Save on the device, then it appears below (as <em>pending approval</em>) within about a minute — approve
+          it once to start accepting its punches continuously. Full setup guide:{' '}
+          <code>docs/attendance-cloud-setup.md</code>.
+        </p>
+
+        {note && <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">⚠ {note}</div>}
+        {err && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+            <span>⚠ {err}</span>
+            <button className="btn-ghost shrink-0 px-2 py-0.5 text-xs" onClick={() => load()}>Retry</button>
+          </div>
+        )}
+
+        <div className="overflow-x-auto rounded-lg border border-slate-100">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-slate-100 bg-slate-50">
+              <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Serial</th>
+              <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Name</th>
+              <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Last seen</th>
+              <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Punches</th>
+              <th className="p-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Status</th>
+              <th className="p-2" />
+            </tr></thead>
+            <tbody className="divide-y divide-slate-50">
+              {devices.map((d) => {
+                const rowBusy = busyIds.current.has(d.id);
+                return (
+                  <tr key={d.id} className={rowBusy ? 'opacity-50' : ''}>
+                    <td className="p-2 font-mono text-xs text-slate-600">{d.serial}</td>
+                    <td className="p-2 text-slate-700">{d.name || <span className="text-slate-300">unnamed</span>}</td>
+                    <td className="p-2 text-xs text-slate-500">{seen(d.lastSeenAt)}</td>
+                    <td className="p-2 text-xs text-slate-500">{d.pushCount}</td>
+                    <td className="p-2">
+                      <button disabled={rowBusy} onClick={() => toggleActive(d)} className={`badge ${d.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                        {d.isActive ? '✓ Active' : '⏳ Pending approval'}
+                      </button>
+                    </td>
+                    <td className="p-2 whitespace-nowrap text-right">
+                      <button disabled={rowBusy} className="btn-ghost mr-1 px-2 py-1 text-xs" onClick={() => rename(d)}>Rename</button>
+                      <button disabled={rowBusy} className="btn-ghost px-2 py-1 text-xs text-red-500" onClick={() => remove(d)}>Remove</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {devices.length === 0 && loaded && !err && (
+                <tr><td colSpan={6} className="p-6 text-center text-xs text-slate-400">No device has connected yet — configure the Cloud Server Setting above on the scanner, it should appear here within a minute.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="flex items-center gap-1.5 text-xs text-slate-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> Live — this list updates automatically.</p>
+      </div>
+
+      <div className="card space-y-2 p-6">
+        <h2 className="text-sm font-semibold text-slate-700">Map employees to the scanner</h2>
+        <p className="text-xs text-slate-400">
+          Set each staff member's scanner ID via Employees → Edit → <strong>Fingerprint device ID</strong>, and their{' '}
+          <strong>Monthly salary</strong> there for payroll. If punches arrived before an employee was mapped, use
+          Re-link to attach them retroactively.
+        </p>
+        <button className="btn-ghost" onClick={onRelink} disabled={busy}>{busy ? 'Re-linking…' : '↻ Re-link punches'}</button>
+      </div>
     </div>
   );
 }

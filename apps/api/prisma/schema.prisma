@@ -737,10 +737,6 @@ model CafeSetting {
   irdSellerPan String?
   irdApiUrl    String? // e.g. https://cbapi.ird.gov.np/api/bill
 
-  // ZKTeco attendance device on the local network (TCP port 4370).
-  zkDeviceIp   String?
-  zkDevicePort Int     @default(4370)
-
   // Default flat packaging / delivery charges, auto-applied by order type
   // (TAKEAWAY/DELIVERY get packaging; DELIVERY also gets delivery) and
   // editable per order at checkout, same pattern as service charge.

@@ -40,16 +40,31 @@ export class IclockService {
 
   // GET /iclock/cdata?SN=...&options=all — device handshake on boot/reconnect.
   // Stamp/OpStamp set high so the device doesn't try to backfill its entire
-  // history; ErrorDelay/Delay control its retry cadence.
+  // history. Response fields (confirmed against the ZKTeco PUSH SDK spec,
+  // not guessed):
+  //  - TransFlag is a 12-char string, one digit per data type the device is
+  //    allowed to push (1=on, 0=off): position 1=ATTLOG, 2=OPERLOG,
+  //    3=att.photos, 4=new fingerprints, 5=new users, 6=fp images,
+  //    7=user-info edits, 8=fp edits, 9=new faces, 10=user photos,
+  //    11=work codes, 12=biophotos. We only want attendance + the
+  //    enrollment/user-change log (positions 1-2) — leaving the rest off
+  //    stops the device wasting bandwidth pushing fingerprint/face binary
+  //    data we don't consume.
+  //  - Realtime=1 means the device pushes a punch immediately when scanned,
+  //    not on a delay — this is what makes ingestion "continuous" rather
+  //    than batched.
+  //  - Delay/ErrorDelay govern the GET /iclock/getrequest heartbeat cadence
+  //    (command poll + liveness), not attendance push latency. Kept short
+  //    so a device that drops connection reconnects quickly.
   async handshake(sn: string): Promise<string> {
     await this.touchDevice(sn);
     return [
       `GET OPTION FROM: ${sn ?? ''}`,
       'Stamp=9999',
       'OpStamp=9999',
-      'ErrorDelay=60',
-      'Delay=30',
-      'TransFlag=1111000000',
+      'ErrorDelay=30',
+      'Delay=5',
+      'TransFlag=110000000000',
       'Realtime=1',
       'Encrypt=0',
     ].join('\r\n');
@@ -90,13 +105,21 @@ export class IclockService {
           return deviceUserId && at ? { deviceUserId, at } : null;
         })
         .filter((p): p is { deviceUserId: string; at: string } => !!p);
-      const result = await this.attendance.ingest(punches);
-      await this.touchDevice(sn, {
-        lastPushAt: new Date(),
-        pushCount: { increment: result.newPunches },
-      });
-      this.log.log(`SN=${sn}: ${result.newPunches} new punch(es) of ${lines.length} pushed`);
-      return `OK: ${result.newPunches}`;
+      try {
+        const result = await this.attendance.ingest(punches);
+        await this.touchDevice(sn, {
+          lastPushAt: new Date(),
+          pushCount: { increment: result.newPunches },
+        });
+        this.log.log(`SN=${sn}: ${result.newPunches} new punch(es) of ${lines.length} pushed`);
+        return `OK: ${result.newPunches}`;
+      } catch (err) {
+        // Still reply OK (with 0 accepted) so the device doesn't decide the
+        // batch failed and retry-storm — but log loudly since a human needs
+        // to notice a batch of real punches silently failed to store.
+        this.log.error(`SN=${sn}: failed to ingest ${lines.length} punch(es) — ${(err as Error).message}`);
+        return 'OK: 0';
+      }
     }
 
     // OPERLOG (enrollment/user-table changes) and anything else — just

@@ -39,8 +39,5 @@
       "target": "AppImage",
       "category": "Office"
     }
-  },
-  "dependencies": {
-    "zkteco-js": "^1.7.2"
   }
 }

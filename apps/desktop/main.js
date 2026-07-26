@@ -68,15 +68,9 @@ function createWindow() {
   });
 }
 
-// ── ZKTeco attendance bridge ─────────────────────────
-// The till sits on the same LAN as the fingerprint scanner (TCP 4370), so it
-// pulls punches from the device and the web app pushes them to the cloud API —
-// same pattern as the KOT auto-printer.
-const Zkteco = require('zkteco-js');
-
 // A promise that always settles within `ms`, even if the underlying promise
-// never resolves/rejects (e.g. a device or print driver that hangs forever).
-// Without this, one stuck operation can freeze the whole till indefinitely.
+// never resolves/rejects (e.g. a print driver that hangs forever). Without
+// this, one stuck operation can freeze the whole till indefinitely.
 function withTimeout(p, ms, label) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -84,34 +78,6 @@ function withTimeout(p, ms, label) {
   });
   return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
 }
-
-ipcMain.handle('zk:pull', async (_event, { ip, port = 4370 }) => {
-  if (!ip) return { error: 'No device IP configured' };
-  const device = new Zkteco(ip, port, 10000, 4000);
-  try {
-    await withTimeout(device.createSocket(), 15000);
-    const u = await withTimeout(device.getUsers(), 20000);
-    const a = await withTimeout(device.getAttendances(), 30000);
-    const users = (u?.data ?? []).map((x) => ({
-      deviceUserId: String(x.userId ?? x.user_id ?? x.uid ?? ''),
-      name: x.name ?? '',
-    }));
-    const punches = (a?.data ?? [])
-      .map((r) => {
-        const at = new Date(r.record_time ?? r.recordTime ?? r.timestamp);
-        return {
-          deviceUserId: String(r.user_id ?? r.deviceUserId ?? r.uid ?? ''),
-          at: isNaN(at.getTime()) ? null : at.toISOString(),
-        };
-      })
-      .filter((p) => p.deviceUserId && p.at);
-    return { users, punches };
-  } catch (err) {
-    return { error: String(err.message || err) };
-  } finally {
-    try { await device.disconnect(); } catch { /* already closed */ }
-  }
-});
 
 // ── Printing bridge ──────────────────────────────────
 // List OS printers for the Settings → Printing page.

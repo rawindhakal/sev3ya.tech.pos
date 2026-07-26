@@ -14,11 +14,6 @@ declare global {
       platform: string;
       listPrinters?: () => Promise<DesktopPrinter[]>;
       printHtml?: (opts: { html: string; printerName?: string; widthMm?: number }) => Promise<{ ok: boolean; error?: string; warning?: string }>;
-      pullAttendance?: (opts: { ip: string; port?: number }) => Promise<{
-        users?: { deviceUserId: string; name: string }[];
-        punches?: { deviceUserId: string; at: string }[];
-        error?: string;
-      }>;
       // Remembered cashier session (Remember me / auto sign-in), encrypted
       // via the OS keychain in the main process.
       saveCreds?: (restaurant: string, username: string, password: string) => Promise<{ ok: boolean; error?: string }>;

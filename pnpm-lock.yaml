@@ -37,9 +37,6 @@ importers:
       rxjs:
         specifier: ^7.8.1
         version: 7.8.2
-      zkteco-js:
-        specifier: ^1.7.2
-        version: 1.7.2
     devDependencies:
       '@nestjs/cli':
         specifier: ^10.4.5
@@ -64,10 +61,6 @@ importers:
         version: 5.9.3
 
   apps/desktop:
-    dependencies:
-      zkteco-js:
-        specifier: ^1.7.2
-        version: 1.7.2
     devDependencies:
       cross-env:
         specifier: ^7.0.3
@@ -2889,9 +2882,6 @@ packages:
   zip-stream@4.1.1:
     resolution: {integrity: sha512-9qv4rlDiopXg4E69k+vMHjNN63YFMe9sZMrdlvKnCjlCRWeCBswPPMPUfx+ipsAWq1LXHe70RcbaHdJJpS6hyQ==}
     engines: {node: '>= 10'}
-
-  zkteco-js@1.7.2:
-    resolution: {integrity: sha512-oTLG7tjzgxvFbIhyrnPoJNKPNz6ZI2hAx37fM4h372b9HqH7tWGkHgdEuZw92BdwETa0rwIn/TowscbkCr604Q==}
 
 snapshots:
 
@@ -5988,5 +5978,3 @@ snapshots:
       archiver-utils: 3.0.4
       compress-commons: 4.1.2
       readable-stream: 3.6.2
-
-  zkteco-js@1.7.2: {}

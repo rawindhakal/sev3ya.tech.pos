@@ -43,7 +43,6 @@ export class SettingsService {
       packagingChargeCents: s.packagingChargeCents,
       deliveryChargeCents: s.deliveryChargeCents,
       // IRD config — the password is write-only (never returned to clients).
-      attendanceDevice: { ip: s.zkDeviceIp, port: s.zkDevicePort },
       ird: {
         enabled: s.irdEnabled,
         username: s.irdUsername,
@@ -224,8 +223,6 @@ export class SettingsService {
     irdPassword?: string;
     irdSellerPan?: string;
     irdApiUrl?: string;
-    zkDeviceIp?: string;
-    zkDevicePort?: number;
     packagingChargeCents?: number;
     deliveryChargeCents?: number;
     esewaMerchantCode?: string;

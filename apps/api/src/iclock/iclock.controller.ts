@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
+import { Controller, Get, Logger, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { IclockService } from './iclock.service';
 
@@ -10,27 +10,48 @@ import { IclockService } from './iclock.service';
 // JSON), so this controller reads req.body as a raw string (see the
 // express.text() middleware registered for this path in main.ts) instead
 // of going through Nest's DTO/ValidationPipe pipeline.
+//
+// Every handler is wrapped in try/catch and always replies with a plain-text
+// "OK"-style body even on an unexpected failure (e.g. a DB hiccup). The
+// device has no concept of an HTTP error page — an unhandled exception would
+// otherwise fall through to Nest's default JSON error response, which the
+// device can't parse, so it just retries the same batch forever. Replying OK
+// keeps the device's own retry/backoff logic well-behaved; the actual
+// failure is logged here for a human to notice instead.
 @Controller('iclock')
 export class IclockController {
+  private readonly log = new Logger('ICLOCK');
   constructor(private readonly iclock: IclockService) {}
 
   @Get('cdata')
   async handshake(@Query('SN') sn: string, @Res() res: Response) {
-    const body = await this.iclock.handshake(sn);
-    res.type('text/plain').send(body);
+    try {
+      res.type('text/plain').send(await this.iclock.handshake(sn));
+    } catch (err) {
+      this.log.error(`handshake SN=${sn} failed — ${(err as Error).message}`);
+      res.type('text/plain').send('OK');
+    }
   }
 
   @Post('cdata')
   async push(@Query('SN') sn: string, @Query('table') table: string | undefined, @Req() req: Request, @Res() res: Response) {
-    const raw = typeof req.body === 'string' ? req.body : '';
-    const body = await this.iclock.push(sn, table, raw);
-    res.type('text/plain').send(body);
+    try {
+      const raw = typeof req.body === 'string' ? req.body : '';
+      res.type('text/plain').send(await this.iclock.push(sn, table, raw));
+    } catch (err) {
+      this.log.error(`push SN=${sn} table=${table} failed — ${(err as Error).message}`);
+      res.type('text/plain').send('OK: 0');
+    }
   }
 
   @Get('getrequest')
   async getrequest(@Query('SN') sn: string, @Res() res: Response) {
-    const body = await this.iclock.heartbeat(sn);
-    res.type('text/plain').send(body);
+    try {
+      res.type('text/plain').send(await this.iclock.heartbeat(sn));
+    } catch (err) {
+      this.log.error(`heartbeat SN=${sn} failed — ${(err as Error).message}`);
+      res.type('text/plain').send('OK');
+    }
   }
 
   // Device posts the result of a queued command here — we never queue any,

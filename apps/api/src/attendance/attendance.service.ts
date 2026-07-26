@@ -4,17 +4,15 @@ import { formatBs } from '../common/bs-date';
 
 // ZKTeco fingerprint attendance + payroll.
 //
-// The ZKTeco device speaks its own TCP protocol on port 4370, so the API must
-// be able to reach it on the LAN (configure IP under Settings → Attendance).
-// Sync pulls the device's users + punch log; (deviceUserId, at) is unique so
-// re-syncing is idempotent. Punches map to employees via Employee.deviceUserId.
+// Punches arrive exclusively via cloud push (ADMS protocol — see
+// IclockService), which calls ingest() below directly. There is no LAN-pull
+// path: the API is hosted remotely and has no network route into a
+// restaurant, so a device reaching out to us is the only architecture that
+// actually works in production.
 //
 // Payroll: fixed monthly salary pro-rated by present days over a 26-working-day
 // month (Nepali standard, Saturdays off), with worked-hours from first-in →
 // last-out per day.
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Zkteco = require('zkteco-js');
 
 const STD_WORKING_DAYS = 26;
 const STD_DAY_HOURS = 8;
@@ -26,67 +24,9 @@ export class AttendanceService {
   private readonly log = new Logger('Attendance');
   constructor(private readonly prisma: PrismaService) {}
 
-  private async deviceConfig() {
-    const s = await this.prisma.cafeSetting.findUnique({ where: { id: 'singleton' } });
-    if (!s?.zkDeviceIp) throw new BadRequestException('Set the attendance device IP under Settings first');
-    return { ip: s.zkDeviceIp, port: s.zkDevicePort ?? 4370 };
-  }
-
-  // ── Pull users + punches from the device ────────────
-  async syncFromDevice() {
-    const { ip, port } = await this.deviceConfig();
-    const device = new Zkteco(ip, port, 10000, 4000);
-    let users: any[] = [];
-    let logs: any[] = [];
-    // The library can hang on unreachable hosts — enforce our own hard timeout.
-    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
-      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`timed out after ${ms / 1000}s`)), ms))]);
-    try {
-      await withTimeout(device.createSocket(), 15000);
-      const u = await withTimeout<any>(device.getUsers(), 20000);
-      users = u?.data ?? [];
-      const a = await withTimeout<any>(device.getAttendances(), 30000);
-      logs = a?.data ?? [];
-    } catch (err) {
-      throw new BadRequestException(
-        `Could not reach the ZKTeco device at ${ip}:${port} — ${(err as Error).message}. ` +
-        'The API must be on the same network as the scanner.',
-      );
-    } finally {
-      try { await device.disconnect(); } catch { /* already closed */ }
-    }
-
-    // Map device users → employees (by deviceUserId).
-    const employees = await this.prisma.employee.findMany({ where: { deviceUserId: { not: null } } });
-    const empByDevice = new Map(employees.map((e) => [String(e.deviceUserId), e.id]));
-
-    let inserted = 0;
-    for (const rec of logs) {
-      // zkteco-js record fields vary by firmware: user_id/deviceUserId, record_time/recordTime.
-      const deviceUserId = String(rec.user_id ?? rec.deviceUserId ?? rec.uid ?? '');
-      const atRaw = rec.record_time ?? rec.recordTime ?? rec.timestamp;
-      if (!deviceUserId || !atRaw) continue;
-      const at = new Date(atRaw);
-      if (isNaN(at.getTime())) continue;
-      try {
-        await this.prisma.attendanceLog.create({
-          data: { deviceUserId, at, employeeId: empByDevice.get(deviceUserId) ?? null, source: 'DEVICE' },
-        });
-        inserted++;
-      } catch { /* duplicate (already synced) — skip */ }
-    }
-
-    return {
-      device: { ip, port },
-      deviceUsers: users.map((u) => ({ deviceUserId: String(u.userId ?? u.user_id ?? u.uid), name: u.name })),
-      totalOnDevice: logs.length,
-      newPunches: inserted,
-      mappedEmployees: employees.length,
-    };
-  }
-
-  // Bulk-ingest punches pushed by the desktop LAN bridge (idempotent — the
-  // unique (deviceUserId, at) constraint silently drops already-seen punches).
+  // Bulk-ingest punches (idempotent — the unique (deviceUserId, at)
+  // constraint silently drops already-seen punches). Called by IclockService
+  // for every cloud-pushed ATTLOG batch.
   async ingest(punches: { deviceUserId: string; at: string }[]) {
     const employees = await this.prisma.employee.findMany({ where: { deviceUserId: { not: null } } });
     const empByDevice = new Map(employees.map((e) => [String(e.deviceUserId), e.id]));
