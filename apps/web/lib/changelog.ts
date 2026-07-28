@@ -1,7 +1,18 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '1.8.0';
+export const APP_VERSION = '1.9.0';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '1.9.0', date: '2026-07-28',
+    changes: [
+      'Global loading indicator: a top progress bar now shows automatically during saves, prints, and page loads across the whole app',
+      'Bold, larger KOT/BOT/Bill printing with clearer sections — KOT/BOT now show KOT No, Date, Time, Order Type, Table No, Guest Count and Order Taken By; bills add Bill No, Rate column, Net Amount Before Tax, Cashier name, and Payment Mode/Txn ID',
+      'Fixed low-contrast checkboxes in dark mode',
+      'New Discounts & Complimentary report (Sales Reports) — total discount %, who authorized each discount/comp, by-authorizer rollup',
+      'New Stock Variance report (Inventory) — ideal recipe-based consumption vs. physical stock-take counts, the leakage/theft signal',
+      'New Vendor Payment Ledger (Purchasing) — received value vs. paid vs. due per supplier, with a payment history log',
+    ],
+  },
   {
     version: '1.8.0', date: '2026-07-18',
     changes: [

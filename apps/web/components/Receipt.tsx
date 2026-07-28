@@ -6,7 +6,8 @@
 // Layout is driven by the editable templates under Settings → Printing.
 import { formatMoney } from '@/lib/api';
 import { formatBs } from '@/lib/bs-date';
-import { billTemplateOf, kotTemplateOf } from '@/lib/printing';
+import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
+import { billTemplateOf, kotTemplateOf, ticketDate, ticketTime } from '@/lib/printing';
 import type { Order, OrderItem, Settings } from '@/lib/types';
 
 export type ReceiptMode = 'BILL' | 'KOT' | 'BOT' | 'CANCEL';
@@ -25,75 +26,111 @@ export default function Receipt({
   docTitle?: string;   // overrides the bill document title (Estimated Bill / Tax Invoice / Invoice)
 }) {
   if (!order) return null;
-  const when = new Date().toLocaleString();
+  const now = new Date();
   const list = items ?? order.items.filter((i) => !i.cancelledAt);
   const isBill = mode === 'BILL';
   const bt = billTemplateOf(settings);
   const kt = kotTemplateOf(settings);
   const fs = isBill ? bt.fontSize : kt.fontSize;
-  const sub = Math.max(fs - 3, 8);
+  const bold = isBill ? bt.boldTotals : kt.boldTotals;
+  const sub = Math.max(fs - 3, 9);
 
   const ticketTitle =
     mode === 'KOT' ? kt.kotTitle : mode === 'BOT' ? kt.botTitle : '*** ITEM CANCELLATION ***';
+  const docNo = isBill
+    ? order.fiscalInvoiceNo != null ? `INV-${order.fiscalInvoiceNo}` : `INV-${order.number}`
+    : `${mode === 'BOT' ? 'BOT' : 'KOT'}-${String(order.number).padStart(5, '0')}`;
+
+  // Two-column metadata grid: [label, value] pairs laid out two-per-row,
+  // e.g. "Bill No: INV-89201    Date: 28-Jul-2026".
+  const metaPairs: [string, string][] = isBill
+    ? [
+        ['Bill No', docNo],
+        ['Date', ticketDate(now)],
+        ['Time', ticketTime(now)],
+        ...(bt.showTable && order.table ? [['Table No', order.table.name] as [string, string]] : []),
+        ...(bt.showGuests ? [['Guest Count', String(order.guestCount)] as [string, string]] : []),
+        ...(bt.showCashier && order.cashierName ? [['Cashier', order.cashierName] as [string, string]] : []),
+      ]
+    : [
+        [`${mode === 'BOT' ? 'BOT' : 'KOT'} No`, docNo],
+        ['Date', ticketDate(now)],
+        ...(kt.showTime ? [['Time', ticketTime(now)] as [string, string]] : []),
+        ...(kt.showOrderType ? [['Order Type', order.type.replace('_', ' ')] as [string, string]] : []),
+        ...(kt.showTable && order.table ? [['Table No', order.table.name] as [string, string]] : []),
+        ...(kt.showGuests ? [['Guest Count', String(order.guestCount)] as [string, string]] : []),
+      ];
+  const metaRows: [string, string][][] = [];
+  for (let i = 0; i < metaPairs.length; i += 2) metaRows.push([metaPairs[i], metaPairs[i + 1]].filter(Boolean) as [string, string][]);
+
+  const orderTakenByName = isBill ? null : (kt.showWaiter && order.waiter?.name) || null;
+  const netBeforeTax = order.subtotalCents - order.discountCents;
 
   return (
-    <div id="print-area" style={{ fontSize: fs }}>
+    <div id="print-area" style={{ fontSize: fs, fontWeight: bold ? 500 : 400 }}>
       <div style={{ textAlign: 'center', marginBottom: 8 }}>
         {isBill ? (
           <>
-            <div style={{ fontSize: fs + 6, fontWeight: 700 }}>{settings?.restaurantName ?? 's3vya'}</div>
+            <div style={{ fontSize: fs + 8, fontWeight: 800 }}>{settings?.restaurantName ?? 's3vya'}</div>
             {bt.showAddress && settings?.address && <div>{settings.address}</div>}
-            {bt.showPhone && settings?.phone && <div>Tel: {settings.phone}</div>}
-            {bt.showTaxId && settings?.taxId && <div>{settings.taxId}</div>}
-            <div style={{ marginTop: 2, fontWeight: docTitle ? 700 : 400 }}>{docTitle ?? bt.title}</div>
+            {bt.showTaxId && settings?.taxId && <div>PAN/VAT No: {settings.taxId}</div>}
+            {bt.showPhone && settings?.phone && <div>Contact: {settings.phone}</div>}
+            <div style={{ marginTop: 3, fontWeight: 800, fontSize: fs + 1 }}>{(docTitle ?? bt.title).toUpperCase()}</div>
             {(bt.headerText || settings?.receiptHeader) && (
               <div style={{ marginTop: 4 }}>{bt.headerText || settings?.receiptHeader}</div>
             )}
           </>
         ) : (
-          <div style={{ fontSize: fs + 3, fontWeight: 700 }}>{ticketTitle}</div>
+          <div style={{ fontSize: fs + 6, fontWeight: 800 }}>{ticketTitle}</div>
         )}
       </div>
 
-      <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '4px 0' }}>
-        <div>
-          Order #{order.number}
-          {(isBill || kt.showOrderType) && <> · {order.type.replace('_', ' ')}</>}
-        </div>
-        {isBill && order.fiscalInvoiceNo != null && (
-          <div>Invoice No: {order.fiscalInvoiceNo} · FY {order.fiscalYear}</div>
+      <div style={{ borderTop: '2px dashed #000', borderBottom: '2px dashed #000', padding: '4px 0' }}>
+        {!isBill && (
+          <div style={{ fontWeight: 700 }}>
+            Order #{order.number}
+          </div>
         )}
-        {(isBill ? bt.showTable : kt.showTable) && order.table && <div>Table: {order.table.name}</div>}
-        {(isBill ? bt.showWaiter : kt.showWaiter) && order.waiter && <div>Waiter: {order.waiter.name}</div>}
+        {metaRows.map((pair, idx) => (
+          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '1px 0' }}>
+            {pair.map(([label, value]) => (
+              <span key={label}>{label}: <b>{value}</b></span>
+            ))}
+          </div>
+        ))}
+        {orderTakenByName && <div style={{ padding: '1px 0' }}>Order Taken By: <b>{orderTakenByName}</b></div>}
+        {isBill && bt.showWaiter && order.waiter && <div style={{ padding: '1px 0' }}>Waiter: <b>{order.waiter.name}</b></div>}
         {isBill && bt.showCustomer && order.customerName && (
-          <div>Customer: {order.customerName}{order.customerPhone ? ` (${order.customerPhone})` : ''}</div>
+          <div style={{ padding: '1px 0' }}>Customer: {order.customerName}{order.customerPhone ? ` (${order.customerPhone})` : ''}</div>
         )}
-        {isBill && bt.showGuests && <div>Guests: {order.guestCount}</div>}
-        {(isBill || kt.showTime) && <div>{when}{isBill && ` · BS ${formatBs(new Date())}`}</div>}
+        {isBill && <div style={{ fontSize: sub, marginTop: 2 }}>BS {formatBs(now)}</div>}
       </div>
 
-      <table style={{ width: '100%', marginTop: 6 }}>
+      <table style={{ width: '100%', marginTop: 6, borderCollapse: 'collapse' }}>
         <thead>
-          <tr style={{ borderBottom: '1px solid #000' }}>
+          <tr style={{ borderBottom: '2px solid #000' }}>
+            <th style={{ textAlign: 'center', width: '2.2em' }}>Qty</th>
             <th style={{ textAlign: 'left' }}>Item</th>
-            <th style={{ textAlign: 'center' }}>Qty</th>
-            {isBill && <th style={{ textAlign: 'right' }}>Amt</th>}
+            {isBill && bt.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}
+            {isBill && <th style={{ textAlign: 'right' }}>Amount</th>}
           </tr>
         </thead>
         <tbody>
           {list.map((it) => {
             const mods = Array.isArray(it.modifiers) ? it.modifiers : [];
             const modCents = mods.reduce((s, m) => s + m.priceCents, 0);
-            const lineTotal = (it.unitPriceCents + modCents) * it.quantity;
+            const rate = it.unitPriceCents + modCents;
+            const lineTotal = rate * it.quantity;
             const showNotes = isBill ? bt.showItemNotes : kt.showItemNotes;
             return (
               <tr key={it.id} style={{ verticalAlign: 'top' }}>
-                <td style={{ textAlign: 'left' }}>
+                <td style={{ textAlign: 'center', fontWeight: 800, padding: '3px 0' }}>{it.quantity}</td>
+                <td style={{ textAlign: 'left', fontWeight: bold ? 700 : 500, padding: '3px 0' }}>
                   {mode === 'CANCEL' ? '❌ ' : ''}{it.nameSnapshot}
-                  {mods.length > 0 && <div style={{ fontSize: sub }}>+ {mods.map((m) => m.name).join(', ')}</div>}
-                  {showNotes && it.notes && <div style={{ fontSize: sub, fontStyle: 'italic' }}>» {it.notes}</div>}
+                  {mods.length > 0 && <div style={{ fontSize: sub, fontWeight: 400 }}>+ {mods.map((m) => m.name).join(', ')}</div>}
+                  {showNotes && it.notes && <div style={{ fontSize: sub, fontStyle: 'italic', fontWeight: 400 }}>» {it.notes}</div>}
                 </td>
-                <td style={{ textAlign: 'center' }}>{it.quantity}</td>
+                {isBill && bt.showRate && <td style={{ textAlign: 'right' }}>{(rate / 100).toFixed(2)}</td>}
                 {isBill && <td style={{ textAlign: 'right' }}>{formatMoney(lineTotal)}</td>}
               </tr>
             );
@@ -102,12 +139,15 @@ export default function Receipt({
       </table>
 
       {isBill && (
-        <div style={{ borderTop: '1px dashed #000', marginTop: 6, paddingTop: 4 }}>
+        <div style={{ borderTop: '2px dashed #000', marginTop: 6, paddingTop: 4 }}>
           {bt.showVatBreakdown && (
             <>
-              <Row label="Subtotal" value={formatMoney(order.subtotalCents)} />
+              <Row label="Sub Total" value={formatMoney(order.subtotalCents)} />
               {order.discountCents > 0 && (
-                <Row label={order.discountLabel ? `Discount (${order.discountLabel})` : 'Discount'} value={`-${formatMoney(order.discountCents)}`} />
+                <>
+                  <Row label={order.discountLabel ? `Discount (${order.discountLabel})` : 'Discount'} value={`-${formatMoney(order.discountCents)}`} />
+                  <Row label="Net Amount Before Tax" value={formatMoney(netBeforeTax)} />
+                </>
               )}
               {order.serviceChargeCents > 0 && (
                 <Row label={`Service charge (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`} value={formatMoney(order.serviceChargeCents)} />
@@ -115,27 +155,37 @@ export default function Receipt({
               <Row label={`VAT (${Math.round((settings?.vatRate ?? 0.13) * 100)}%)`} value={formatMoney(order.taxCents)} />
             </>
           )}
-          <div style={{ borderTop: '1px solid #000', marginTop: 4, paddingTop: 4 }}>
-            <Row label="TOTAL" value={formatMoney(order.totalCents)} bold />
+          <div style={{ borderTop: '2px solid #000', marginTop: 4, paddingTop: 4 }}>
+            <Row label="GRAND TOTAL" value={formatMoney(order.totalCents)} bold big />
           </div>
         </div>
       )}
 
-      <div style={{ textAlign: 'center', marginTop: 10 }}>
+      {isBill && bt.showPaymentMode && order.payments && order.payments.length > 0 && (
+        <div style={{ borderTop: '2px dashed #000', marginTop: 6, paddingTop: 4 }}>
+          {order.payments.map((p) => (
+            <div key={p.id}>
+              Payment Mode: <b>{PAYMENT_METHOD_LABEL[p.method] ?? p.method}</b>{p.gatewayRef ? ` (Txn ID: ${p.gatewayRef})` : ''} — {formatMoney(p.amountCents)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ textAlign: 'center', marginTop: 10, fontWeight: 700 }}>
         {isBill
           ? bt.footerText || settings?.receiptFooter || 'Thank you! Please visit again.'
           : mode === 'CANCEL' ? '— void from station —' : '— fire to station —'}
       </div>
       {isBill && bt.showWifi && settings?.wifiPassword && (
-        <div style={{ textAlign: 'center', fontSize: sub, marginTop: 4 }}>WiFi: {settings.wifiPassword}</div>
+        <div style={{ textAlign: 'center', fontSize: sub, marginTop: 4, fontWeight: 400 }}>WiFi: {settings.wifiPassword}</div>
       )}
     </div>
   );
 }
 
-function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+function Row({ label, value, bold, big }: { label: string; value: string; bold?: boolean; big?: boolean }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 700 : 400 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 800 : 400, fontSize: big ? '1.15em' : undefined }}>
       <span>{label}</span>
       <span>{value}</span>
     </div>

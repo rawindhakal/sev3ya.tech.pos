@@ -44,7 +44,7 @@ export default function AutoPrintAgent() {
       try {
         const prefs = getPrinterPrefs();
         if (!prefs.autoPrintKot) return;
-        const queue = await api.get<KotQueueItem[]>('/orders/kot-queue');
+        const queue = await api.get<KotQueueItem[]>('/orders/kot-queue', { silent: true });
         const printable = queue.filter((q) => q.station === 'KITCHEN' || q.station === 'BAR');
         if (!printable.length) return;
 
@@ -68,6 +68,7 @@ export default function AutoPrintAgent() {
             orderType: first.orderType,
             table: first.table,
             waiter: first.waiter,
+            guestCount: first.guestCount,
             items,
           });
           const res = await window.cakezakeDesktop!.printHtml!({

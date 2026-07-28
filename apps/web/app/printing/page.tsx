@@ -10,11 +10,14 @@ import {
   getPrinterPrefs,
   savePrinterPrefs,
   isDesktopShell,
+  ticketDate,
+  ticketTime,
   type BillTemplate,
   type KotTemplate,
   type DesktopPrinter,
   type PrinterPrefs,
 } from '@/lib/printing';
+import Spinner from '@/components/Spinner';
 
 // Sample data driving the live previews.
 const SAMPLE_ITEMS = [
@@ -207,64 +210,79 @@ export default function PrintingPage() {
                 </select></div>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-1">
+              <Toggle label="Bold, larger print" on={bill.boldTotals} onChange={(v) => setBill({ ...bill, boldTotals: v })} />
               <Toggle label="Address" on={bill.showAddress} onChange={(v) => setBill({ ...bill, showAddress: v })} />
               <Toggle label="Phone" on={bill.showPhone} onChange={(v) => setBill({ ...bill, showPhone: v })} />
               <Toggle label="PAN / Tax ID" on={bill.showTaxId} onChange={(v) => setBill({ ...bill, showTaxId: v })} />
               <Toggle label="Table" on={bill.showTable} onChange={(v) => setBill({ ...bill, showTable: v })} />
               <Toggle label="Waiter" on={bill.showWaiter} onChange={(v) => setBill({ ...bill, showWaiter: v })} />
-              <Toggle label="Guests" on={bill.showGuests} onChange={(v) => setBill({ ...bill, showGuests: v })} />
+              <Toggle label="Guest count" on={bill.showGuests} onChange={(v) => setBill({ ...bill, showGuests: v })} />
+              <Toggle label="Cashier" on={bill.showCashier} onChange={(v) => setBill({ ...bill, showCashier: v })} />
               <Toggle label="Customer" on={bill.showCustomer} onChange={(v) => setBill({ ...bill, showCustomer: v })} />
               <Toggle label="Item notes" on={bill.showItemNotes} onChange={(v) => setBill({ ...bill, showItemNotes: v })} />
+              <Toggle label="Rate column" on={bill.showRate} onChange={(v) => setBill({ ...bill, showRate: v })} />
               <Toggle label="VAT breakdown" on={bill.showVatBreakdown} onChange={(v) => setBill({ ...bill, showVatBreakdown: v })} />
+              <Toggle label="Payment mode / Txn ID" on={bill.showPaymentMode} onChange={(v) => setBill({ ...bill, showPaymentMode: v })} />
               <Toggle label="WiFi password" on={bill.showWifi} onChange={(v) => setBill({ ...bill, showWifi: v })} />
             </div>
           </div>
 
           {/* live preview */}
           <div className="flex items-start justify-center rounded-xl bg-slate-100 p-6 dark:bg-slate-900/60">
-            <div className="bg-white p-3 font-mono text-black shadow-md" style={{ width: bill.paperWidthMm === 80 ? 300 : 220, fontSize: bill.fontSize }}>
+            <div className="bg-white p-3 font-mono text-black shadow-md" style={{ width: bill.paperWidthMm === 80 ? 300 : 220, fontSize: bill.fontSize, fontWeight: bill.boldTotals ? 500 : 400 }}>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontWeight: 700, fontSize: bill.fontSize + 5 }}>{settings?.restaurantName}</div>
+                <div style={{ fontWeight: 800, fontSize: bill.fontSize + 7 }}>{settings?.restaurantName || 'Your Restaurant'}</div>
                 {bill.showAddress && <div>{settings?.address || 'Street, City'}</div>}
-                {bill.showPhone && <div>Tel: {settings?.phone || '98XXXXXXXX'}</div>}
-                {bill.showTaxId && <div>{settings?.taxId || 'PAN 123456789'}</div>}
-                <div style={{ marginTop: 2 }}>{bill.title}</div>
+                {bill.showTaxId && <div>PAN/VAT No: {settings?.taxId || 'XXXXXXXXX'}</div>}
+                {bill.showPhone && <div>Contact: {settings?.phone || '+977-98XXXXXXXX'}</div>}
+                <div style={{ marginTop: 3, fontWeight: 800 }}>{bill.title.toUpperCase()}</div>
                 {bill.headerText && <div style={{ marginTop: 3 }}>{bill.headerText}</div>}
               </div>
-              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '3px 0', marginTop: 5 }}>
-                <div>Order #1042 · DINE IN</div>
-                {bill.showTable && <div>Table: T4</div>}
-                {bill.showWaiter && <div>Waiter: Sita</div>}
+              <div style={{ borderTop: '2px dashed #000', borderBottom: '2px dashed #000', padding: '4px 0', marginTop: 5 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Bill No: <b>INV-89201</b></span><span>Date: <b>{ticketDate(new Date())}</b></span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Time: <b>{ticketTime(new Date())}</b></span>
+                  {bill.showTable && <span>Table No: <b>T-04</b></span>}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  {bill.showGuests && <span>Guest Count: <b>4</b></span>}
+                  {bill.showCashier && <span>Cashier: <b>Sita Sharma</b></span>}
+                </div>
+                {bill.showWaiter && <div>Waiter: <b>Ramesh</b></div>}
                 {bill.showCustomer && <div>Customer: Ram Kumar (98012...)</div>}
-                {bill.showGuests && <div>Guests: 2</div>}
-                <div>{new Date().toLocaleString()}</div>
               </div>
-              <table style={{ width: '100%', marginTop: 5 }}>
-                <thead><tr style={{ borderBottom: '1px solid #000', textAlign: 'left' }}><th>Item</th><th style={{ textAlign: 'center' }}>Qty</th><th style={{ textAlign: 'right' }}>Amt</th></tr></thead>
+              <table style={{ width: '100%', marginTop: 5, borderCollapse: 'collapse' }}>
+                <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th style={{ width: '2em', textAlign: 'center' }}>Qty</th><th>Item</th>{bill.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}<th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
                 <tbody>
                   {SAMPLE_ITEMS.map((i) => (
                     <tr key={i.name} style={{ verticalAlign: 'top' }}>
-                      <td>{i.name}
-                        {i.mods && <div style={{ fontSize: Math.max(bill.fontSize - 3, 8) }}>+ {i.mods}</div>}
-                        {bill.showItemNotes && i.notes && <div style={{ fontSize: Math.max(bill.fontSize - 3, 8), fontStyle: 'italic' }}>» {i.notes}</div>}
+                      <td style={{ textAlign: 'center', fontWeight: 800 }}>{i.qty}</td>
+                      <td style={{ fontWeight: bill.boldTotals ? 700 : 500 }}>{i.name}
+                        {i.mods && <div style={{ fontSize: Math.max(bill.fontSize - 3, 9), fontWeight: 400 }}>+ {i.mods}</div>}
+                        {bill.showItemNotes && i.notes && <div style={{ fontSize: Math.max(bill.fontSize - 3, 9), fontStyle: 'italic', fontWeight: 400 }}>» {i.notes}</div>}
                       </td>
-                      <td style={{ textAlign: 'center' }}>{i.qty}</td>
+                      {bill.showRate && <td style={{ textAlign: 'right' }}>{(i.cents / 100).toFixed(2)}</td>}
                       <td style={{ textAlign: 'right' }}>{formatMoney(i.cents * i.qty)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div style={{ borderTop: '1px dashed #000', marginTop: 5, paddingTop: 3 }}>
+              <div style={{ borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3 }}>
                 {bill.showVatBreakdown && (<>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sub Total</span><span>{formatMoney(subtotal)}</span></div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>VAT ({Math.round((settings?.vatRate ?? 0.13) * 100)}%)</span><span>{formatMoney(vat)}</span></div>
                 </>)}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid #000', marginTop: 3, paddingTop: 3 }}>
-                  <span>TOTAL</span><span>{formatMoney(subtotal + vat)}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '1.15em', borderTop: '2px solid #000', marginTop: 3, paddingTop: 3 }}>
+                  <span>GRAND TOTAL</span><span>{formatMoney(subtotal + vat)}</span>
                 </div>
               </div>
-              <div style={{ textAlign: 'center', marginTop: 8 }}>{bill.footerText}</div>
-              {bill.showWifi && <div style={{ textAlign: 'center', fontSize: Math.max(bill.fontSize - 2, 8) }}>WiFi: {settings?.wifiPassword || 'cafe-wifi'}</div>}
+              {bill.showPaymentMode && (
+                <div style={{ borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3 }}>
+                  Payment Mode: <b>Fonepay QR</b> (Txn ID: FP98213)
+                </div>
+              )}
+              <div style={{ textAlign: 'center', marginTop: 8, fontWeight: 700 }}>{bill.footerText}</div>
+              {bill.showWifi && <div style={{ textAlign: 'center', fontSize: Math.max(bill.fontSize - 2, 9), fontWeight: 400 }}>WiFi: {settings?.wifiPassword || 'cafe-wifi'}</div>}
             </div>
           </div>
         </div>
@@ -288,44 +306,54 @@ export default function PrintingPage() {
                 </select></div>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-1">
+              <Toggle label="Bold, larger print" on={kot.boldTotals} onChange={(v) => setKot({ ...kot, boldTotals: v })} />
               <Toggle label="Order type" on={kot.showOrderType} onChange={(v) => setKot({ ...kot, showOrderType: v })} />
               <Toggle label="Table" on={kot.showTable} onChange={(v) => setKot({ ...kot, showTable: v })} />
-              <Toggle label="Waiter" on={kot.showWaiter} onChange={(v) => setKot({ ...kot, showWaiter: v })} />
+              <Toggle label="Guest count" on={kot.showGuests} onChange={(v) => setKot({ ...kot, showGuests: v })} />
+              <Toggle label="Order taken by" on={kot.showWaiter} onChange={(v) => setKot({ ...kot, showWaiter: v })} />
               <Toggle label="Time" on={kot.showTime} onChange={(v) => setKot({ ...kot, showTime: v })} />
               <Toggle label="Item notes" on={kot.showItemNotes} onChange={(v) => setKot({ ...kot, showItemNotes: v })} />
             </div>
           </div>
 
           <div className="flex items-start justify-center rounded-xl bg-slate-100 p-6 dark:bg-slate-900/60">
-            <div className="bg-white p-3 font-mono text-black shadow-md" style={{ width: kot.paperWidthMm === 80 ? 300 : 220, fontSize: kot.fontSize }}>
-              <div style={{ textAlign: 'center', fontWeight: 700, fontSize: kot.fontSize + 3 }}>{kot.kotTitle}</div>
-              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '3px 0', marginTop: 4 }}>
-                <div>Order #1042{kot.showOrderType ? ' · DINE IN' : ''}</div>
-                {kot.showTable && <div>Table: T4</div>}
-                {kot.showWaiter && <div>Waiter: Sita</div>}
-                {kot.showTime && <div>{new Date().toLocaleString()}</div>}
+            <div className="bg-white p-3 font-mono text-black shadow-md" style={{ width: kot.paperWidthMm === 80 ? 300 : 220, fontSize: kot.fontSize, fontWeight: kot.boldTotals ? 600 : 400 }}>
+              <div style={{ textAlign: 'center', fontWeight: 800, fontSize: kot.fontSize + 6 }}>{kot.kotTitle}</div>
+              <div style={{ borderTop: '2px dashed #000', borderBottom: '2px dashed #000', padding: '4px 0', marginTop: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>KOT No: <b>K-01042</b></span><span>Date: <b>{ticketDate(new Date())}</b></span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  {kot.showTime && <span>Time: <b>{ticketTime(new Date())}</b></span>}
+                  {kot.showOrderType && <span>Order Type: <b>Dine-In</b></span>}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  {kot.showTable && <span>Table No: <b>T-04</b></span>}
+                  {kot.showGuests && <span>Guest Count: <b>4</b></span>}
+                </div>
+                {kot.showWaiter && <div>Order Taken By: <b>Captain Ramesh</b></div>}
               </div>
-              <table style={{ width: '100%', marginTop: 4 }}>
-                <thead><tr style={{ borderBottom: '1px solid #000', textAlign: 'left' }}><th>Item</th><th style={{ textAlign: 'center' }}>Qty</th></tr></thead>
+              <table style={{ width: '100%', marginTop: 4, borderCollapse: 'collapse' }}>
+                <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th style={{ width: '2em', textAlign: 'center' }}>Qty</th><th>Item</th></tr></thead>
                 <tbody>
                   {SAMPLE_ITEMS.map((i) => (
                     <tr key={i.name} style={{ verticalAlign: 'top' }}>
-                      <td>{i.name}
-                        {kot.showItemNotes && i.notes && <div style={{ fontSize: Math.max(kot.fontSize - 3, 8), fontStyle: 'italic' }}>» {i.notes}</div>}
+                      <td style={{ textAlign: 'center', fontWeight: 800 }}>{i.qty}</td>
+                      <td style={{ fontWeight: kot.boldTotals ? 700 : 500 }}>{i.name}
+                        {kot.showItemNotes && i.notes && <div style={{ fontSize: Math.max(kot.fontSize - 3, 9), fontStyle: 'italic', fontWeight: 400 }}>» {i.notes}</div>}
                       </td>
-                      <td style={{ textAlign: 'center' }}>{i.qty}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div style={{ textAlign: 'center', marginTop: 6, fontSize: Math.max(kot.fontSize - 2, 9) }}>— fire to station —</div>
+              <div style={{ textAlign: 'center', marginTop: 6, fontSize: Math.max(kot.fontSize - 2, 10), fontWeight: 700 }}>— fire to station —</div>
             </div>
           </div>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
-        <button onClick={saveTemplates} disabled={saving} className="btn-primary">{saving ? 'Saving…' : 'Save templates'}</button>
+        <button onClick={saveTemplates} disabled={saving} className="btn-primary min-w-[9.5rem]">
+          {saving ? <><Spinner size={16} /> Saving…</> : 'Save templates'}
+        </button>
         {saved && <span className="text-sm font-medium text-emerald-600">Saved ✓</span>}
         <span className="text-xs text-slate-400">Templates apply to every till; printer choices stay on this device.</span>
       </div>

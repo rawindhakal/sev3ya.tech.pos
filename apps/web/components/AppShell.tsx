@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
 import Login from './Login';
 import LandingPage from './LandingPage';
+import GlobalTopProgressBar from './TopProgressBar';
 import { tenantSlug } from '@/lib/api';
 import DialogHost from '@/lib/dialog';
 import type { Employee } from '@/lib/types';
@@ -136,6 +137,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <GlobalTopProgressBar />
       {content}
       <DialogHost />
     </>

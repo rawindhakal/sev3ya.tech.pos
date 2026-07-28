@@ -31,9 +31,9 @@ export default function AttendancePage() {
 
   const load = useCallback(async (silent = false) => {
     try {
-      if (tab === 'Punch Log') setLogs(await api.get(`/attendance/logs?from=${from}&to=${to}`));
-      if (tab === 'Day Summary') setSummary(await api.get(`/attendance/summary?from=${from}&to=${to}`));
-      if (tab === 'Payroll') setPayroll(await api.get(`/attendance/payroll?month=${month}`));
+      if (tab === 'Punch Log') setLogs(await api.get(`/attendance/logs?from=${from}&to=${to}`, { silent }));
+      if (tab === 'Day Summary') setSummary(await api.get(`/attendance/summary?from=${from}&to=${to}`, { silent }));
+      if (tab === 'Payroll') setPayroll(await api.get(`/attendance/payroll?month=${month}`, { silent }));
       setErr(null);
     } catch (e) {
       // Don't clobber the page with an error banner on a background poll —
@@ -205,7 +205,7 @@ function CloudDevicesCard({ onRelink, busy }: { onRelink: () => void; busy: bool
 
   const load = useCallback(async (silent = false) => {
     try {
-      const d = await api.get<CloudDevice[]>('/attendance/devices');
+      const d = await api.get<CloudDevice[]>('/attendance/devices', { silent });
       setDevices(d);
       setErr(null);
     } catch (e) {

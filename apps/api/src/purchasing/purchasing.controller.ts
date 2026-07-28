@@ -44,6 +44,11 @@ class ReceiptLineDto {
 class ReceiveDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => ReceiptLineDto) receipts: ReceiptLineDto[];
 }
+class SupplierPaymentDto {
+  @IsInt() @Min(1) amountCents: number;
+  @IsOptional() @IsString() method?: string;
+  @IsOptional() @IsString() note?: string;
+}
 
 @Controller()
 export class PurchasingController {
@@ -65,6 +70,20 @@ export class PurchasingController {
   @Delete('suppliers/:id')
   removeSupplier(@Param('id') id: string) {
     return this.purchasing.removeSupplier(id);
+  }
+
+  // Vendor payment ledger
+  @Get('purchasing/vendor-ledger')
+  vendorLedger() {
+    return this.purchasing.vendorLedger();
+  }
+  @Get('suppliers/:id/payments')
+  supplierPayments(@Param('id') id: string) {
+    return this.purchasing.supplierPayments(id);
+  }
+  @Post('suppliers/:id/payments')
+  recordPayment(@Param('id') id: string, @Body() dto: SupplierPaymentDto) {
+    return this.purchasing.recordPayment(id, dto);
   }
 
   // Purchase orders

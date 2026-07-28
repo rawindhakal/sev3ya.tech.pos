@@ -120,6 +120,48 @@ export class PurchasingService {
     return this.prisma.purchaseOrder.update({ where: { id }, data: { status: 'CANCELLED' }, include: poInclude });
   }
 
+  // ── Vendor payment ledger (owner checklist Part 3) ───
+  // How much we've actually paid each supplier vs. what we owe for goods
+  // already received — "due" is the receivable liability, not the full
+  // ordered value (goods still in transit aren't owed yet).
+  async vendorLedger() {
+    const [suppliers, receivedLines, payments] = await Promise.all([
+      this.prisma.supplier.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } }),
+      this.prisma.purchaseOrderLine.findMany({
+        where: { po: { status: { in: ['RECEIVED', 'PARTIAL'] } } },
+        select: { receivedQty: true, unitCostCents: true, po: { select: { supplierId: true } } },
+      }),
+      this.prisma.supplierPayment.groupBy({ by: ['supplierId'], _sum: { amountCents: true } }),
+    ]);
+    const receivedBySupplier = new Map<string, number>();
+    for (const l of receivedLines) {
+      const v = Math.round(l.receivedQty * l.unitCostCents);
+      receivedBySupplier.set(l.po.supplierId, (receivedBySupplier.get(l.po.supplierId) ?? 0) + v);
+    }
+    const paidBySupplier = new Map(payments.map((p) => [p.supplierId, p._sum.amountCents ?? 0]));
+    return suppliers.map((s) => {
+      const receivedValueCents = receivedBySupplier.get(s.id) ?? 0;
+      const paidCents = paidBySupplier.get(s.id) ?? 0;
+      return {
+        supplierId: s.id,
+        supplierName: s.name,
+        receivedValueCents,
+        paidCents,
+        dueCents: receivedValueCents - paidCents,
+      };
+    });
+  }
+
+  supplierPayments(supplierId: string) {
+    return this.prisma.supplierPayment.findMany({ where: { supplierId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  recordPayment(supplierId: string, dto: { amountCents: number; method?: string; note?: string }) {
+    return this.prisma.supplierPayment.create({
+      data: { supplierId, amountCents: dto.amountCents, method: dto.method, note: dto.note },
+    });
+  }
+
   // Auto-generate draft POs from low-stock ingredients (#150), grouped by
   // their assigned supplier. Suggested qty tops stock back up to 2× reorder.
   async autoGenerate() {

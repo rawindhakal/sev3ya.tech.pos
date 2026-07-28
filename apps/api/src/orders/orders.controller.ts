@@ -70,8 +70,9 @@ export class OrdersController {
   }
 
   @Put(':id/cart')
-  saveCart(@Param('id') id: string, @Body() dto: SaveCartDto) {
-    return this.orders.saveCart(id, dto);
+  @UseGuards(SoftAuthGuard)
+  saveCart(@Param('id') id: string, @Body() dto: SaveCartDto, @CurrentEmployee() emp: TokenPayload) {
+    return this.orders.saveCart(id, dto, emp);
   }
 
   @Patch(':id')
@@ -116,8 +117,9 @@ export class OrdersController {
   }
 
   @Post(':id/pay')
-  pay(@Param('id') id: string, @Body() dto: PayDto) {
-    return this.orders.pay(id, dto);
+  @UseGuards(SoftAuthGuard)
+  pay(@Param('id') id: string, @Body() dto: PayDto, @CurrentEmployee() emp: TokenPayload) {
+    return this.orders.pay(id, dto, emp);
   }
 
   // Apply/remove a coupon code — reuses the order's discount fields.

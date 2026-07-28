@@ -33,6 +33,7 @@ export interface BillTemplate {
   footerText: string;       // thank-you line
   fontSize: number;         // base px
   paperWidthMm: 58 | 80;
+  boldTotals: boolean;      // bold + larger totals/header for legibility on thermal paper
   showAddress: boolean;
   showPhone: boolean;
   showTaxId: boolean;
@@ -42,6 +43,9 @@ export interface BillTemplate {
   showCustomer: boolean;
   showItemNotes: boolean;
   showVatBreakdown: boolean;
+  showRate: boolean;        // per-unit rate column in the item table
+  showCashier: boolean;
+  showPaymentMode: boolean; // payment method + gateway/txn ref, once paid
   showWifi: boolean;
 }
 
@@ -50,9 +54,11 @@ export interface KotTemplate {
   botTitle: string;
   fontSize: number;
   paperWidthMm: 58 | 80;
+  boldTotals: boolean;
   showOrderType: boolean;
   showTable: boolean;
   showWaiter: boolean;
+  showGuests: boolean;
   showTime: boolean;
   showItemNotes: boolean;
 }
@@ -61,8 +67,9 @@ export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
   title: 'Tax Invoice',
   headerText: '',
   footerText: 'Thank you! Please visit again.',
-  fontSize: 12,
+  fontSize: 14,
   paperWidthMm: 80,
+  boldTotals: true,
   showAddress: true,
   showPhone: true,
   showTaxId: true,
@@ -72,17 +79,22 @@ export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
   showCustomer: true,
   showItemNotes: true,
   showVatBreakdown: true,
+  showRate: true,
+  showCashier: true,
+  showPaymentMode: true,
   showWifi: true,
 };
 
 export const DEFAULT_KOT_TEMPLATE: KotTemplate = {
   kotTitle: '*** KITCHEN ORDER — KOT ***',
   botTitle: '*** BAR ORDER — BOT ***',
-  fontSize: 13,
+  fontSize: 15,
   paperWidthMm: 80,
+  boldTotals: true,
   showOrderType: true,
   showTable: true,
   showWaiter: true,
+  showGuests: true,
   showTime: true,
   showItemNotes: true,
 };
@@ -128,6 +140,7 @@ export interface KotQueueItem {
   orderType: string;
   table: string | null;
   waiter: string | null;
+  guestCount?: number | null;
   name: string;
   quantity: number;
   station: 'KITCHEN' | 'BAR' | 'BILLING';
@@ -137,6 +150,13 @@ export interface KotQueueItem {
 
 const esc = (s: unknown) =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// "28-Jul-2026" / "07:15 PM" — matches the printed-ticket convention used
+// throughout the restaurant (bills, KOT, BOT all share this format).
+export const ticketDate = (d: Date) =>
+  d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
+export const ticketTime = (d: Date) =>
+  d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
 // Silently print whatever is currently rendered in #print-area (Receipt /
 // DayReport) through the desktop shell — no printer dialog. The components use
@@ -178,10 +198,13 @@ export function kotTicketHtml(opts: {
   orderType: string;
   table?: string | null;
   waiter?: string | null;
+  guestCount?: number | null;
   items: KotQueueItem[];
 }): string {
   const t = opts.template;
   const title = opts.station === 'BAR' ? t.botTitle : t.kotTitle;
+  const now = new Date();
+  const kotNo = `K-${String(opts.orderNumber).padStart(5, '0')}`;
   const rows = opts.items
     .map(
       (i) => `
@@ -195,26 +218,47 @@ export function kotTicketHtml(opts: {
       </tr>`,
     )
     .join('');
+  // Two-column metadata grid — matches the printed convention:
+  //   KOT No: K-10492           Date: 28-Jul-2026
+  //   Time: 07:15 PM            Order Type: Dine-In
+  //   Table No: T-04            Guest Count: 4
+  //   Order Taken By: Captain Ramesh
+  const meta: [string, string][] = [
+    [`${opts.station === 'BAR' ? 'BOT' : 'KOT'} No`, kotNo],
+    ['Date', ticketDate(now)],
+  ];
+  if (t.showTime) meta.push(['Time', ticketTime(now)]);
+  if (t.showOrderType) meta.push(['Order Type', opts.orderType.replace('_', ' ')]);
+  if (t.showTable && opts.table) meta.push(['Table No', opts.table]);
+  if (t.showGuests && opts.guestCount) meta.push(['Guest Count', String(opts.guestCount)]);
+  const metaRows: string[] = [];
+  for (let i = 0; i < meta.length; i += 2) {
+    const [l1, v1] = meta[i];
+    const pair = meta[i + 1];
+    metaRows.push(
+      `<div class="row"><span>${esc(l1)}: <b>${esc(v1)}</b></span>${pair ? `<span>${esc(pair[0])}: <b>${esc(pair[1])}</b></span>` : ''}</div>`,
+    );
+  }
+  const orderTakenBy = t.showWaiter && opts.waiter ? `<div class="row"><span>Order Taken By: <b>${esc(opts.waiter)}</b></span></div>` : '';
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
-    body { font-family: ui-monospace, Menlo, monospace; font-size: ${t.fontSize}px; color: #000;
+    body { font-family: ui-monospace, Menlo, monospace; font-size: ${t.fontSize}px; font-weight: ${t.boldTotals ? 600 : 400}; color: #000;
            width: ${t.paperWidthMm - 6}mm; margin: 0 auto; padding: 4px 2px; }
-    .ttl { text-align: center; font-weight: 700; font-size: ${t.fontSize + 3}px; margin-bottom: 4px; }
-    .meta { border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 3px 0; }
+    .ttl { text-align: center; font-weight: 800; font-size: ${t.fontSize + 6}px; margin-bottom: 4px; }
+    .meta { border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 4px 0; }
+    .row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
     table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-    th { border-bottom: 1px solid #000; text-align: left; }
-    th.qty, td.qty { text-align: center; width: 2.5em; vertical-align: top; }
-    td.nm { padding: 2px 0; }
-    .sub { font-size: ${Math.max(t.fontSize - 3, 8)}px; }
+    th { border-bottom: 2px solid #000; text-align: left; font-size: ${t.fontSize}px; padding-bottom: 2px; }
+    th.qty, td.qty { text-align: center; width: 2.5em; vertical-align: top; font-weight: 800; }
+    td.nm { padding: 3px 0; font-weight: ${t.boldTotals ? 700 : 500}; }
+    .sub { font-size: ${Math.max(t.fontSize - 3, 9)}px; font-weight: 400; }
     .it { font-style: italic; }
-    .foot { text-align: center; margin-top: 8px; font-size: ${Math.max(t.fontSize - 2, 9)}px; }
+    .foot { text-align: center; margin-top: 8px; font-size: ${Math.max(t.fontSize - 2, 10)}px; font-weight: 700; }
   </style></head><body>
     <div class="ttl">${esc(title)}</div>
     <div class="meta">
-      <div>Order #${esc(opts.orderNumber)}${t.showOrderType ? ` · ${esc(opts.orderType.replace('_', ' '))}` : ''}</div>
-      ${t.showTable && opts.table ? `<div>Table: ${esc(opts.table)}</div>` : ''}
-      ${t.showWaiter && opts.waiter ? `<div>Waiter: ${esc(opts.waiter)}</div>` : ''}
-      ${t.showTime ? `<div>${esc(new Date().toLocaleString())}</div>` : ''}
+      ${metaRows.join('')}
+      ${orderTakenBy}
     </div>
     <table><thead><tr><th>Item</th><th class="qty">Qty</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="foot">— fire to station —</div>

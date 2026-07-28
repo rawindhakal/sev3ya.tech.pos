@@ -137,4 +137,117 @@ export class ReportsService {
       voids: voids.map((v) => ({ number: v.number, reason: v.voidReason, at: v.updatedAt })),
     };
   }
+
+  // Discounts & Complimentary report (matrix Part 2 #5) — every paid order
+  // that had a non-zero discount or was comped, who approved it, and a
+  // by-approver rollup so an owner can spot who's discounting too freely.
+  async discounts(from?: string, to?: string) {
+    const { start, end } = this.range(from, to);
+    const [orders, salesTotal] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          status: 'PAID',
+          paidAt: { gte: start, lte: end },
+          discountCents: { gt: 0 },
+        },
+        select: {
+          id: true, number: true, paidAt: true, type: true, discountCents: true, discountLabel: true,
+          discountApprovedBy: true, isComplimentary: true, subtotalCents: true, cashierName: true,
+          table: { select: { name: true } },
+        },
+        orderBy: { paidAt: 'desc' },
+      }),
+      this.prisma.order.aggregate({
+        _sum: { subtotalCents: true },
+        where: { status: 'PAID', paidAt: { gte: start, lte: end } },
+      }),
+    ]);
+
+    const totalDiscountCents = orders.reduce((s, o) => s + o.discountCents, 0);
+    const complimentary = orders.filter((o) => o.isComplimentary);
+    const totalSalesCents = num(salesTotal._sum.subtotalCents);
+
+    // Roll up by approver so an owner can see who's discounting most.
+    const byApproverMap = new Map<string, { count: number; totalCents: number; compCount: number }>();
+    for (const o of orders) {
+      const name = o.discountApprovedBy ?? '(not recorded)';
+      const row = byApproverMap.get(name) ?? { count: 0, totalCents: 0, compCount: 0 };
+      row.count++;
+      row.totalCents += o.discountCents;
+      if (o.isComplimentary) row.compCount++;
+      byApproverMap.set(name, row);
+    }
+
+    return {
+      range: { from: start, to: end },
+      totalDiscountCents,
+      totalSalesCents,
+      discountPctOfSales: totalSalesCents > 0 ? Math.round((totalDiscountCents / totalSalesCents) * 1000) / 10 : 0,
+      complimentaryCount: complimentary.length,
+      complimentaryCents: complimentary.reduce((s, o) => s + o.discountCents, 0),
+      byApprover: [...byApproverMap.entries()]
+        .map(([name, r]) => ({ name, ...r }))
+        .sort((a, b) => b.totalCents - a.totalCents),
+      transactions: orders.map((o) => ({
+        orderId: o.id,
+        orderNumber: o.number,
+        at: o.paidAt,
+        type: o.type,
+        table: o.table?.name ?? null,
+        cashierName: o.cashierName,
+        discountCents: o.discountCents,
+        discountLabel: o.discountLabel,
+        discountApprovedBy: o.discountApprovedBy,
+        isComplimentary: o.isComplimentary,
+        subtotalCents: o.subtotalCents,
+      })),
+    };
+  }
+
+  // Raw Material Stock Variance report (owner checklist Part 3) — per
+  // ingredient, how much SHOULD have been used (ideal, derived from recipes
+  // at time of sale — see InventoryService.deductForOrder, which writes
+  // SALE_DEDUCTION movements strictly from the recipe) vs what a physical
+  // stock-take actually found on the shelf. A stock-take shortfall beyond
+  // recorded wastage is the real "chicken went missing" leakage signal —
+  // ideal vs SALE_DEDUCTION can never differ since one is defined from the
+  // other, so the STOCK_TAKE variance is the only number that can catch
+  // theft/measurement drift that sales+wastage records don't explain.
+  async stockVariance(from?: string, to?: string) {
+    const { start, end } = this.range(from, to);
+    const [ingredients, movements] = await Promise.all([
+      this.prisma.ingredient.findMany({ select: { id: true, name: true, unit: true, costPerUnitCents: true } }),
+      this.prisma.stockMovement.groupBy({
+        by: ['ingredientId', 'type'],
+        _sum: { quantity: true },
+        where: { createdAt: { gte: start, lte: end } },
+      }),
+    ]);
+    const byIngredient = new Map<string, Partial<Record<string, number>>>();
+    for (const m of movements) {
+      const row = byIngredient.get(m.ingredientId) ?? {};
+      row[m.type] = num(m._sum.quantity);
+      byIngredient.set(m.ingredientId, row);
+    }
+    return ingredients
+      .map((i) => {
+        const row = byIngredient.get(i.id) ?? {};
+        const idealConsumptionQty = Math.abs(row.SALE_DEDUCTION ?? 0);
+        const purchasedQty = row.PURCHASE ?? 0;
+        const wastageQty = Math.abs(row.WASTAGE ?? 0);
+        const stockTakeVarianceQty = row.STOCK_TAKE ?? 0;
+        return {
+          ingredientId: i.id,
+          name: i.name,
+          unit: i.unit,
+          idealConsumptionQty,
+          purchasedQty,
+          wastageQty,
+          stockTakeVarianceQty,
+          stockTakeVarianceCents: Math.round(stockTakeVarianceQty * i.costPerUnitCents),
+        };
+      })
+      .filter((r) => r.idealConsumptionQty || r.purchasedQty || r.wastageQty || r.stockTakeVarianceQty)
+      .sort((a, b) => a.stockTakeVarianceCents - b.stockTakeVarianceCents); // worst shortfalls first
+  }
 }

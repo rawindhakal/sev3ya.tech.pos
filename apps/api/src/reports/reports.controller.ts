@@ -9,4 +9,14 @@ export class ReportsController {
   report(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reports.report(from, to);
   }
+
+  @Get('discounts')
+  discounts(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.reports.discounts(from, to);
+  }
+
+  @Get('stock-variance')
+  stockVariance(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.reports.stockVariance(from, to);
+  }
 }

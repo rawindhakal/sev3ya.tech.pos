@@ -31,10 +31,10 @@ export default function OrdersPage() {
   const [refundReq, setRefundReq] = useState<{ order: Order; reason: string } | null>(null);
   const [mgrAuth, setMgrAuth] = useState<{ title: string; hint: string; onApproved: (token: string) => void } | null>(null);
 
-  async function load() {
+  async function load(silent = false) {
     try {
       const q = scope === 'today' ? '?today=1' : '';
-      let data = await api.get<Order[]>(`/orders${q}`);
+      let data = await api.get<Order[]>(`/orders${q}`, { silent });
       if (scope === 'open') data = data.filter((o) => !['PAID', 'CANCELLED'].includes(o.status));
       setOrders(data);
       setError(null);
@@ -44,7 +44,7 @@ export default function OrdersPage() {
   }
   useEffect(() => {
     load();
-    const t = setInterval(load, 8000);
+    const t = setInterval(() => load(true), 8000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);

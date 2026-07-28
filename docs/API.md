@@ -283,6 +283,9 @@ Loyalty points, `totalSpentCents`, `visitCount` accrue automatically at `pay()` 
 | POST | `/purchase-orders/:id/order` | — mark `ORDERED` |
 | POST | `/purchase-orders/:id/receive` | `{ receipts: [{lineId, receiveQty}] }` — partial/split delivery supported |
 | POST | `/purchase-orders/:id/cancel` | — |
+| GET | `/purchasing/vendor-ledger` | — per-supplier received value / paid / due |
+| GET | `/suppliers/:id/payments` | — payment history for one supplier |
+| POST | `/suppliers/:id/payments` | `{ amountCents (required), method?, note? }` |
 
 `PurchaseOrderStatus`: `DRAFT | ORDERED | PARTIAL | RECEIVED | CANCELLED`.
 
@@ -426,6 +429,8 @@ System accounts (cash, bank, sales, VAT, debtors) are seeded and undeletable; th
 
 ### Reports & Audit
 - `GET /reports?from=&to=` — legacy summary report.
+- `GET /reports/discounts?from=&to=` — discounts & complimentary bills, who authorized each, by-authorizer rollup.
+- `GET /reports/stock-variance?from=&to=` — per-ingredient ideal (recipe) consumption vs. physical stock-take variance.
 - `GET /audit` — `AuthGuard('canViewReports')` — staff action audit trail (void/refund/cancel/complimentary/reset-data/etc.).
 
 ---

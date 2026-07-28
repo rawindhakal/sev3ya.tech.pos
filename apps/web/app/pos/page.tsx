@@ -27,6 +27,7 @@ import ConnBadge from '@/components/ConnBadge';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
 import AutoPrintAgent from '@/components/AutoPrintAgent';
 import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
+import Spinner from '@/components/Spinner';
 import { formatBsLong } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea, isDesktopShell } from '@/lib/printing';
 import { getStatus } from '@/lib/offline';
@@ -608,7 +609,7 @@ export default function PosPage() {
   const prevActiveCount = useRef<number | null>(null);
   async function loadActiveOrders() {
     try {
-      const rows = await api.get<ActiveOrderCard[]>('/orders/active');
+      const rows = await api.get<ActiveOrderCard[]>('/orders/active', { silent: true });
       // Ding when a new order arrives (e.g. placed from the waiter panel).
       if (prevActiveCount.current !== null && rows.length > prevActiveCount.current) playDing();
       prevActiveCount.current = rows.length;
@@ -631,7 +632,7 @@ export default function PosPage() {
     const prevCount = { current: null as number | null };
     async function poll() {
       try {
-        const rows = await api.get<typeof waiterCalls>('/tables/waiter-calls');
+        const rows = await api.get<typeof waiterCalls>('/tables/waiter-calls', { silent: true });
         if (prevCount.current !== null && rows.length > prevCount.current) playDing();
         prevCount.current = rows.length;
         setWaiterCalls(rows);
@@ -1661,13 +1662,21 @@ export default function PosPage() {
               {/* actions */}
               <div className="mt-3 grid grid-cols-3 gap-2">
                 <button className="rounded-lg bg-[var(--pos-surface-strong)] py-2 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40" disabled={busy} title="Requires manager approval" onClick={voidBasket}>Void Basket</button>
-                <button className="rounded-lg bg-[var(--pos-surface-strong)] py-2 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40" disabled={busy || isQuick} onClick={() => runAction('kot_print')}>Print KOT</button>
-                <button className="rounded-lg bg-[#2ECC71] py-2 text-xs font-bold text-black hover:bg-[#28b463] disabled:opacity-40" disabled={busy} onClick={() => runAction('pay')}>Proceed to Pay</button>
+                <button className="flex items-center justify-center gap-1.5 rounded-lg bg-[var(--pos-surface-strong)] py-2 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40" disabled={busy || isQuick} onClick={() => runAction('kot_print')}>
+                  {busy && <Spinner size={12} />}Print KOT
+                </button>
+                <button className="flex items-center justify-center gap-1.5 rounded-lg bg-[#2ECC71] py-2 text-xs font-bold text-black hover:bg-[#28b463] disabled:opacity-40" disabled={busy} onClick={() => runAction('pay')}>
+                  {busy && <Spinner size={12} />}Proceed to Pay
+                </button>
               </div>
               {!isQuick && (
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('kot')} title="Fire to kitchen without printing here">KOT only</button>
-                  <button className="rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('bill')} title="Print the pre-payment estimated bill">Estimated Bill</button>
+                  <button className="flex items-center justify-center gap-1.5 rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('kot')} title="Fire to kitchen without printing here">
+                    {busy && <Spinner size={10} />}KOT only
+                  </button>
+                  <button className="flex items-center justify-center gap-1.5 rounded-lg bg-[var(--pos-surface)] py-1.5 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" disabled={busy} onClick={() => runAction('bill')} title="Print the pre-payment estimated bill">
+                    {busy && <Spinner size={10} />}Estimated Bill
+                  </button>
                 </div>
               )}
             </div>

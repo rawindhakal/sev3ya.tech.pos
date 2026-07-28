@@ -182,7 +182,9 @@ export interface Order {
   taxCents: number;
   discountCents: number;
   discountLabel?: string | null;
+  discountApprovedBy?: string | null;
   isComplimentary?: boolean;
+  cashierName?: string | null;
   serviceChargeCents: number;
   packagingChargeCents?: number;
   deliveryChargeCents?: number;

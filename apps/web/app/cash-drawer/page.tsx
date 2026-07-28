@@ -16,11 +16,11 @@ export default function CashDrawerPage() {
   const [moveReason, setMoveReason] = useState('');
   const [countRs, setCountRs] = useState('');
 
-  async function load() {
+  async function load(silent = false) {
     try {
       const [s, h] = await Promise.all([
-        api.get<CashDrawerState>('/cash-drawer/current'),
-        api.get<CashDrawerSession[]>('/cash-drawer/sessions'),
+        api.get<CashDrawerState>('/cash-drawer/current', { silent }),
+        api.get<CashDrawerSession[]>('/cash-drawer/sessions', { silent }),
       ]);
       setState(s);
       setHistory(h);
@@ -31,7 +31,7 @@ export default function CashDrawerPage() {
   }
   useEffect(() => {
     load();
-    const t = setInterval(load, 10000);
+    const t = setInterval(() => load(true), 10000);
     return () => clearInterval(t);
   }, []);
 

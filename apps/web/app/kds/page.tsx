@@ -86,9 +86,9 @@ export default function KdsPage() {
   }
 
   const prevCount = useRef<number | null>(null);
-  async function load() {
+  async function load(silent = false) {
     try {
-      const rows = await api.get<KdsTicket[]>('/kds/tickets');
+      const rows = await api.get<KdsTicket[]>('/kds/tickets', { silent });
       if (!muted && prevCount.current !== null && rows.length > prevCount.current) playDing();
       prevCount.current = rows.length;
       setTickets(rows);
@@ -99,7 +99,7 @@ export default function KdsPage() {
   }
   useEffect(() => {
     load();
-    const poll = setInterval(load, 5000);
+    const poll = setInterval(() => load(true), 5000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(poll);

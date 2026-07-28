@@ -227,7 +227,7 @@ export class OrdersService {
   // Reconcile the cart: keep already-fired items (preserving KOT status),
   // update quantities/notes on existing lines, add new lines as PENDING, and
   // delete only removed UNFIRED lines. Enables incremental KOT + item cancel.
-  async saveCart(id: string, dto: SaveCartDto) {
+  async saveCart(id: string, dto: SaveCartDto, actor?: TokenPayload) {
     const existing = await this.findOne(id);
     const existingById = new Map(existing.items.map((i) => [i.id, i]));
     const incomingIds = new Set(dto.items.filter((l) => l.id).map((l) => l.id!));
@@ -272,6 +272,15 @@ export class OrdersService {
       const deliveryChargeCents = dto.deliveryChargeCents ?? defaultCharges.deliveryChargeCents;
       const items = await tx.orderItem.findMany({ where: { orderId: id, cancelledAt: null } });
       const totals = computeTotals(items, { ...rates, discountCents: dto.discountCents ?? 0, packagingChargeCents, deliveryChargeCents });
+      // Track who applied/changed a non-zero discount, for the Discounts &
+      // Complimentary report — only stamp a new name when the discount
+      // actually changed, so re-saving the cart for unrelated edits (e.g.
+      // adding an item) doesn't overwrite the original approver.
+      const discountChanged = (dto.discountCents ?? 0) !== existing.discountCents;
+      const discountApprovedBy =
+        (dto.discountCents ?? 0) > 0
+          ? (discountChanged ? actor?.name ?? existing.discountApprovedBy ?? null : existing.discountApprovedBy)
+          : null;
       await tx.order.update({
         where: { id },
         data: {
@@ -280,6 +289,7 @@ export class OrdersService {
           guestCount: dto.guestCount,
           discountCents: dto.discountCents ?? 0,
           discountLabel: dto.discountCents ? dto.discountLabel ?? null : null,
+          discountApprovedBy,
           // A plain save can only CARRY FORWARD or CLEAR the comp mark set by
           // the permission-gated POST :id/complimentary — it can never flip
           // false → true here, closing off that bypass of the guard.
@@ -322,6 +332,7 @@ export class OrdersService {
       data: {
         discountCents: gross,
         discountLabel: label,
+        discountApprovedBy: actor.name,
         isComplimentary: true,
         subtotalCents: totals.subtotalCents,
         serviceChargeCents: totals.serviceChargeCents,
@@ -428,7 +439,7 @@ export class OrdersService {
       include: {
         order: {
           select: {
-            id: true, number: true, type: true, notes: true, kotFiredAt: true,
+            id: true, number: true, type: true, notes: true, kotFiredAt: true, guestCount: true,
             table: { select: { name: true } },
             waiter: { select: { name: true } },
           },
@@ -444,6 +455,7 @@ export class OrdersService {
       orderType: i.order.type,
       table: i.order.table?.name ?? null,
       waiter: i.order.waiter?.name ?? null,
+      guestCount: i.order.guestCount,
       name: i.nameSnapshot,
       quantity: i.quantity,
       station: i.station,
@@ -473,7 +485,7 @@ export class OrdersService {
   }
 
   // Record payment(s), close the order and free the table.
-  async pay(id: string, dto: PayDto) {
+  async pay(id: string, dto: PayDto, actor?: TokenPayload) {
     const order = await this.findOne(id);
     const paid = dto.payments.reduce((s, p) => s + p.amountCents, 0);
     if (paid < order.totalCents)
@@ -498,6 +510,7 @@ export class OrdersService {
           status: 'PAID',
           paidAt: now,
           billedAt: order.billedAt ?? now,
+          cashierName: actor?.name ?? order.cashierName,
         },
         include: orderInclude,
       });

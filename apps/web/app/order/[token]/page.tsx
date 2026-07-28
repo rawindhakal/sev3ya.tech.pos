@@ -98,7 +98,7 @@ export default function SelfOrderPage() {
     if (!knownOrderId) return;
     async function poll() {
       try {
-        setOrder(await api.get<Order>(`/orders/${knownOrderId}`));
+        setOrder(await api.get<Order>(`/orders/${knownOrderId}`, { silent: true }));
       } catch { /* offline */ }
     }
     poll();

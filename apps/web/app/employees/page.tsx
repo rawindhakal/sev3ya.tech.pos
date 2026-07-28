@@ -47,11 +47,11 @@ export default function EmployeesPage() {
   const [form, setForm] = useState<typeof blank>(blank);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
+  async function load(silent = false) {
     try {
       const [e, a] = await Promise.all([
-        api.get<Employee[]>('/employees'),
-        api.get<ActiveShift[]>('/employees/active-shifts'),
+        api.get<Employee[]>('/employees', { silent }),
+        api.get<ActiveShift[]>('/employees/active-shifts', { silent }),
       ]);
       setEmps(e);
       setActive(a);
@@ -62,7 +62,7 @@ export default function EmployeesPage() {
   }
   useEffect(() => {
     load();
-    const t = setInterval(load, 15000);
+    const t = setInterval(() => load(true), 15000);
     return () => clearInterval(t);
   }, []);
 

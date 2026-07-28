@@ -42,31 +42,55 @@ function authHeader(): Record<string, string> {
   };
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    cache: 'no-store',
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...authHeader(), ...(options?.headers ?? {}) },
-  });
-  if (!res.ok) {
-    let message = `Request failed (${res.status})`;
-    try {
-      const body = await res.json();
-      if (body?.message) message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
-    } catch {
-      /* ignore non-JSON error bodies */
+// Global "is anything loading" signal, driven off actual in-flight requests
+// rather than every page hand-rolling its own busy flag — powers
+// <TopProgressBar> in AppShell so background activity is always visible.
+// Background polling (e.g. live-updating tabs) opts out via `silent` so a
+// routine 8s refresh doesn't flicker the bar; explicit user actions
+// (saves, prints, page loads) are not silent and do show it.
+let activeRequests = 0;
+const listeners = new Set<(active: boolean) => void>();
+function bumpActivity(delta: number) {
+  activeRequests = Math.max(0, activeRequests + delta);
+  const active = activeRequests > 0;
+  listeners.forEach((l) => l(active));
+}
+export function onRequestActivity(listener: (active: boolean) => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+async function request<T>(path: string, options?: RequestInit & { silent?: boolean }): Promise<T> {
+  const { silent, ...init } = options ?? {};
+  if (!silent) bumpActivity(1);
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      cache: 'no-store',
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...authHeader(), ...(init?.headers ?? {}) },
+    });
+    if (!res.ok) {
+      let message = `Request failed (${res.status})`;
+      try {
+        const body = await res.json();
+        if (body?.message) message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
+      } catch {
+        /* ignore non-JSON error bodies */
+      }
+      throw new Error(message);
     }
-    throw new Error(message);
+    if (res.status === 204) return undefined as T;
+    return res.json() as Promise<T>;
+  } finally {
+    if (!silent) bumpActivity(-1);
   }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
 }
 
 // GET with a read-through cache: on success the response is cached; on a network
 // failure the last-known cached copy is served so the terminal keeps rendering.
-async function cachedGet<T>(path: string): Promise<T> {
+async function cachedGet<T>(path: string, opts?: { silent?: boolean }): Promise<T> {
   try {
-    const data = await request<T>(path);
+    const data = await request<T>(path, opts);
     cacheWrite(path, data);
     return data;
   } catch (err) {
@@ -98,7 +122,9 @@ async function queuedMutation<T>(method: string, path: string, body?: unknown): 
 }
 
 export const api = {
-  get: <T>(path: string) => cachedGet<T>(path),
+  // Pass { silent: true } for background polling — keeps it out of the
+  // global loading indicator (see onRequestActivity above).
+  get: <T>(path: string, opts?: { silent?: boolean }) => cachedGet<T>(path, opts),
   // Perform a mutation as someone else (e.g. a manager override): the given
   // token is sent instead of the logged-in user's.
   postAs: <T>(token: string, path: string, body: unknown) =>

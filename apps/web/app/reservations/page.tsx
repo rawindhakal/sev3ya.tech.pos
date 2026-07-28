@@ -26,12 +26,12 @@ export default function ReservationsPage() {
   const [form, setForm] = useState({ customerName: '', phone: '', partySize: 2, time: '19:00', tableId: '', notes: '' });
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     try {
       const [b, w, t] = await Promise.all([
-        api.get<Reservation[]>(`/reservations?date=${date}`),
-        api.get<Reservation[]>('/reservations/waitlist'),
-        api.get<RestaurantTable[]>('/tables'),
+        api.get<Reservation[]>(`/reservations?date=${date}`, { silent }),
+        api.get<Reservation[]>('/reservations/waitlist', { silent }),
+        api.get<RestaurantTable[]>('/tables', { silent }),
       ]);
       setBookings(b);
       setWaitlist(w);
@@ -44,7 +44,7 @@ export default function ReservationsPage() {
 
   useEffect(() => {
     load();
-    const i = setInterval(load, 12000);
+    const i = setInterval(() => load(true), 12000);
     return () => clearInterval(i);
   }, [load]);
 

@@ -120,6 +120,19 @@ body {
   border-color: #334155 !important;
   color: #cbd5e1 !important;
 }
+/* Plain native checkboxes/radios (permission lists, settings toggles) are
+   nearly invisible against the dark canvas with the browser's default
+   low-contrast border — recolor + outline them explicitly. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: #db2777;
+}
+.dark input[type="checkbox"],
+.dark input[type="radio"] {
+  accent-color: #ec4899;
+  outline: 1px solid #475569;
+  outline-offset: 1px;
+}
 
 /* Thermal-receipt printing: only when body.print-receipt is set (POS receipts)
    hide everything except #print-area. Normal page prints (e.g. Reports) are
@@ -177,6 +190,12 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* TopProgressBar's indeterminate sliding-gradient sweep. */
+@keyframes top-progress {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 .card tbody tr { transition: background-color 120ms ease-out; }
 .card tbody tr:hover { background-color: rgba(148, 163, 184, 0.08); }

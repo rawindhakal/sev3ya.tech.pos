@@ -47,7 +47,7 @@ interface WarehouseStockLine {
 }
 
 export default function InventoryPage() {
-  const [tab, setTab] = useState<'stock' | 'recipes' | 'warehouses'>('stock');
+  const [tab, setTab] = useState<'stock' | 'recipes' | 'warehouses' | 'variance'>('stock');
   const [ings, setIngs] = useState<Ingredient[]>([]);
   const [val, setVal] = useState<Valuation | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -275,14 +275,16 @@ export default function InventoryPage() {
       )}
 
       <div className="mb-4 flex gap-2">
-        {(['stock', 'recipes', 'warehouses'] as const).map((t) => (
+        {(['stock', 'recipes', 'warehouses', 'variance'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`badge px-3 py-1.5 ${tab === t ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
-            {t === 'stock' ? 'Stock' : t === 'recipes' ? 'Recipes (BOM)' : 'Warehouses'}
+            {t === 'stock' ? 'Stock' : t === 'recipes' ? 'Recipes (BOM)' : t === 'warehouses' ? 'Warehouses' : 'Stock Variance'}
           </button>
         ))}
       </div>
 
-      {tab === 'warehouses' ? (
+      {tab === 'variance' ? (
+        <StockVarianceTab />
+      ) : tab === 'warehouses' ? (
         <div className="grid grid-cols-3 gap-6">
           <div className="col-span-1 space-y-2">
             {warehouses.map((w) => (
@@ -531,6 +533,95 @@ export default function InventoryPage() {
           </div>
         </form>
       </Modal>
+    </div>
+  );
+}
+
+// ── Raw Material Stock Variance — ideal (recipe) consumption vs what a
+// physical stock-take actually found, the leakage/theft signal a POS alone
+// can't catch (sales+wastage records always balance by construction; only a
+// physical count can reveal shrinkage on top of them). ──
+interface VarianceRow {
+  ingredientId: string;
+  name: string;
+  unit: string;
+  idealConsumptionQty: number;
+  purchasedQty: number;
+  wastageQty: number;
+  stockTakeVarianceQty: number;
+  stockTakeVarianceCents: number;
+}
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+function StockVarianceTab() {
+  const [from, setFrom] = useState(iso(new Date(Date.now() - 29 * 864e5)));
+  const [to, setTo] = useState(iso(new Date()));
+  const [rows, setRows] = useState<VarianceRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<VarianceRow[]>(`/reports/stock-variance?from=${from}&to=${to}`)
+      .then((r) => { setRows(r); setErr(null); })
+      .catch((e) => setErr((e as Error).message));
+  }, [from, to]);
+
+  const totalShortfallCents = (rows ?? []).filter((r) => r.stockTakeVarianceCents < 0).reduce((s, r) => s + r.stockTakeVarianceCents, 0);
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <p className="mr-auto max-w-2xl text-xs text-slate-400">
+          Compares each ingredient&apos;s ideal usage (from recipes × items sold) against your physical <strong>Count</strong>
+          entries on the Stock tab. A negative variance means the shelf has less than expected after accounting for sales
+          and wastage — the number to investigate for spoilage not logged as wastage, portioning drift, or shrinkage.
+        </p>
+        <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From date" />
+        <span className="text-slate-400">→</span>
+        <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} aria-label="To date" />
+      </div>
+
+      {err && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
+
+      {totalShortfallCents < 0 && (
+        <div className="card mb-4 border-red-200 bg-red-50 p-4">
+          <div className="text-2xl font-bold text-red-700">{formatMoney(totalShortfallCents)}</div>
+          <div className="text-sm text-red-600">Total unexplained shortfall value in this range (sum of negative variances)</div>
+        </div>
+      )}
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+              <th className="p-3 font-semibold">Ingredient</th>
+              <th className="p-3 font-semibold text-right">Ideal usage (recipe)</th>
+              <th className="p-3 font-semibold text-right">Purchased</th>
+              <th className="p-3 font-semibold text-right">Wastage logged</th>
+              <th className="p-3 font-semibold text-right">Stock-take variance</th>
+              <th className="p-3 font-semibold text-right">Variance value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {(rows ?? []).map((r) => (
+              <tr key={r.ingredientId} className={r.stockTakeVarianceCents < 0 ? 'bg-red-50/50' : ''}>
+                <td className="p-3 font-medium text-slate-700">{r.name}</td>
+                <td className="p-3 text-right text-slate-600">{r.idealConsumptionQty.toFixed(1)} {r.unit}</td>
+                <td className="p-3 text-right text-slate-500">{r.purchasedQty.toFixed(1)} {r.unit}</td>
+                <td className="p-3 text-right text-slate-500">{r.wastageQty.toFixed(1)} {r.unit}</td>
+                <td className={`p-3 text-right font-semibold ${r.stockTakeVarianceQty < 0 ? 'text-red-600' : r.stockTakeVarianceQty > 0 ? 'text-blue-600' : 'text-slate-500'}`}>
+                  {r.stockTakeVarianceQty > 0 ? '+' : ''}{r.stockTakeVarianceQty.toFixed(1)} {r.unit}
+                </td>
+                <td className={`p-3 text-right font-semibold ${r.stockTakeVarianceCents < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                  {r.stockTakeVarianceCents !== 0 ? formatMoney(r.stockTakeVarianceCents) : '—'}
+                </td>
+              </tr>
+            ))}
+            {rows && rows.length === 0 && (
+              <tr><td colSpan={6} className="p-8 text-center text-slate-400">No stock activity in this range — sell items with recipes and run a stock Count to see variance here.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

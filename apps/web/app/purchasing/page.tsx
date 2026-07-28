@@ -19,7 +19,7 @@ const STATUS: Record<string, string> = {
 };
 
 export default function PurchasingPage() {
-  const [tab, setTab] = useState<'orders' | 'suppliers'>('orders');
+  const [tab, setTab] = useState<'orders' | 'suppliers' | 'ledger'>('orders');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [ings, setIngs] = useState<Ingredient[]>([]);
   const [pos, setPos] = useState<PO[]>([]);
@@ -135,23 +135,27 @@ export default function PurchasingPage() {
         </div>
         <div className="flex gap-2">
           {tab === 'orders' && <button className="btn-ghost" onClick={autoGenerate}>⚡ Auto-PO from deficits</button>}
-          <button className="btn-primary" onClick={() => (tab === 'orders' ? setPoModal(true) : setSupModal(true))}>
-            {tab === 'orders' ? '+ Purchase Order' : '+ Supplier'}
-          </button>
+          {tab !== 'ledger' && (
+            <button className="btn-primary" onClick={() => (tab === 'orders' ? setPoModal(true) : setSupModal(true))}>
+              {tab === 'orders' ? '+ Purchase Order' : '+ Supplier'}
+            </button>
+          )}
         </div>
       </header>
 
       {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error} — is the API running on port 4000?</div>}
 
       <div className="mb-4 flex gap-2">
-        {(['orders', 'suppliers'] as const).map((t) => (
+        {(['orders', 'suppliers', 'ledger'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`badge px-3 py-1.5 ${tab === t ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
-            {t === 'orders' ? 'Purchase Orders' : 'Suppliers'}
+            {t === 'orders' ? 'Purchase Orders' : t === 'suppliers' ? 'Suppliers' : 'Vendor Ledger'}
           </button>
         ))}
       </div>
 
-      {tab === 'suppliers' ? (
+      {tab === 'ledger' ? (
+        <VendorLedgerTab />
+      ) : tab === 'suppliers' ? (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -255,6 +259,134 @@ export default function PurchasingPage() {
               ))}
             </div>
             <div className="flex justify-end gap-2"><button className="btn-ghost" onClick={() => setReceivePo(null)}>Cancel</button><button className="btn-primary" onClick={submitReceive}>Receive &amp; add to stock</button></div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// ── Vendor Payment Ledger — how much we owe each supplier for goods already
+// received vs. what's actually been paid (owner checklist Part 3). "Due" is
+// based on received quantities, not the full order — goods still in transit
+// aren't a liability yet. ──
+interface LedgerRow { supplierId: string; supplierName: string; receivedValueCents: number; paidCents: number; dueCents: number }
+interface SupplierPayment { id: string; amountCents: number; method: string | null; note: string | null; createdAt: string }
+
+function VendorLedgerTab() {
+  const [rows, setRows] = useState<LedgerRow[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const [payFor, setPayFor] = useState<LedgerRow | null>(null);
+  const [history, setHistory] = useState<SupplierPayment[]>([]);
+  const [amountRs, setAmountRs] = useState('');
+  const [method, setMethod] = useState('Cash');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function load() {
+    api.get<LedgerRow[]>('/purchasing/vendor-ledger').then(setRows).catch((e) => setErr((e as Error).message));
+  }
+  useEffect(load, []);
+
+  function openPay(row: LedgerRow) {
+    setPayFor(row);
+    setAmountRs(row.dueCents > 0 ? (row.dueCents / 100).toFixed(2) : '');
+    setMethod('Cash');
+    setNote('');
+    api.get<SupplierPayment[]>(`/suppliers/${row.supplierId}/payments`).then(setHistory).catch(() => setHistory([]));
+  }
+
+  async function submitPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!payFor) return;
+    const amountCents = dollarsToCents(parseFloat(amountRs) || 0);
+    if (amountCents <= 0) return notify('Enter a payment amount', 'error');
+    setSaving(true);
+    try {
+      await api.post(`/suppliers/${payFor.supplierId}/payments`, { amountCents, method: method || undefined, note: note.trim() || undefined });
+      setPayFor(null);
+      load();
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const totalDue = rows.reduce((s, r) => s + Math.max(0, r.dueCents), 0);
+
+  return (
+    <div>
+      {err && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
+      {totalDue > 0 && (
+        <div className="card mb-4 p-4">
+          <div className="text-2xl font-bold text-slate-900">{formatMoney(totalDue)}</div>
+          <div className="text-sm text-slate-500">Total due across all suppliers (received goods not yet paid for)</div>
+        </div>
+      )}
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+              <th className="p-3 font-semibold">Supplier</th>
+              <th className="p-3 font-semibold text-right">Received value</th>
+              <th className="p-3 font-semibold text-right">Paid</th>
+              <th className="p-3 font-semibold text-right">Due</th>
+              <th className="p-3 text-right font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {rows.map((r) => (
+              <tr key={r.supplierId} className={r.dueCents > 0 ? 'bg-amber-50/50' : ''}>
+                <td className="p-3 font-medium text-slate-700">{r.supplierName}</td>
+                <td className="p-3 text-right text-slate-600">{formatMoney(r.receivedValueCents)}</td>
+                <td className="p-3 text-right text-slate-500">{formatMoney(r.paidCents)}</td>
+                <td className={`p-3 text-right font-semibold ${r.dueCents > 0 ? 'text-amber-700' : 'text-emerald-600'}`}>{formatMoney(r.dueCents)}</td>
+                <td className="p-3 text-right">
+                  <button className="rounded-md px-2 py-1 text-xs text-brand-600 hover:bg-brand-50" onClick={() => openPay(r)}>Record payment</button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No suppliers with received goods yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <Modal open={!!payFor} title={payFor ? `Record payment — ${payFor.supplierName}` : ''} onClose={() => setPayFor(null)}>
+        {payFor && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-900/40">
+              Received {formatMoney(payFor.receivedValueCents)} · Paid {formatMoney(payFor.paidCents)} · Due <strong>{formatMoney(payFor.dueCents)}</strong>
+            </div>
+            <form onSubmit={submitPayment} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="label">Amount (Rs)</label>
+                  <input className="input" type="number" step="0.01" min="0.01" value={amountRs} onChange={(e) => setAmountRs(e.target.value)} required autoFocus /></div>
+                <div><label className="label">Method</label>
+                  <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+                    <option>Cash</option><option>Bank transfer</option><option>Cheque</option><option>Fonepay</option><option>Other</option>
+                  </select></div>
+              </div>
+              <div><label className="label">Note (optional)</label>
+                <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Partial payment against PO #12" /></div>
+              <div className="flex justify-end gap-2">
+                <button type="button" className="btn-ghost" onClick={() => setPayFor(null)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Record payment'}</button>
+              </div>
+            </form>
+            {history.length > 0 && (
+              <div>
+                <div className="label mb-1">Payment history</div>
+                <div className="max-h-40 space-y-1 overflow-y-auto">
+                  {history.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-1.5 text-xs dark:border-slate-700">
+                      <span className="text-slate-600">{new Date(p.createdAt).toLocaleDateString()} · {p.method ?? '—'}{p.note ? ` · ${p.note}` : ''}</span>
+                      <span className="font-semibold text-slate-700">{formatMoney(p.amountCents)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>

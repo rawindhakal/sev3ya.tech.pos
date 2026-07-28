@@ -28,7 +28,22 @@ const PRESETS = [
   { id: 'kot', label: 'KOT Report', groupBy: 'detail', station: 'KITCHEN' },
   { id: 'bot', label: 'BOT Report', groupBy: 'detail', station: 'BAR' },
   { id: 'cancelled', label: 'Cancelled Items', groupBy: 'cancelled', station: '' },
+  { id: 'discounts', label: 'Discounts & Comps', groupBy: 'discounts', station: '' },
 ] as const;
+
+interface DiscountReport {
+  totalDiscountCents: number;
+  totalSalesCents: number;
+  discountPctOfSales: number;
+  complimentaryCount: number;
+  complimentaryCents: number;
+  byApprover: { name: string; count: number; totalCents: number; compCount: number }[];
+  transactions: {
+    orderId: string; orderNumber: number; at: string; type: string; table: string | null;
+    cashierName: string | null; discountCents: number; discountLabel: string | null;
+    discountApprovedBy: string | null; isComplimentary: boolean; subtotalCents: number;
+  }[];
+}
 
 const METHODS = ['CASH', 'FONEPAY', 'BANK', 'ESEWA', 'KHALTI', 'CARD', 'CREDIT', 'OFFLINE'];
 const TYPES = ['DINE_IN', 'TAKEAWAY', 'DELIVERY'];
@@ -52,6 +67,7 @@ export default function SalesReportPage() {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [billOrder, setBillOrder] = useState<Order | null>(null);
   const [billLoading, setBillLoading] = useState<string | null>(null);
+  const [discountReport, setDiscountReport] = useState<DiscountReport | null>(null);
 
   useEffect(() => {
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
@@ -62,7 +78,38 @@ export default function SalesReportPage() {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      if (preset.id === 'cancelled') {
+      if (preset.id === 'discounts') {
+        const qs = new URLSearchParams({ from, to });
+        const d = await api.get<DiscountReport>(`/reports/discounts?${qs}`);
+        setDiscountReport(d);
+        setReport({
+          title: 'Discounts & Complimentary',
+          columns: [
+            { key: 'dateBs', label: 'Date (BS)', type: 'text' },
+            { key: 'orderNumber', label: 'Order #', type: 'text' },
+            { key: 'type', label: 'Type', type: 'text' },
+            { key: 'table', label: 'Table', type: 'text' },
+            { key: 'cashierName', label: 'Cashier', type: 'text' },
+            { key: 'discountCents', label: 'Discount', type: 'money' },
+            { key: 'discountLabel', label: 'Reason / Label', type: 'text' },
+            { key: 'discountApprovedBy', label: 'Authorized By', type: 'text' },
+            { key: 'compFlag', label: 'Comp?', type: 'text' },
+          ],
+          rows: d.transactions.map((t) => ({
+            orderId: t.orderId,
+            dateBs: formatBsLong(new Date(t.at)),
+            orderNumber: `#${t.orderNumber}`,
+            type: t.type.replace('_', ' '),
+            table: t.table ?? '—',
+            cashierName: t.cashierName ?? '—',
+            discountCents: t.discountCents,
+            discountLabel: t.discountLabel ?? '—',
+            discountApprovedBy: t.discountApprovedBy ?? '(not recorded)',
+            compFlag: t.isComplimentary ? 'Yes' : '',
+          })),
+          kpis: {},
+        });
+      } else if (preset.id === 'cancelled') {
         const qs = new URLSearchParams({ from, to });
         setReport(await api.get<Report>(`/mis/cancelled-items?${qs}`));
       } else {
@@ -194,7 +241,7 @@ export default function SalesReportPage() {
           <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From date" />
           <span className="text-slate-400">→</span>
           <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} aria-label="To date" />
-          {preset.id !== 'cancelled' && (
+          {preset.id !== 'cancelled' && preset.id !== 'discounts' && (
             <>
               <select className={sel} value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setItemId(''); }} aria-label="Category filter">
                 <option value="">All categories</option>
@@ -242,7 +289,12 @@ export default function SalesReportPage() {
           <>
             {/* KPI strip */}
             <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {(preset.id === 'cancelled' ? [
+              {(preset.id === 'discounts' && discountReport ? [
+                ['Total discount given', formatMoney(discountReport.totalDiscountCents)],
+                ['% of gross sales', `${discountReport.discountPctOfSales}%`],
+                ['Complimentary bills', String(discountReport.complimentaryCount)],
+                ['Complimentary value', formatMoney(discountReport.complimentaryCents)],
+              ] : preset.id === 'cancelled' ? [
                 ['Cancelled lines', String(report.kpis.lines)],
                 ['Items cancelled', String(report.kpis.qty)],
                 ['Value cancelled', formatMoney(report.kpis.valueCents)],
@@ -258,6 +310,31 @@ export default function SalesReportPage() {
                 </div>
               ))}
             </div>
+
+            {/* Who's approving discounts — spot someone discounting too freely */}
+            {preset.id === 'discounts' && discountReport && discountReport.byApprover.length > 0 && (
+              <div className="card mb-4 overflow-x-auto">
+                <div className="border-b border-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">By authorizer</div>
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-slate-100">
+                    <th className={`${th} text-left`}>Authorized By</th>
+                    <th className={`${th} text-right`}>Discounts given</th>
+                    <th className={`${th} text-right`}>Total amount</th>
+                    <th className={`${th} text-right`}>Of which comp'd</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {discountReport.byApprover.map((a) => (
+                      <tr key={a.name}>
+                        <td className="p-2 text-left font-medium text-slate-700">{a.name}</td>
+                        <td className="p-2 text-right tabular-nums text-slate-600">{a.count}</td>
+                        <td className="p-2 text-right tabular-nums font-semibold text-slate-800">{formatMoney(a.totalCents)}</td>
+                        <td className="p-2 text-right tabular-nums text-slate-600">{a.compCount || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <div className="card overflow-x-auto">
               <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">

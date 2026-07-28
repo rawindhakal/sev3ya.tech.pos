@@ -332,8 +332,17 @@ model Order {
 
   // Discount provenance — which named preset (Settings → Discounts) or
   // "Custom" was applied, and whether the whole bill was comped to zero.
-  discountLabel   String?
-  isComplimentary Boolean @default(false)
+  discountLabel      String?
+  isComplimentary    Boolean @default(false)
+  // Who approved a non-zero discount (staff name at the time it was set) —
+  // feeds the Discounts & Complimentary report. Complimentary bills use
+  // AuditLog (action=COMPLIMENTARY) for their own authorizer instead.
+  discountApprovedBy String?
+
+  // Name of the staff member signed in when this order was settled — printed
+  // on the bill as "Cashier: ..." and kept even if that employee is later
+  // renamed/removed, since it's a point-in-time snapshot like nameSnapshot.
+  cashierName String?
 
   // Lifecycle timestamps drive turnaround / guest-time metrics.
   seatedAt  DateTime?  // when the table became occupied for this order
@@ -918,10 +927,28 @@ model Supplier {
   isActive    Boolean  @default(true)
   ingredients Ingredient[]
   orders      PurchaseOrder[]
+  payments    SupplierPayment[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("suppliers")
+}
+
+// Vendor payment ledger (owner checklist Part 3) — how much has actually
+// been paid to each supplier, separate from what's been ordered/received.
+// Due = received goods value (see PurchasingService.vendorLedger) − sum of
+// these payments.
+model SupplierPayment {
+  id          String   @id @default(cuid())
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  amountCents Int
+  method      String?  // free-text: Cash, Bank transfer, Cheque, etc.
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([supplierId])
+  @@map("supplier_payments")
 }
 
 enum PurchaseOrderStatus {
