@@ -344,6 +344,11 @@ model Order {
   // renamed/removed, since it's a point-in-time snapshot like nameSnapshot.
   cashierName String?
 
+  // How many times this bill has been reprinted from Sales Reports (the
+  // original checkout print never touches this) — each reprint gets a
+  // numbered "COPY #n" watermark so it's never confused with the original.
+  reprintCount Int @default(0)
+
   // Lifecycle timestamps drive turnaround / guest-time metrics.
   seatedAt  DateTime?  // when the table became occupied for this order
   kotFiredAt DateTime? // when the KOT was first sent to the kitchen (KDS timer)

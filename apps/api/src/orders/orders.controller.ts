@@ -64,6 +64,11 @@ export class OrdersController {
     return this.orders.findOne(id);
   }
 
+  @Post(':id/reprint')
+  recordReprint(@Param('id') id: string) {
+    return this.orders.recordReprint(id);
+  }
+
   @Post()
   create(@Body() dto: CreateOrderDto) {
     return this.orders.create(dto);

@@ -368,6 +368,7 @@ export default function PosPage() {
 
   const vatRate = settings?.vatRate ?? 0.13;
   const serviceChargeRate = settings?.serviceChargeRate ?? 0;
+  const pricesIncludeVat = !!settings?.pricesIncludeVat;
   const pointsAvail = custInfo?.found ? custInfo.loyaltyPoints ?? 0 : 0;
   const orderType: OrderType = mode === 'DELIVERY' ? 'DELIVERY' : mode === 'DINE_IN' ? 'DINE_IN' : 'TAKEAWAY';
   const packagingChargeCents = orderType !== 'DINE_IN' ? settings?.packagingChargeCents ?? 0 : 0;
@@ -384,7 +385,7 @@ export default function PosPage() {
     // A complimentary bill is simply "discount = the whole subtotal" — every
     // downstream figure (service charge, tax, total) already falls to zero.
     if (isComplimentary) {
-      return { count, subtotal, discountCents: subtotal, redeemCents: 0, redeemPoints: 0, serviceCharge: 0, packaging: 0, delivery: 0, tax: 0, total: 0 };
+      return { count, subtotal, discountCents: subtotal, redeemCents: 0, redeemPoints: 0, serviceCharge: 0, packaging: 0, delivery: 0, tax: 0, total: 0, netBeforeTax: 0 };
     }
     const discountRaw = parseFloat(discount) || 0;
     const discountCents = Math.min(
@@ -398,9 +399,22 @@ export default function PosPage() {
     const taxable = subtotal - discountCents - redeemCents;
     const serviceCharge = Math.round(taxable * serviceChargeRate);
     const chargeableBase = taxable + serviceCharge + packagingChargeCents + deliveryChargeCents;
-    const tax = Math.round(chargeableBase * vatRate);
-    return { count, subtotal, discountCents, redeemCents, redeemPoints, serviceCharge, packaging: packagingChargeCents, delivery: deliveryChargeCents, tax, total: chargeableBase + tax };
-  }, [cart, vatRate, serviceChargeRate, discount, discountMode, redeemPts, pointsAvail, isComplimentary, packagingChargeCents, deliveryChargeCents]);
+    // Mirrors the server's computeTotals (apps/api/src/common/settings.ts) —
+    // when menu prices already include VAT, the total IS the chargeable base
+    // (nothing gets added on top); VAT is only decomposed out of it for
+    // display. Previously this always added tax on top regardless of the
+    // setting, silently overcharging on-screen (though the saved order, via
+    // the backend, was always correct — only the live cart total was wrong).
+    let tax: number, total: number;
+    if (pricesIncludeVat) {
+      total = chargeableBase;
+      tax = Math.round((total * vatRate) / (1 + vatRate));
+    } else {
+      tax = Math.round(chargeableBase * vatRate);
+      total = chargeableBase + tax;
+    }
+    return { count, subtotal, discountCents, redeemCents, redeemPoints, serviceCharge, packaging: packagingChargeCents, delivery: deliveryChargeCents, tax, total, netBeforeTax: total - tax };
+  }, [cart, vatRate, serviceChargeRate, pricesIncludeVat, discount, discountMode, redeemPts, pointsAvail, isComplimentary, packagingChargeCents, deliveryChargeCents]);
 
   const filteredItems = useMemo(() => {
     let list = items.filter((i) => i.isAvailable);
@@ -1655,6 +1669,11 @@ export default function PosPage() {
                 {serviceChargeRate > 0 && <div className="flex justify-between text-[var(--pos-text-50)]"><span>Service ({Math.round(serviceChargeRate * 100)}%)</span><span>{formatMoney(totals.serviceCharge)}</span></div>}
                 {totals.packaging > 0 && <div className="flex justify-between text-[var(--pos-text-50)]"><span>Packaging</span><span>{formatMoney(totals.packaging)}</span></div>}
                 {totals.delivery > 0 && <div className="flex justify-between text-[var(--pos-text-50)]"><span>Delivery</span><span>{formatMoney(totals.delivery)}</span></div>}
+                {pricesIncludeVat && !isComplimentary && (
+                  <div className="flex justify-between text-[var(--pos-text-50)]" title="Menu prices include VAT — this is the amount before it's added back for the breakdown below">
+                    <span>Net Amount Before Tax</span><span>{formatMoney(totals.netBeforeTax)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-[var(--pos-text-50)]"><span>VAT ({Math.round(vatRate * 100)}%)</span><span>{formatMoney(totals.tax)}</span></div>
                 <div className="flex justify-between border-t border-[var(--pos-line)] pt-1.5 text-lg font-bold text-[#2ECC71]"><span>TOTAL DUE</span><span>{formatMoney(totals.total)}</span></div>
               </div>

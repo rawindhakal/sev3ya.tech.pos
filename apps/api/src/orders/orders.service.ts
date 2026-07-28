@@ -207,6 +207,19 @@ export class OrdersService {
     return order;
   }
 
+  // Bump the reprint counter for a bill printed again from Sales Reports —
+  // the returned count is stamped on the ticket as "COPY #n" so a reprint
+  // can never be mistaken for the original. Never called for the original
+  // checkout print (see printTicket() in the POS terminal).
+  async recordReprint(id: string) {
+    await this.findOne(id);
+    return this.prisma.order.update({
+      where: { id },
+      data: { reprintCount: { increment: 1 } },
+      include: orderInclude,
+    });
+  }
+
   // All running (unsettled) orders — powers the POS "temporary tables" rail so
   // takeaway/delivery orders stay visible until payment is settled.
   activeOrders() {

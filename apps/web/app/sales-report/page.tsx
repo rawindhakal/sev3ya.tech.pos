@@ -125,8 +125,13 @@ export default function SalesReportPage() {
   }, [preset, from, to, categoryId, itemId, method, type]);
   useEffect(() => { load(); }, [load]);
 
+  // Set only once "Reprint bill" is actually clicked — the preview itself
+  // (just opening the 👁) shows the plain bill, not pre-marked as a copy.
+  const [copyNumber, setCopyNumber] = useState<number | undefined>(undefined);
+
   async function viewBill(orderId: string) {
     setBillLoading(orderId);
+    setCopyNumber(undefined);
     try {
       setBillOrder(await api.get<Order>(`/orders/${orderId}`));
     } catch (e) {
@@ -137,9 +142,21 @@ export default function SalesReportPage() {
   }
 
   // Reprint a settled bill straight from the report — same silent-print path
-  // the till uses, falling back to the browser print dialog.
+  // the till uses, falling back to the browser print dialog. Every reprint
+  // from here (and only from here — the original checkout print never calls
+  // this) bumps a durable server-side counter so the ticket can carry a
+  // "COPY #n" watermark that survives across sessions/staff/devices.
   async function reprintBill() {
     if (!billOrder) return;
+    try {
+      const updated = await api.post<Order>(`/orders/${billOrder.id}/reprint`, {});
+      setBillOrder(updated);
+      setCopyNumber(updated.reprintCount);
+    } catch (e) {
+      setErr((e as Error).message);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 60)); // let the COPY watermark render before it's captured
     const prefs = getPrinterPrefs();
     const tpl = billTemplateOf(settings);
     if (await silentPrintArea({ printer: prefs.bill, widthMm: tpl.paperWidthMm, fontSize: tpl.fontSize })) return;
@@ -408,13 +425,13 @@ export default function SalesReportPage() {
       </div>
 
       {/* Bill preview — the actual receipt behind a report row */}
-      <Modal open={!!billOrder} title={billOrder ? `Bill #${billOrder.number}` : ''} onClose={() => setBillOrder(null)}>
+      <Modal open={!!billOrder} title={billOrder ? `Bill #${billOrder.number}` : ''} onClose={() => { setBillOrder(null); setCopyNumber(undefined); }}>
         {billOrder && (
           <div className="space-y-3">
             <div className="receipt-preview mx-auto max-w-xs rounded-lg border border-slate-200 bg-white p-3 text-black dark:border-slate-700">
-              <Receipt order={billOrder} settings={settings} mode="BILL" docTitle={billOrder.status === 'PAID' ? 'TAX INVOICE' : undefined} />
+              <Receipt order={billOrder} settings={settings} mode="BILL" docTitle={billOrder.status === 'PAID' ? 'TAX INVOICE' : undefined} copyNumber={copyNumber} />
             </div>
-            <button onClick={reprintBill} className="btn-primary w-full">🖨 Reprint bill</button>
+            <button onClick={reprintBill} className="btn-primary w-full">🖨 Reprint bill{billOrder.reprintCount ? ` (copy #${billOrder.reprintCount + 1})` : ''}</button>
           </div>
         )}
       </Modal>

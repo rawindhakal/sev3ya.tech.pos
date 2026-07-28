@@ -185,6 +185,7 @@ export interface Order {
   discountApprovedBy?: string | null;
   isComplimentary?: boolean;
   cashierName?: string | null;
+  reprintCount?: number;
   serviceChargeCents: number;
   packagingChargeCents?: number;
   deliveryChargeCents?: number;

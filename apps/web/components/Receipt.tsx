@@ -18,12 +18,14 @@ export default function Receipt({
   mode,
   items,
   docTitle,
+  copyNumber,
 }: {
   order: Order | null;
   settings: Settings | null;
   mode: ReceiptMode;
   items?: OrderItem[]; // explicit items for KOT/BOT/CANCEL; defaults to the bill
   docTitle?: string;   // overrides the bill document title (Estimated Bill / Tax Invoice / Invoice)
+  copyNumber?: number; // set only for reprints (e.g. from Sales Reports) — stamps "COPY #n", never on the original checkout print
 }) {
   if (!order) return null;
   const now = new Date();
@@ -64,7 +66,15 @@ export default function Receipt({
   for (let i = 0; i < metaPairs.length; i += 2) metaRows.push([metaPairs[i], metaPairs[i + 1]].filter(Boolean) as [string, string][]);
 
   const orderTakenByName = isBill ? null : (kt.showWaiter && order.waiter?.name) || null;
-  const netBeforeTax = order.subtotalCents - order.discountCents;
+  // total − VAT is the correct pre-VAT base in both pricing modes: when menu
+  // prices are VAT-exclusive this equals subtotal−discount+service (VAT was
+  // added on top, so subtracting it back out returns exactly that); when
+  // prices already include VAT, totalCents IS the chargeable base with VAT
+  // embedded, so subtracting the (back-calculated) VAT portion correctly
+  // reduces it — Sub Total above stays at the gross, menu-listed price
+  // (matching what the customer was actually shown per item), and this line
+  // is the one place VAT-inclusive pricing gets "unwound" for the invoice.
+  const netBeforeTax = order.totalCents - order.taxCents;
 
   return (
     <div id="print-area" style={{ fontSize: fs, fontWeight: bold ? 500 : 400 }}>
@@ -78,6 +88,14 @@ export default function Receipt({
             <div style={{ marginTop: 3, fontWeight: 800, fontSize: fs + 1 }}>{(docTitle ?? bt.title).toUpperCase()}</div>
             {(bt.headerText || settings?.receiptHeader) && (
               <div style={{ marginTop: 4 }}>{bt.headerText || settings?.receiptHeader}</div>
+            )}
+            {!!copyNumber && (
+              <div style={{
+                marginTop: 6, display: 'inline-block', border: '2px solid #000', borderRadius: 4,
+                padding: '2px 10px', fontWeight: 800, fontSize: fs + 2, letterSpacing: 1,
+              }}>
+                *** COPY #{copyNumber} ***
+              </div>
             )}
           </>
         ) : (
@@ -144,13 +162,13 @@ export default function Receipt({
             <>
               <Row label="Sub Total" value={formatMoney(order.subtotalCents)} />
               {order.discountCents > 0 && (
-                <>
-                  <Row label={order.discountLabel ? `Discount (${order.discountLabel})` : 'Discount'} value={`-${formatMoney(order.discountCents)}`} />
-                  <Row label="Net Amount Before Tax" value={formatMoney(netBeforeTax)} />
-                </>
+                <Row label={order.discountLabel ? `Discount (${order.discountLabel})` : 'Discount'} value={`-${formatMoney(order.discountCents)}`} />
               )}
               {order.serviceChargeCents > 0 && (
                 <Row label={`Service charge (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`} value={formatMoney(order.serviceChargeCents)} />
+              )}
+              {settings?.pricesIncludeVat && (
+                <Row label="Net Amount Before Tax" value={formatMoney(netBeforeTax)} />
               )}
               <Row label={`VAT (${Math.round((settings?.vatRate ?? 0.13) * 100)}%)`} value={formatMoney(order.taxCents)} />
             </>
