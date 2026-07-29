@@ -5,7 +5,7 @@
 // settled at the main POS counter.
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
-import type { Category, Employee, MenuItem, MenuItemVariant, Order, TableArea } from '@/lib/types';
+import type { Category, Employee, MenuItem, MenuItemVariant, Order, Settings, TableArea } from '@/lib/types';
 import { priceForType } from '@/lib/types';
 import Modal from '@/components/Modal';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
@@ -51,10 +51,12 @@ export default function WaiterPage() {
   const [pickSel, setPickSel] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
 
   useEffect(() => {
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
+    api.get<Settings>('/settings').then(setSettings).catch(() => {});
     try { const s = localStorage.getItem('cakezake-emp'); if (s) setEmp(JSON.parse(s)); } catch {}
   }, []);
 
@@ -70,12 +72,30 @@ export default function WaiterPage() {
     } catch { setPinErr('Invalid username or password'); setPassword(''); }
   }
 
-  const vatRate = 0.13;
+  // Was hardcoded to 0.13 and always "added on top" regardless of the
+  // restaurant's actual configured rate/mode — this panel never fetched
+  // Settings at all, so it silently ignored both a non-13% VAT rate, any
+  // service charge, and "menu prices include VAT" (same bug class as the
+  // POS terminal cart; fixed the same way — mirrors the server's
+  // computeTotals in apps/api/src/common/settings.ts).
+  const vatRate = settings?.vatRate ?? 0.13;
+  const serviceChargeRate = settings?.serviceChargeRate ?? 0;
+  const pricesIncludeVat = !!settings?.pricesIncludeVat;
   const totals = useMemo(() => {
     let sub = 0, n = 0;
     for (const l of cart) { const mod = l.modifiers.reduce((s, m) => s + m.priceCents, 0); sub += (l.unitPriceCents + mod) * l.quantity; n += l.quantity; }
-    return { sub, count: n, total: sub + Math.round(sub * vatRate) };
-  }, [cart]);
+    const serviceCharge = Math.round(sub * serviceChargeRate);
+    const chargeableBase = sub + serviceCharge;
+    let tax: number, total: number;
+    if (pricesIncludeVat) {
+      total = chargeableBase;
+      tax = Math.round((total * vatRate) / (1 + vatRate));
+    } else {
+      tax = Math.round(chargeableBase * vatRate);
+      total = chargeableBase + tax;
+    }
+    return { sub, count: n, serviceCharge, tax, total, netBeforeTax: total - tax };
+  }, [cart, vatRate, serviceChargeRate, pricesIncludeVat]);
 
   const filtered = useMemo(() => {
     let l = items.filter((i) => i.isAvailable);
@@ -281,6 +301,7 @@ export default function WaiterPage() {
           })}
         </div>
         <div className="mt-3 flex justify-between border-t border-slate-100 pt-2 font-bold"><span>Total (incl. VAT)</span><span>{formatMoney(totals.total)}</span></div>
+        <p className="mt-0.5 text-right text-[11px] text-slate-400">of which VAT ({Math.round(vatRate * 100)}%): {formatMoney(totals.tax)}</p>
         <div className="mt-3 grid grid-cols-3 gap-2">
           <button className="btn-ghost text-xs" disabled={busy} onClick={saveExit}>Save</button>
           <button className="btn-ghost text-xs" disabled={busy} onClick={() => setBillOpen(true)}>View bill</button>
@@ -296,7 +317,13 @@ export default function WaiterPage() {
             <div key={l.key} className="flex justify-between"><span>{l.quantity}× {l.name}</span><span>{formatMoney((l.unitPriceCents + mod) * l.quantity)}</span></div>
           ); })}
           <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-500"><span>Subtotal</span><span>{formatMoney(totals.sub)}</span></div>
-          <div className="flex justify-between text-slate-500"><span>VAT 13%</span><span>{formatMoney(Math.round(totals.sub * vatRate))}</span></div>
+          {totals.serviceCharge > 0 && (
+            <div className="flex justify-between text-slate-500"><span>Service charge ({Math.round(serviceChargeRate * 100)}%)</span><span>{formatMoney(totals.serviceCharge)}</span></div>
+          )}
+          {pricesIncludeVat && (
+            <div className="flex justify-between text-slate-500"><span>Net amount before tax</span><span>{formatMoney(totals.netBeforeTax)}</span></div>
+          )}
+          <div className="flex justify-between text-slate-500"><span>VAT ({Math.round(vatRate * 100)}%)</span><span>{formatMoney(totals.tax)}</span></div>
           <div className="flex justify-between border-t border-slate-100 pt-1 text-base font-bold"><span>TOTAL</span><span>{formatMoney(totals.total)}</span></div>
         </div>
         <div className="mt-3 rounded-lg bg-amber-50 p-2 text-center text-xs text-amber-700">Send the guest to the counter to settle this bill.</div>

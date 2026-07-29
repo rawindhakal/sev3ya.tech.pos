@@ -28,6 +28,7 @@ import ThemeToggleMini from '@/components/ThemeToggleMini';
 import AutoPrintAgent from '@/components/AutoPrintAgent';
 import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
 import Spinner from '@/components/Spinner';
+import { SearchIcon, PlusIcon, UtensilsIcon, BagIcon, BikeIcon, BoltIcon, SettingsIcon, XIcon, LockIcon, BellIcon, MoonIcon } from '@/components/icons';
 import { formatBsLong } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea, isDesktopShell } from '@/lib/printing';
 import { getStatus } from '@/lib/offline';
@@ -37,11 +38,11 @@ import { notify, promptDialog } from '@/lib/dialog';
 // Order modes per design spec §2.1. Quick-Bill maps to a TAKEAWAY order with
 // an express settle path.
 type ModeKey = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY' | 'QUICK';
-const MODES: { key: ModeKey; label: string; icon: string }[] = [
-  { key: 'DINE_IN', label: 'Dine-In', icon: '🍽️' },
-  { key: 'TAKEAWAY', label: 'Takeaway', icon: '🥡' },
-  { key: 'DELIVERY', label: 'Home Delivery', icon: '🛵' },
-  { key: 'QUICK', label: 'Quick-Bill', icon: '⚡' },
+const MODES: { key: ModeKey; label: string; icon: typeof UtensilsIcon }[] = [
+  { key: 'DINE_IN', label: 'Dine-In', icon: UtensilsIcon },
+  { key: 'TAKEAWAY', label: 'Takeaway', icon: BagIcon },
+  { key: 'DELIVERY', label: 'Home Delivery', icon: BikeIcon },
+  { key: 'QUICK', label: 'Quick-Bill', icon: BoltIcon },
 ];
 
 interface CartLine {
@@ -1322,24 +1323,32 @@ export default function PosPage() {
         </div>
       )}
 
-      {/* Top bar */}
+      {/* Top bar — a compact status/utility row by design (matches Toast/Square
+          conventions): the CRITICAL 44px touch targets are reserved for the
+          high-frequency primary actions below (menu grid, qty steppers, Pay)
+          rather than this once-in-a-while utility row, but every control
+          here still gets touch-manipulation + press feedback and a real
+          (non-emoji) icon so it's still comfortably tappable, just denser. */}
       <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-b border-[var(--pos-line)] bg-[var(--pos-inset)] px-3 py-2 text-sm sm:px-5 sm:py-2.5">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={goBack}
             disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg bg-[var(--pos-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)] disabled:opacity-40"
+            className="flex min-h-[38px] touch-manipulation items-center gap-1.5 rounded-lg bg-[var(--pos-surface)] px-3 text-xs font-semibold text-[var(--pos-text-80)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-95 disabled:opacity-40"
             title={table ? 'Back to table floor (holds this bill)' : 'Back to order modes'}
           >
             ‹ Back
           </button>
-          <span className="text-lg">🍰</span>
           <span className="font-bold tracking-wide">POS TERMINAL</span>
           <span className="text-[var(--pos-text-40)]">·</span>
           <span className="text-[var(--pos-text-60)]">{emp.name} ({emp.role})</span>
-          <button onClick={() => { checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="rounded-md bg-[#E74C3C]/15 px-2 py-1 text-[11px] font-semibold text-[#E74C3C] hover:bg-[#E74C3C]/25" title="Close the business day">🌙 Day End</button>
+          <button onClick={() => { checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[#E74C3C]/15 px-2.5 text-[11px] font-semibold text-[#E74C3C] transition-transform hover:bg-[#E74C3C]/25 active:scale-95" title="Close the business day">
+            <MoonIcon className="h-3.5 w-3.5" /> Day End
+          </button>
           <ThemeToggleMini />
-          <button onClick={lock} className="rounded-md bg-[var(--pos-surface)] px-2 py-1 text-[11px] text-[var(--pos-text-60)] hover:bg-[var(--pos-surface-hover)]" title="Lock terminal">🔒 Lock</button>
+          <button onClick={lock} className="flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[var(--pos-surface)] px-2.5 text-[11px] text-[var(--pos-text-60)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-95" title="Lock terminal">
+            <LockIcon className="h-3.5 w-3.5" /> Lock
+          </button>
         </div>
         <div className="flex items-center gap-4">
           <nav className="hidden items-center gap-1 text-xs lg:flex">
@@ -1349,21 +1358,23 @@ export default function PosPage() {
               { label: 'Orders', path: '/orders' },
               { label: 'Menu', path: '/menu' },
             ].map((l) => (
-              <button key={l.path} onClick={() => exitTo(l.path)} className="rounded-md px-2 py-1 text-[var(--pos-text-50)] hover:bg-[var(--pos-surface-hover)] hover:text-[var(--pos-text)]">
+              <button key={l.path} onClick={() => exitTo(l.path)} className="min-h-[36px] touch-manipulation rounded-md px-2.5 text-[var(--pos-text-50)] transition-transform hover:bg-[var(--pos-surface-hover)] hover:text-[var(--pos-text)] active:scale-95">
                 {l.label}
               </button>
             ))}
           </nav>
           <ConnBadge />
           {waiterCalls.length > 0 && (
-            <button onClick={() => setCallsOpen(true)} className="relative rounded-md bg-[#F39C12]/20 px-2 py-1 text-[#F39C12] hover:bg-[#F39C12]/30" title="Tables calling for a waiter">
-              🔔 {waiterCalls.length}
+            <button onClick={() => setCallsOpen(true)} className="relative flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[#F39C12]/20 px-2.5 text-[#F39C12] transition-transform hover:bg-[#F39C12]/30 active:scale-95" title="Tables calling for a waiter">
+              <BellIcon className="h-4 w-4" /> {waiterCalls.length}
             </button>
           )}
           <span className="text-[var(--pos-text-60)] tabular-nums" title={now.toLocaleDateString()}>
             {formatBsLong(now)} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <button onClick={() => exitTo('/settings')} className="text-[var(--pos-text-60)] hover:text-[var(--pos-text)]">⚙ Settings</button>
+          <button onClick={() => exitTo('/settings')} className="flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md px-2 text-[var(--pos-text-60)] transition-transform hover:bg-[var(--pos-surface-hover)] hover:text-[var(--pos-text)] active:scale-95">
+            <SettingsIcon className="h-4 w-4" /> Settings
+          </button>
         </div>
       </div>
 
@@ -1372,22 +1383,23 @@ export default function PosPage() {
         <span className="mr-1 hidden text-xs font-semibold uppercase tracking-wider text-[var(--pos-text-40)] sm:inline">Order Mode</span>
         {MODES.map((m) => {
           const active = mode === m.key;
+          const Icon = m.icon;
           return (
             <button
               key={m.key}
               disabled={busy}
               onClick={() => selectMode(m.key)}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${
+              className={`flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg px-4 text-sm font-semibold transition-transform disabled:opacity-40 active:scale-95 ${
                 active ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]'
               }`}
             >
-              {m.icon} {m.label}
+              <Icon className="h-4 w-4" /> {m.label}
             </button>
           );
         })}
         {order && emp.canVoid && (
-          <button onClick={voidBasket} className="ml-auto rounded-lg bg-[#E74C3C]/15 px-4 py-2 text-sm font-semibold text-[#E74C3C] hover:bg-[#E74C3C]/25">
-            ✕ Void Basket
+          <button onClick={voidBasket} className="ml-auto flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg bg-[#E74C3C]/15 px-4 text-sm font-semibold text-[#E74C3C] transition-transform hover:bg-[#E74C3C]/25 active:scale-95">
+            <XIcon className="h-4 w-4" /> Void Basket
           </button>
         )}
       </div>
@@ -1498,36 +1510,39 @@ export default function PosPage() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="border-b border-[var(--pos-line)] p-3">
               <div className="mb-2 flex gap-2">
-                <input
-                  className="flex-1 rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]"
-                  placeholder="🔍 Search item by initials (e.g. CB → Chicken Burger)…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  autoFocus
-                />
-                <button className="rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-xs text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]" onClick={() => setOpenItem({ name: '', price: '', station: 'KITCHEN' })} title="One-off item for this bill only">
-                  + Custom
+                <div className="relative flex-1">
+                  <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--pos-text-30)]" />
+                  <input
+                    className="min-h-[44px] w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] py-2 pl-9 pr-3 text-sm text-[var(--pos-text)] placeholder-[var(--pos-placeholder)] outline-none focus:border-[#2ECC71]"
+                    placeholder="Search item by initials (e.g. CB → Chicken Burger)…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <button className="min-h-[44px] touch-manipulation rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 text-xs font-medium text-[var(--pos-text-70)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-95" onClick={() => setOpenItem({ name: '', price: '', station: 'KITCHEN' })} title="One-off item for this bill only">
+                  <PlusIcon className="mr-1 inline h-3.5 w-3.5" />Custom
                 </button>
                 {emp?.canManageStaff && (
                   <button
-                    className="rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2 text-xs text-[var(--pos-text-70)] hover:bg-[var(--pos-surface-hover)]"
+                    className="min-h-[44px] touch-manipulation rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 text-xs font-medium text-[var(--pos-text-70)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-95"
                     onClick={() => setNewMenuItem({ name: '', price: '', station: 'KITCHEN', categoryId: categories[0]?.id ?? '', newCategory: '', useNewCategory: categories.length === 0 })}
                     title="Add a permanent item to the menu catalogue"
                   >
-                    + Add Item
+                    <PlusIcon className="mr-1 inline h-3.5 w-3.5" />Add Item
                   </button>
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                <button onClick={() => setActiveCat('all')} className={`rounded-md px-3 py-1 text-xs font-medium ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>All</button>
+                <button onClick={() => setActiveCat('all')} className={`min-h-[40px] touch-manipulation rounded-lg px-3.5 text-xs font-medium transition-transform active:scale-95 ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>All</button>
                 {categories.map((c) => (
-                  <button key={c.id} onClick={() => setActiveCat(c.id)} className={`rounded-md px-3 py-1 text-xs font-medium ${activeCat === c.id ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>{c.name}</button>
+                  <button key={c.id} onClick={() => setActiveCat(c.id)} className={`min-h-[40px] touch-manipulation rounded-lg px-3.5 text-xs font-medium transition-transform active:scale-95 ${activeCat === c.id ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>{c.name}</button>
                 ))}
               </div>
             </div>
             <div className="grid flex-1 auto-rows-min grid-cols-2 gap-2.5 overflow-y-auto p-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredItems.map((item) => (
-                <button key={item.id} onClick={() => clickItem(item)} className="flex flex-col items-start rounded-xl border border-[var(--pos-line)] bg-[var(--pos-surface)] p-3 text-left transition-colors hover:border-[#2ECC71]/50 hover:bg-[var(--pos-surface-hover)]">
+                <button key={item.id} onClick={() => clickItem(item)} className="flex min-h-[76px] touch-manipulation flex-col items-start rounded-xl border border-[var(--pos-line)] bg-[var(--pos-surface)] p-3 text-left transition-transform hover:border-[#2ECC71]/50 hover:bg-[var(--pos-surface-hover)] active:scale-[0.97]">
                   <span className="font-semibold leading-tight">{item.name}</span>
                   <span className="mt-2 font-bold text-[#2ECC71]">
                     {item.variants && item.variants.length > 0
@@ -1537,7 +1552,12 @@ export default function PosPage() {
                   {item.variants && item.variants.length > 0 && <span className="mt-1 text-[10px] text-[var(--pos-text-30)]">portions</span>}
                 </button>
               ))}
-              {filteredItems.length === 0 && <p className="col-span-full py-10 text-center text-sm text-[var(--pos-text-30)]">No items found</p>}
+              {filteredItems.length === 0 && (
+                <div className="col-span-full flex flex-col items-center gap-2 py-10">
+                  <SearchIcon className="h-6 w-6 text-[var(--pos-text-25)]" />
+                  <p className="text-sm text-[var(--pos-text-30)]">No items found</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1627,17 +1647,17 @@ export default function PosPage() {
                       {(l.discountCents ?? 0) > 0 && (
                         <div className="text-[10px] text-amber-300/70">item −{formatMoney(l.discountCents!)}</div>
                       )}
-                      <div className="mt-1 flex items-center gap-2">
+                      <div className="mt-1.5 flex items-center gap-2">
                         {fired ? (
                           <span className="text-sm font-semibold">Qty {l.quantity}</span>
                         ) : (
                           <>
-                            <button onClick={() => changeQty(l.key, -1)} className="h-6 w-6 rounded bg-[var(--pos-surface-strong)] text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)]">−</button>
+                            <button onClick={() => changeQty(l.key, -1)} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg bg-[var(--pos-surface-strong)] text-lg font-medium text-[var(--pos-text-80)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-90">−</button>
                             <span className="w-6 text-center text-sm font-semibold">{l.quantity}</span>
-                            <button onClick={() => changeQty(l.key, 1)} className="h-6 w-6 rounded bg-[var(--pos-surface-strong)] text-[var(--pos-text-80)] hover:bg-[var(--pos-surface-hover)]">+</button>
+                            <button onClick={() => changeQty(l.key, 1)} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg bg-[var(--pos-surface-strong)] text-lg font-medium text-[var(--pos-text-80)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-90">+</button>
                           </>
                         )}
-                        <button onClick={() => cancelLine(l)} className="ml-auto rounded bg-[#E74C3C]/15 px-2 py-0.5 text-[10px] text-[#E74C3C] hover:bg-[#E74C3C]/25">Cancel</button>
+                        <button onClick={() => cancelLine(l)} className="ml-auto min-h-[44px] touch-manipulation rounded-lg bg-[#E74C3C]/15 px-3 text-xs font-medium text-[#E74C3C] transition-transform hover:bg-[#E74C3C]/25 active:scale-95">Cancel</button>
                       </div>
                     </div>
                   );
@@ -1710,7 +1730,7 @@ export default function PosPage() {
           {!canDiscountNow ? (
             <div className="rounded-lg bg-amber-50 p-3 text-center dark:bg-amber-950/30">
               <p className="mb-2 text-sm text-amber-700 dark:text-amber-400">Discounts need a manager or admin sign-in.</p>
-              <button onClick={requestDiscountApproval} className="btn-primary">🔒 Approve discount</button>
+              <button onClick={requestDiscountApproval} className="btn-primary min-h-[44px]"><LockIcon className="h-4 w-4" /> Approve discount</button>
             </div>
           ) : (
             <>

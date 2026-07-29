@@ -1,7 +1,13 @@
 'use client';
 
 // Minimal dependency-free SVG line chart with area fill + hover tooltip.
+// Gridlines/axis text/tooltip colors read from the --chart-* CSS custom
+// properties (defined in globals.css, flipped by the .dark class) since an
+// SVG stroke/fill attribute can't use Tailwind's `dark:` variant directly —
+// this chart used to be hardcoded to light-mode-only hex colors, which made
+// the gridlines and axis labels nearly invisible on a dark canvas.
 import { useState } from 'react';
+import { ChartBarIcon } from './icons';
 
 export interface Point {
   label: string;
@@ -25,7 +31,8 @@ export default function LineChart({
 
   if (data.length === 0) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-slate-400">
+      <div className="flex h-[220px] flex-col items-center justify-center gap-2 text-sm text-slate-400">
+        <ChartBarIcon className="h-8 w-8 opacity-40" />
         No sales data yet
       </div>
     );
@@ -70,10 +77,10 @@ export default function LineChart({
               y1={gy}
               x2={width - pad.right}
               y2={gy}
-              stroke="#e2e8f0"
+              stroke="var(--chart-grid)"
               strokeWidth={1}
             />
-            <text x={pad.left - 8} y={gy + 4} textAnchor="end" className="fill-slate-400 text-[10px]">
+            <text x={pad.left - 8} y={gy + 4} textAnchor="end" fill="var(--chart-axis)" className="text-[10px]">
               {formatValue(Math.round(g * max))}
             </text>
           </g>
@@ -104,7 +111,7 @@ export default function LineChart({
             onMouseLeave={() => setHover(null)}
           />
           {i % Math.ceil(data.length / 10) === 0 && (
-            <text x={x(i)} y={height - 8} textAnchor="middle" className="fill-slate-400 text-[10px]">
+            <text x={x(i)} y={height - 8} textAnchor="middle" fill="var(--chart-axis)" className="text-[10px]">
               {d.label}
             </text>
           )}
@@ -118,7 +125,7 @@ export default function LineChart({
             y1={pad.top}
             x2={x(hover)}
             y2={pad.top + innerH}
-            stroke="#cbd5e1"
+            stroke="var(--chart-grid)"
             strokeDasharray="3 3"
           />
           <rect
@@ -127,13 +134,14 @@ export default function LineChart({
             width={110}
             height={38}
             rx={6}
-            fill="#0f172a"
+            fill="var(--chart-tooltip-bg)"
           />
           <text
             x={Math.min(Math.max(x(hover), 55), width - 55)}
             y={pad.top + 16}
             textAnchor="middle"
-            className="fill-white text-[11px] font-semibold"
+            fill="var(--chart-tooltip-text)"
+            className="text-[11px] font-semibold"
           >
             {formatValue(data[hover].value)}
           </text>
@@ -141,7 +149,8 @@ export default function LineChart({
             x={Math.min(Math.max(x(hover), 55), width - 55)}
             y={pad.top + 30}
             textAnchor="middle"
-            className="fill-slate-300 text-[10px]"
+            fill="var(--chart-tooltip-sub)"
+            className="text-[10px]"
           >
             {data[hover].label}
           </text>

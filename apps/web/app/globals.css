@@ -22,6 +22,16 @@
   --pos-text-30: rgba(30, 41, 59, 0.38);
   --pos-text-25: rgba(30, 41, 59, 0.34);
   --pos-placeholder: rgba(30, 41, 59, 0.40);
+
+  /* Back-office chart tokens (line/bar charts on Dashboard, Reports) —
+     referenced via CSS vars instead of hardcoded hex so SVG chart elements
+     (which can't use Tailwind's `dark:` variant on stroke/fill attributes)
+     stay legible in both themes. */
+  --chart-grid: #eef1f5;
+  --chart-axis: #94a3b8;
+  --chart-tooltip-bg: #0f172a;
+  --chart-tooltip-text: #ffffff;
+  --chart-tooltip-sub: #cbd5e1;
 }
 
 .dark {
@@ -44,6 +54,12 @@
   --pos-text-30: rgba(248, 250, 252, 0.32);
   --pos-text-25: rgba(248, 250, 252, 0.26);
   --pos-placeholder: rgba(248, 250, 252, 0.28);
+
+  --chart-grid: #263041;
+  --chart-axis: #64748b;
+  --chart-tooltip-bg: #f8fafc;
+  --chart-tooltip-text: #0f172a;
+  --chart-tooltip-sub: #475569;
 }
 
 body {
@@ -80,45 +96,56 @@ body {
 
 /* ── Back-office dark theme (spec §3.2): slate #0F172A canvas ──
    Global utility remaps so every admin page flips without per-page edits.
-   The POS terminal styles itself explicitly and is unaffected. */
+   The POS terminal styles itself explicitly and is unaffected.
+   Cards sit one step lighter than the page (not the same flat navy) so
+   there's real elevation/depth instead of borders being the only separator
+   — box-shadow is suppressed in dark mode since a light-mode shadow colour
+   just looks like a muddy halo on a dark canvas; a soft border does the
+   same job more cleanly here. */
 .dark body {
-  @apply bg-[#0F172A] text-slate-200;
+  @apply bg-[#0B1220] text-slate-200;
 }
 .dark .bg-white,
 .dark .card {
-  background-color: #1e293b !important;
-  border-color: #334155 !important;
+  background-color: #161f30 !important;
+  border-color: #26324a !important;
+}
+.dark .card {
+  box-shadow: none !important;
 }
 .dark .bg-slate-50 {
-  background-color: #0f172a !important;
+  background-color: #0b1220 !important;
 }
 .dark .bg-slate-100 {
-  background-color: #334155 !important;
+  background-color: #232f45 !important;
 }
 .dark .text-slate-900,
 .dark .text-slate-800,
 .dark .text-slate-700 {
-  color: #e2e8f0 !important;
+  color: #e7ecf5 !important;
 }
 .dark .text-slate-600,
 .dark .text-slate-500,
 .dark .text-slate-400 {
-  color: #94a3b8 !important;
+  color: #9aa7bd !important;
 }
 .dark .border-slate-100,
 .dark .border-slate-200,
 .dark .border-slate-300 {
-  border-color: #334155 !important;
+  border-color: #26324a !important;
 }
 .dark .input {
-  background-color: #0f172a !important;
-  border-color: #334155 !important;
-  color: #e2e8f0;
+  background-color: #0b1220 !important;
+  border-color: #26324a !important;
+  color: #e7ecf5;
 }
 .dark .btn-ghost {
-  background-color: #1e293b !important;
-  border-color: #334155 !important;
+  background-color: #161f30 !important;
+  border-color: #2c3a55 !important;
   color: #cbd5e1 !important;
+}
+.dark .btn-ghost:hover {
+  background-color: #1d2942 !important;
 }
 /* Plain native checkboxes/radios (permission lists, settings toggles) are
    nearly invisible against the dark canvas with the browser's default
