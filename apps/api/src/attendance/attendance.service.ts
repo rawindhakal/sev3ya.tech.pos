@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { formatBs } from '../common/bs-date';
-import { nepalDateKey } from '../common/nepal-time';
+import { nepalDateKey, nepalStartOfDate, nepalEndOfDate } from '../common/nepal-time';
 
 // ZKTeco fingerprint attendance + payroll.
 //
@@ -150,8 +150,8 @@ export class AttendanceService {
   }
 
   async summary(from?: string, to?: string) {
-    const start = from ? new Date(from) : new Date(new Date().toISOString().slice(0, 8) + '01');
-    const end = to ? new Date(`${to}T23:59:59.999`) : new Date();
+    const start = from ? nepalStartOfDate(from) : nepalStartOfDate(`${nepalDateKey(new Date()).slice(0, 7)}-01`);
+    const end = to ? nepalEndOfDate(to) : new Date();
     const grid = await this.dayGrid(start, end);
     return [...grid.values()].map(({ emp, days }) => {
       const cells = [...days.entries()].sort();
@@ -177,9 +177,11 @@ export class AttendanceService {
 
   // ── Payroll for a calendar month (YYYY-MM) ───────────
   async payroll(month?: string) {
-    const m = month ?? new Date().toISOString().slice(0, 7);
-    const start = new Date(`${m}-01T00:00:00`);
-    const end = new Date(new Date(start).setMonth(start.getMonth() + 1) - 1);
+    const m = month ?? nepalDateKey(new Date()).slice(0, 7);
+    const [y, mo] = m.split('-').map(Number);
+    const start = nepalStartOfDate(`${m}-01`);
+    const nextMonth = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
+    const end = new Date(nepalStartOfDate(`${nextMonth}-01`).getTime() - 1);
     const grid = await this.dayGrid(start, end);
     const allEmps = await this.prisma.employee.findMany({ where: { isActive: true } });
 

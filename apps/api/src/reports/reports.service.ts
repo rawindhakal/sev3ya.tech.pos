@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { nepalDateKey, nepalStartOfDate, nepalEndOfDate } from '../common/nepal-time';
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
@@ -8,11 +9,11 @@ const num = (v: unknown): number => (v == null ? 0 : Number(v));
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // from/to are YYYY-MM-DD meant in Nepal local time, not the server's own
+  // timezone — see common/nepal-time.ts for why that distinction matters.
   private range(from?: string, to?: string) {
-    const start = from ? new Date(from) : new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = to ? new Date(to) : new Date(from ?? Date.now());
-    end.setHours(23, 59, 59, 999);
+    const start = from ? nepalStartOfDate(from) : nepalStartOfDate(nepalDateKey(new Date()));
+    const end = nepalEndOfDate(to ?? from ?? nepalDateKey(new Date()));
     return { start, end };
   }
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { nepalStartOfToday, nepalStartOfDate, nepalEndOfDate } from '../common/nepal-time';
 
 // Coerce Postgres BigInt aggregates to plain numbers for JSON.
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -10,22 +11,24 @@ export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   private startOfToday() {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+    return nepalStartOfToday();
   }
   private daysAgo(n: number) {
-    const d = this.startOfToday();
-    d.setDate(d.getDate() - n);
-    return d;
+    // Plain millisecond subtraction, not .setDate() — that mutates using the
+    // server process's LOCAL calendar fields, which reintroduces the same
+    // server-timezone bug this whole file exists to avoid. Nepal has no DST,
+    // so subtracting exactly n×24h from a Nepal-midnight instant always
+    // lands on another Nepal-midnight instant.
+    return new Date(this.startOfToday().getTime() - n * 86_400_000);
   }
 
   // Dashboard's quick date filter (Today/Yesterday/This week/This month/
-  // custom range) — from/to are YYYY-MM-DD, both inclusive. Defaults to just
-  // today, matching the page's original fixed behavior.
+  // custom range) — from/to are YYYY-MM-DD, both inclusive, meant in Nepal
+  // local time (not the server's own timezone). Defaults to just today,
+  // matching the page's original fixed behavior.
   async dashboard(from?: string, to?: string) {
-    const rangeStart = from ? new Date(`${from}T00:00:00`) : this.startOfToday();
-    const rangeEnd = to ? new Date(`${to}T23:59:59.999`) : new Date(rangeStart.getTime() + 864e5 - 1);
+    const rangeStart = from ? nepalStartOfDate(from) : this.startOfToday();
+    const rangeEnd = to ? nepalEndOfDate(to) : new Date(rangeStart.getTime() + 864e5 - 1);
     const window30 = this.daysAgo(29);
 
     const [

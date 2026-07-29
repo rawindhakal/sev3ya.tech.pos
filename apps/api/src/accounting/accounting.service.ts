@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { formatBs } from '../common/bs-date';
+import { nepalDateKey, nepalStartOfDate, nepalEndOfDate } from '../common/nepal-time';
 
 // Accounting books (Tally / Busy-style), derived live from operational data —
 // every sale, purchase, expense, drawer movement and credit entry is already
@@ -11,9 +12,11 @@ import { formatBs } from '../common/bs-date';
 
 const BANK_METHODS = ['BANK', 'CARD', 'FONEPAY', 'ESEWA', 'KHALTI'] as const;
 
+// from/to are YYYY-MM-DD meant in Nepal local time, not the server's own
+// timezone — see common/nepal-time.ts for why that distinction matters.
 function range(from?: string, to?: string) {
-  const start = from ? new Date(from) : new Date(Date.now() - 30 * 864e5);
-  const end = to ? new Date(`${to}T23:59:59.999`) : new Date();
+  const start = from ? nepalStartOfDate(from) : new Date(Date.now() - 30 * 864e5);
+  const end = to ? nepalEndOfDate(to) : new Date();
   return { start, end };
 }
 
@@ -185,8 +188,10 @@ export class AccountingService {
 
   // ── Day Book (every transaction of one day, chronological) ──
   async dayBook(date?: string) {
-    const day = date ? new Date(date) : new Date();
-    const from = day.toISOString().slice(0, 10);
+    // "today" must mean Nepal's calendar day, not the server's own — see
+    // common/nepal-time.ts.
+    const from = date ?? nepalDateKey(new Date());
+    const day = new Date(`${from}T12:00:00`);
     const [sales, cash, bank, purchases] = await Promise.all([
       this.salesBook(from, from),
       this.cashBook(from, from),
@@ -217,7 +222,7 @@ export class AccountingService {
 
   // ── Balance Sheet (derived from operations, as of a date) ──
   async balanceSheet(asOf?: string) {
-    const upto = asOf ? new Date(`${asOf}T23:59:59.999`) : new Date();
+    const upto = asOf ? nepalEndOfDate(asOf) : new Date();
     const window = { lte: upto };
     const [cashIn, payIn, payOut, expenses, bankIn, bankSettle, cashSettleAgg, ar, inv, apPos, vat] = await Promise.all([
       this.prisma.payment.aggregate({ _sum: { amountCents: true }, where: { method: 'CASH', createdAt: window } }),

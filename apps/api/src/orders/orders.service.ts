@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeTotals } from '../common/settings';
 import { adToBs } from '../common/bs-date';
+import { nepalStartOfToday } from '../common/nepal-time';
 import { SettingsService } from '../settings/settings.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
@@ -187,9 +188,7 @@ export class OrdersService {
     const where: Prisma.OrderWhereInput = {};
     if (params.status) where.status = params.status as any;
     if (params.today) {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      where.createdAt = { gte: start };
+      where.createdAt = { gte: nepalStartOfToday() };
     }
     return this.prisma.order.findMany({
       where,

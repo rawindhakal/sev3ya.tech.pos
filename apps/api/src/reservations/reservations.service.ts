@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, ReservationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { nepalStartOfDate } from '../common/nepal-time';
 
 @Injectable()
 export class ReservationsService {
@@ -13,10 +14,10 @@ export class ReservationsService {
     const where: Prisma.ReservationWhereInput = { isWaitlist: false };
     if (params.status) where.status = params.status as ReservationStatus;
     if (params.date) {
-      const start = new Date(params.date);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 1);
+      // params.date is meant in Nepal local time, not the server's own
+      // timezone — see common/nepal-time.ts.
+      const start = nepalStartOfDate(params.date);
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
       where.reservedAt = { gte: start, lt: end };
     }
     return this.prisma.reservation.findMany({

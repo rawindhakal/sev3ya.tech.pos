@@ -11,3 +11,29 @@ export const NPT_OFFSET_MIN = 5 * 60 + 45;
 export function nepalDateKey(at: Date): string {
   return new Date(at.getTime() + NPT_OFFSET_MIN * 60_000).toISOString().slice(0, 10);
 }
+
+// Nepal midnight (00:00:00.000 Nepal-local) for a given YYYY-MM-DD date,
+// as the correct absolute UTC instant. Use this instead of `new Date(str)`
+// + `.setHours(0,0,0,0)` — that pattern computes midnight in the SERVER
+// PROCESS's own timezone, which is only correct if that happens to be
+// Nepal's. On a typical UTC VPS it's off by a fixed 5:45h, which silently
+// shifts every "today"/date-range boundary on the dashboard and reports:
+// e.g. an order placed at 2am Nepal time gets counted as "yesterday", and
+// "today" keeps counting orders until 5:45am Nepal time the next calendar
+// day.
+export function nepalStartOfDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d) - NPT_OFFSET_MIN * 60_000);
+}
+
+// End of that same Nepal-local day (23:59:59.999 Nepal-local), inclusive.
+export function nepalEndOfDate(dateStr: string): Date {
+  return new Date(nepalStartOfDate(dateStr).getTime() + 24 * 60 * 60 * 1000 - 1);
+}
+
+// Nepal midnight for "today" — the calendar day it currently is in Nepal,
+// which is not necessarily the calendar day it is in the server's own
+// timezone right now.
+export function nepalStartOfToday(now: Date = new Date()): Date {
+  return nepalStartOfDate(nepalDateKey(now));
+}

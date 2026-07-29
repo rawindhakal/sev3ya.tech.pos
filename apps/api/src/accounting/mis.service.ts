@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JournalService } from './journal.service';
 import { adToBs, formatBs, fyRangeAd, BS_MONTH_NAMES } from '../common/bs-date';
+import { nepalDateKey, nepalStartOfDate, nepalEndOfDate } from '../common/nepal-time';
 
 // MIS / statutory reports (RestroX-style). Every report returns one uniform
 // shape — { title, columns, rows, note? } — so the frontend renders and
@@ -20,9 +21,11 @@ const BANK_METHODS = ['BANK', 'CARD', 'FONEPAY', 'ESEWA', 'KHALTI'];
 // Nepali FY months in order: Shrawan(4) … Chaitra(12), Baisakh(1) … Ashadh(3)
 const FY_MONTHS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
 
+// from/to are YYYY-MM-DD meant in Nepal local time, not the server's own
+// timezone — see common/nepal-time.ts for why that distinction matters.
 function range(from?: string, to?: string) {
-  const start = from ? new Date(from) : new Date(Date.now() - 30 * 864e5);
-  const end = to ? new Date(`${to}T23:59:59.999`) : new Date();
+  const start = from ? nepalStartOfDate(from) : new Date(Date.now() - 30 * 864e5);
+  const end = to ? nepalEndOfDate(to) : new Date();
   return { start, end };
 }
 
@@ -50,7 +53,7 @@ export class MisService {
   // ── Accounting: Account Summary (general ledger) ──
   async accountSummary(from?: string, to?: string): Promise<MisReport> {
     const { start } = range(from, to);
-    const dayBefore = new Date(start.getTime() - 864e5).toISOString().slice(0, 10);
+    const dayBefore = nepalDateKey(new Date(start.getTime() - 864e5));
     const accounts = await this.journal.accounts();
     const rows = [] as MisReport['rows'];
     let sn = 0;
@@ -145,7 +148,7 @@ export class MisService {
     });
     const days = new Map<string, { cash: number; bank: number; credit: number }>();
     for (const p of payments) {
-      const key = p.createdAt.toISOString().slice(0, 10);
+      const key = nepalDateKey(p.createdAt);
       const d = days.get(key) ?? { cash: 0, bank: 0, credit: 0 };
       if (p.method === 'CASH' || p.method === 'OFFLINE') d.cash += p.amountCents;
       else if (p.method === 'CREDIT') d.credit += p.amountCents;
@@ -186,7 +189,7 @@ export class MisService {
     const methods = ['CASH', ...BANK_METHODS, 'CREDIT', 'OFFLINE'];
     const days = new Map<string, Record<string, number>>();
     for (const p of payments) {
-      const key = p.createdAt.toISOString().slice(0, 10);
+      const key = nepalDateKey(p.createdAt);
       const d = days.get(key) ?? {};
       d[p.method] = (d[p.method] ?? 0) + p.amountCents;
       days.set(key, d);
