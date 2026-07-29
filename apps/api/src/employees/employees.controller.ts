@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
   IsBoolean,
@@ -18,6 +19,8 @@ import {
 } from 'class-validator';
 import { StaffRole } from '@prisma/client';
 import { EmployeesService } from './employees.service';
+import { Public } from '../common/public.decorator';
+import { AuthGuard } from '../common/auth.guard';
 
 class CreateEmployeeDto {
   @IsOptional() @IsString() deviceUserId?: string;
@@ -59,6 +62,7 @@ export class EmployeesController {
     return this.employees.findAll();
   }
 
+  @Public()
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.employees.login(dto);
@@ -69,17 +73,23 @@ export class EmployeesController {
     return this.employees.activeShifts();
   }
 
+  // Creating/editing/deactivating staff (incl. role/permission flags) is a
+  // privilege-escalation-sensitive action — restrict to holders of the
+  // canManageStaff permission, not just "any signed-in employee".
   @Post()
+  @UseGuards(new AuthGuard('canManageStaff'))
   create(@Body() dto: CreateEmployeeDto) {
     return this.employees.create(dto);
   }
 
   @Patch(':id')
+  @UseGuards(new AuthGuard('canManageStaff'))
   update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) {
     return this.employees.update(id, dto);
   }
 
   @Delete(':id')
+  @UseGuards(new AuthGuard('canManageStaff'))
   remove(@Param('id') id: string) {
     return this.employees.remove(id);
   }

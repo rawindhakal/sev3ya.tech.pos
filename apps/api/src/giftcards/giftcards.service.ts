@@ -70,9 +70,17 @@ export class GiftCardsService {
     const card = await tx.giftCard.findUnique({ where: { code: code.trim().toUpperCase() } });
     if (!card) throw new BadRequestException('Gift card not found');
     if (!card.isActive) throw new BadRequestException('This gift card is inactive');
-    if (card.balanceCents < amountCents)
+    // Atomic conditional decrement: the balance check and the write happen
+    // in the same statement, so two concurrent redemptions of the same card
+    // (e.g. a bill split across two terminals, or a retried request) can't
+    // both pass a balance check that's already stale by the time they write
+    // — the previous read-then-write here could drive a card negative.
+    const result = await tx.giftCard.updateMany({
+      where: { id: card.id, balanceCents: { gte: amountCents } },
+      data: { balanceCents: { decrement: amountCents } },
+    });
+    if (result.count === 0)
       throw new BadRequestException(`Gift card balance is only Rs ${(card.balanceCents / 100).toFixed(2)}`);
-    await tx.giftCard.update({ where: { id: card.id }, data: { balanceCents: { decrement: amountCents } } });
     await tx.giftCardTransaction.create({ data: { giftCardId: card.id, orderId, amountCents: -amountCents, note: 'Redeemed' } });
     return card.id;
   }

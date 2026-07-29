@@ -117,6 +117,16 @@ export class SettingsService {
           cleared.payments = (await tx.payment.deleteMany()).count;
           cleared.orderItems = (await tx.orderItem.deleteMany()).count;
           cleared.cashMovements = (await tx.cashMovement.deleteMany()).count;
+          // GiftCardTransaction.orderId has no cascade/set-null in the schema
+          // (gift cards aren't part of this category by design — a sales
+          // reset shouldn't erase real stored-value balances or their
+          // ledger). Detach the reference instead of leaving it pointing at
+          // an order we're about to delete — otherwise order.deleteMany()
+          // below throws a foreign key violation and the whole reset
+          // rolls back, which is exactly the "reset doesn't work" bug: any
+          // tenant that's ever taken a gift-card payment couldn't reset at
+          // all, even with every category on its default selection.
+          await tx.giftCardTransaction.updateMany({ where: { orderId: { not: null } }, data: { orderId: null } });
           cleared.orders = (await tx.order.deleteMany()).count;
           cleared.cashDrawerSessions = (await tx.cashDrawerSession.deleteMany()).count;
           cleared.idempotencyKeys = (await tx.idempotencyKey.deleteMany()).count;
@@ -136,14 +146,33 @@ export class SettingsService {
           cleared.stockMovements = (await tx.stockMovement.deleteMany()).count;
         }
         if (want.has('menu')) {
+          // ComboComponent.componentMenuItemId has no cascade — a menu item
+          // used as a combo's component (even if the combo itself is also
+          // being deleted below) blocks menuItem.deleteMany() otherwise.
+          cleared.comboComponents = (await tx.comboComponent.deleteMany()).count;
           cleared.recipeItems = (await tx.recipeItem.deleteMany()).count;
           cleared.menuItemVariants = (await tx.menuItemVariant.deleteMany()).count;
           cleared.modifiers = (await tx.modifier.deleteMany()).count;
           cleared.modifierGroups = (await tx.modifierGroup.deleteMany()).count;
+          // OrderItem.menuItemId also has no cascade. If order history is
+          // being kept (transactions category not selected — e.g. "rebuild
+          // the menu but keep sales history"), detach it rather than block
+          // the menu wipe; menuItemId is nullable precisely to support
+          // "open items" with no linked menu item, so this is a supported
+          // state, not a workaround. If transactions IS selected, orderItems
+          // were already deleted above, so there's nothing to detach.
+          if (!want.has('transactions')) {
+            await tx.orderItem.updateMany({ where: { menuItemId: { not: null } }, data: { menuItemId: null } });
+          }
           cleared.menuItems = (await tx.menuItem.deleteMany()).count;
           cleared.categories = (await tx.category.deleteMany()).count;
         }
         if (want.has('customers')) {
+          // Order.customerId has no cascade either. Same detach-if-keeping-
+          // history logic as menuItemId above.
+          if (!want.has('transactions')) {
+            await tx.order.updateMany({ where: { customerId: { not: null } }, data: { customerId: null } });
+          }
           cleared.creditLedgerEntries = (await tx.creditLedgerEntry.deleteMany()).count;
           cleared.customers = (await tx.customer.deleteMany()).count;
         }

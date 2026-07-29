@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { AuthGuard, SoftAuthGuard, CurrentEmployee } from '../common/auth.guard';
+import { Public } from '../common/public.decorator';
 import type { TokenPayload } from '../common/token';
 import {
   AttachCustomerDto,
@@ -59,6 +60,9 @@ export class OrdersController {
     return this.orders.feedbackSummary(days ? parseInt(days, 10) : 30);
   }
 
+  // Reachable from the guest self-order tracking page with no staff token —
+  // scoped by the order's unguessable cuid rather than by auth.
+  @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.orders.findOne(id);
@@ -74,6 +78,7 @@ export class OrdersController {
     return this.orders.create(dto);
   }
 
+  @Public()
   @Put(':id/cart')
   @UseGuards(SoftAuthGuard)
   saveCart(@Param('id') id: string, @Body() dto: SaveCartDto, @CurrentEmployee() emp: TokenPayload) {
@@ -97,6 +102,7 @@ export class OrdersController {
 
   // Cancel a single item (prints a cancellation KOT if already fired). Needs
   // the void permission when the item was already sent to the kitchen.
+  @Public()
   @Post(':id/items/:itemId/cancel')
   @UseGuards(SoftAuthGuard)
   cancelItem(
@@ -121,6 +127,7 @@ export class OrdersController {
     return this.orders.markComplimentary(id, dto.reason, emp);
   }
 
+  @Public()
   @Post(':id/pay')
   @UseGuards(SoftAuthGuard)
   pay(@Param('id') id: string, @Body() dto: PayDto, @CurrentEmployee() emp: TokenPayload) {
@@ -139,6 +146,7 @@ export class OrdersController {
 
   // Post-order guest feedback (no auth — reachable from the self-order flow
   // after a bill closes).
+  @Public()
   @Post(':id/feedback')
   submitFeedback(@Param('id') id: string, @Body() dto: FeedbackDto) {
     return this.orders.submitFeedback(id, dto.rating, dto.comment);
@@ -160,6 +168,7 @@ export class OrdersController {
     return this.orders.merge(id, fromOrderId);
   }
 
+  @Public()
   @Post(':id/transfer-items')
   @UseGuards(SoftAuthGuard)
   transferItems(
@@ -171,6 +180,7 @@ export class OrdersController {
   }
 
   // Void (with items → needs canVoid) or discard an empty draft (allowed).
+  @Public()
   @Delete(':id')
   @UseGuards(SoftAuthGuard)
   cancel(@Param('id') id: string, @Body() body: VoidDto, @CurrentEmployee() emp: TokenPayload) {

@@ -1,6 +1,7 @@
 import { Controller, Get, Logger, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { IclockService } from './iclock.service';
+import { Public } from '../common/public.decorator';
 
 // Deliberately NOT under the global /api prefix (see main.ts) — ZKTeco
 // device firmware hits a hardcoded /iclock/... path with no way to
@@ -18,6 +19,13 @@ import { IclockService } from './iclock.service';
 // device can't parse, so it just retries the same batch forever. Replying OK
 // keeps the device's own retry/backoff logic well-behaved; the actual
 // failure is logged here for a human to notice instead.
+//
+// @Public(): ZKTeco firmware has no concept of a bearer token, so this
+// controller can't go through staff auth. It's scoped by device serial
+// number (SN) instead — see IclockService — which is a weak, spoofable
+// credential (attendance data only, not customer PII), an accepted
+// tradeoff of the ADMS push protocol rather than something fixable here.
+@Public()
 @Controller('iclock')
 export class IclockController {
   private readonly log = new Logger('ICLOCK');

@@ -2,9 +2,11 @@ import { NestFactory } from '@nestjs/core';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { text } from 'express';
 import { AppModule } from './app.module';
+import { securityHeaders } from './common/security-headers.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.use(securityHeaders);
 
   // ZKTeco ADMS devices POST attendance data as Content-Type: text/plain,
   // not JSON — give that path its own raw-text body parser so req.body is

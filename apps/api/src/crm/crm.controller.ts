@@ -109,7 +109,10 @@ export class CrmController {
     return this.crm.ledger(id);
   }
 
+  // Deleting a customer record is destructive (loses order/credit history
+  // linkage) — manager/admin sign-in only, same bar as settle-credit.
   @Delete(':id')
+  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
   remove(@Param('id') id: string) {
     return this.crm.remove(id);
   }

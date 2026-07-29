@@ -9,6 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { signToken } from '../common/token';
 import { hashPassword, verifyPassword } from '../common/password';
 import { AuditService } from '../audit/audit.service';
+import { tenantContext } from '../common/tenant-context';
+import { assertLoginAllowed, recordLoginFailure, recordLoginSuccess } from '../common/login-throttle';
 
 // Never leak the PIN / password hash to clients.
 const publicSelect = {
@@ -78,11 +80,16 @@ export class EmployeesService {
   async login(creds: { username?: string; password?: string }) {
     if (!creds.username || !creds.password)
       throw new BadRequestException('Provide username and password');
+    const tenantId = tenantContext.getStore()?.tenant?.id ?? null;
+    assertLoginAllowed(tenantId, creds.username);
     const found = await this.prisma.employee.findFirst({
       where: { username: creds.username, isActive: true },
     });
-    if (!found || !verifyPassword(creds.password, found.passwordHash))
+    if (!found || !verifyPassword(creds.password, found.passwordHash)) {
+      recordLoginFailure(tenantId, creds.username);
       throw new UnauthorizedException('Invalid username or password');
+    }
+    recordLoginSuccess(tenantId, creds.username);
     const emp = await this.prisma.employee.findUnique({
       where: { id: found.id },
       select: { ...publicSelect },
@@ -96,6 +103,7 @@ export class EmployeesService {
       sub: emp.id,
       name: emp.name,
       role: emp.role,
+      tenantId: tenantContext.getStore()?.tenant?.id ?? null,
       canVoid: emp.canVoid,
       canDiscount: emp.canDiscount,
       canManageInventory: emp.canManageInventory,

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { IdempotencyInterceptor } from './common/idempotency.interceptor';
+import { DefaultAuthGuard } from './common/auth.guard';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthController } from './health/health.controller';
 import { CategoriesModule } from './categories/categories.module';
@@ -65,6 +66,11 @@ import { IclockModule } from './iclock/iclock.module';
     PlatformModule,
   ],
   controllers: [HealthController],
-  providers: [{ provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor }],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    // Deny-by-default: every route requires a valid, tenant-bound staff
+    // token unless explicitly marked @Public(). See common/auth.guard.ts.
+    { provide: APP_GUARD, useClass: DefaultAuthGuard },
+  ],
 })
 export class AppModule {}

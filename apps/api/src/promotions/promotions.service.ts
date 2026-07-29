@@ -82,8 +82,21 @@ export class PromotionsService {
     const coupon = await this.findValid(code, subtotalCents, customerId);
     const existing = await tx.couponRedemption.findUnique({ where: { orderId } });
     if (existing) throw new BadRequestException('This order already has a coupon applied — remove it first');
+    // Atomically claim a usage slot when the coupon has a total-use cap —
+    // findValid()'s check above can go stale between concurrent redemptions
+    // on two different orders; re-checking inside the same statement that
+    // increments closes that race so a limited-use coupon can't be redeemed
+    // more times than its cap.
+    if (coupon.maxUsesTotal != null) {
+      const claim = await tx.coupon.updateMany({
+        where: { id: coupon.id, usedCount: { lt: coupon.maxUsesTotal } },
+        data: { usedCount: { increment: 1 } },
+      });
+      if (claim.count === 0) throw new BadRequestException('This coupon has reached its usage limit');
+    } else {
+      await tx.coupon.update({ where: { id: coupon.id }, data: { usedCount: { increment: 1 } } });
+    }
     await tx.couponRedemption.create({ data: { couponId: coupon.id, orderId, customerId } });
-    await tx.coupon.update({ where: { id: coupon.id }, data: { usedCount: { increment: 1 } } });
     const discountCents = coupon.type === 'PCT' ? Math.round((subtotalCents * coupon.value) / 100) : coupon.value;
     return { coupon, discountCents: Math.min(discountCents, subtotalCents) };
   }

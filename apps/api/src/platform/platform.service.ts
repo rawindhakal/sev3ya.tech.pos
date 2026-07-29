@@ -8,6 +8,19 @@ import { invalidateTenantCache } from './tenant.middleware';
 
 const execFileP = promisify(execFile);
 
+// Every raw CREATE/DROP DATABASE below interpolates a database name directly
+// into DDL (Postgres doesn't support parameterized identifiers). The name is
+// already derived from a sanitized slug, but that sanitization happens far
+// from the call site — asserting the shape again right here means a future
+// change that loosens the slug regex (or a dbName read back from the DB)
+// can't silently turn this into arbitrary-DB-drop/SQLi.
+function assertSafeDbName(dbName: string): string {
+  if (!/^pos_t_[a-z0-9_]+$/.test(dbName)) {
+    throw new Error(`Refusing raw DDL against unexpected database name "${dbName}"`);
+  }
+  return dbName;
+}
+
 // SaaS control plane: plans, tenant provisioning (each tenant gets its OWN
 // PostgreSQL database migrated from the shared schema), manual subscription
 // payments (cash / direct bank transfer) and platform KPIs.
@@ -59,7 +72,7 @@ export class PlatformService {
     const dbName = `pos_t_${slug.replace(/-/g, '_')}`;
 
     // 1) Create the tenant's own database.
-    await this.control.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`);
+    await this.control.$executeRawUnsafe(`CREATE DATABASE "${assertSafeDbName(dbName)}"`);
     this.log.log(`Created database ${dbName}`);
 
     // 2) Apply the full schema via prisma migrate deploy against the new DB.
@@ -71,7 +84,7 @@ export class PlatformService {
         timeout: 120_000,
       });
     } catch (err) {
-      await this.control.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${dbName}"`).catch(() => {});
+      await this.control.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${assertSafeDbName(dbName)}"`).catch(() => {});
       throw new BadRequestException(`Migration failed: ${(err as Error).message.slice(0, 200)}`);
     }
 
@@ -238,7 +251,7 @@ export class PlatformService {
     invalidateTenantCache(t.slug);
     if (dropDb) {
       dropClient(t.dbName);
-      await this.control.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${t.dbName}" WITH (FORCE)`).catch(() => {});
+      await this.control.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${assertSafeDbName(t.dbName)}" WITH (FORCE)`).catch(() => {});
     }
     return { ok: true, droppedDb: dropDb };
   }

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { formatBs } from '../common/bs-date';
+import { nepalDateKey } from '../common/nepal-time';
 
 // ZKTeco fingerprint attendance + payroll.
 //
@@ -135,7 +136,7 @@ export class AttendanceService {
     for (const l of logs) {
       const e = l.employee!;
       const g = grid.get(e.id) ?? { emp: e as any, days: new Map() };
-      const day = l.at.toISOString().slice(0, 10);
+      const day = nepalDateKey(l.at);
       const cell = g.days.get(day);
       if (!cell) g.days.set(day, { firstIn: l.at, lastOut: l.at, punches: 1 });
       else {

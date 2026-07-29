@@ -1,6 +1,7 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { PaymentsGatewayService } from './payments-gateway.service';
+import { Public } from '../common/public.decorator';
 
 class InitiateDto {
   @IsString() @IsNotEmpty() orderId: string;
@@ -21,6 +22,11 @@ class VerifyFonepayDto {
   @IsString() @IsNotEmpty() prn: string;
 }
 
+// Reached from guest-facing checkout (self-order pay page) as well as the
+// POS — can't require a staff token. Safety instead comes from: orderId
+// being an unguessable cuid, orders.pay() being idempotent per-order, and
+// gateway callback dedup (see payments-gateway.service.ts).
+@Public()
 @Controller('payments-gateway')
 export class PaymentsGatewayController {
   constructor(private readonly gateway: PaymentsGatewayService) {}

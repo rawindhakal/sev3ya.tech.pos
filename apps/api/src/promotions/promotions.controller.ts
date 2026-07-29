@@ -3,6 +3,7 @@ import { IsBoolean, IsEnum, IsISO8601, IsInt, IsNotEmpty, IsOptional, IsString, 
 import { CouponType } from '@prisma/client';
 import { PromotionsService } from './promotions.service';
 import { AuthGuard } from '../common/auth.guard';
+import { Public } from '../common/public.decorator';
 
 class CreateCouponDto {
   @IsString() @IsNotEmpty() code: string;
@@ -59,6 +60,7 @@ export class PromotionsController {
 
   // Preview a coupon's discount without redeeming it — used by POS/self-order
   // before actually applying (no auth: also called from the public self-order flow).
+  @Public()
   @Post('preview')
   preview(@Body() dto: PreviewCouponDto) {
     return this.promotions.preview(dto.code, dto.subtotalCents, dto.customerId);

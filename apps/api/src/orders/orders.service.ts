@@ -498,14 +498,35 @@ export class OrdersService {
   }
 
   // Record payment(s), close the order and free the table.
+  //
+  // Idempotency matters a lot here: this is called from gateway webhook
+  // verify() handlers (which retry on timeout/network blip) and from a POS
+  // "Pay" button a cashier can double-tap. Without a guard, a repeat call
+  // used to re-run everything below — duplicate Payment rows, a second gift
+  // card redemption, a second inventory deduction, a second fiscal invoice
+  // number for the same order (an IRD compliance duplicate). The `updateMany`
+  // with `status: { not: 'PAID' }` atomically claims the order for this call;
+  // only the caller that flips it does any of the rest.
   async pay(id: string, dto: PayDto, actor?: TokenPayload) {
     const order = await this.findOne(id);
+    if (order.status === 'PAID') throw new BadRequestException('Order is already paid');
     const paid = dto.payments.reduce((s, p) => s + p.amountCents, 0);
     if (paid < order.totalCents)
       throw new BadRequestException(
         `Payment ${paid} is less than order total ${order.totalCents}`,
       );
     return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const claimed = await tx.order.updateMany({
+        where: { id, status: { not: 'PAID' } },
+        data: {
+          status: 'PAID',
+          paidAt: now,
+          billedAt: order.billedAt ?? now,
+          cashierName: actor?.name ?? order.cashierName,
+        },
+      });
+      if (claimed.count === 0) throw new BadRequestException('Order is already paid');
       for (const p of dto.payments) {
         let giftCardId: string | undefined;
         if (p.method === 'GIFTCARD') {
@@ -516,17 +537,7 @@ export class OrdersService {
           data: { orderId: id, method: p.method, amountCents: p.amountCents, giftCardId, gatewayRef: p.gatewayRef },
         });
       }
-      const now = new Date();
-      const updated = await tx.order.update({
-        where: { id },
-        data: {
-          status: 'PAID',
-          paidAt: now,
-          billedAt: order.billedAt ?? now,
-          cashierName: actor?.name ?? order.cashierName,
-        },
-        include: orderInclude,
-      });
+      const updated = await tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
       if (order.tableId) {
         await tx.restaurantTable.update({
           where: { id: order.tableId },

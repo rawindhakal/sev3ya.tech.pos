@@ -3,6 +3,7 @@ import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { SelfOrderService } from './self-order.service';
 import { CartLineDto } from '../orders/dto/order.dto';
+import { Public } from '../common/public.decorator';
 
 class SubmitItemsDto {
   @IsArray()
@@ -15,6 +16,9 @@ class SubmitItemsDto {
   @IsOptional() @IsString() customerPhone?: string;
 }
 
+// Guest-facing QR-menu flow — scoped entirely by an unguessable per-table
+// token, never by staff auth.
+@Public()
 @Controller('self-order')
 export class SelfOrderController {
   constructor(private readonly selfOrder: SelfOrderService) {}
