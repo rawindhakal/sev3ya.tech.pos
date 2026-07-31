@@ -20,7 +20,7 @@ export default function Modal({
       onClick={onClose}
     >
       <div
-        className="card w-full max-w-lg p-6 text-slate-700 dark:text-slate-200"
+        className="card flex w-full max-w-lg flex-col p-6 text-slate-700 dark:text-slate-200 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">

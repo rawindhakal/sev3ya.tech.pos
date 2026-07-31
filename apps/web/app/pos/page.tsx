@@ -28,7 +28,7 @@ import ThemeToggleMini from '@/components/ThemeToggleMini';
 import AutoPrintAgent from '@/components/AutoPrintAgent';
 import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
 import Spinner from '@/components/Spinner';
-import { SearchIcon, PlusIcon, UtensilsIcon, BagIcon, BikeIcon, BoltIcon, SettingsIcon, XIcon, LockIcon, BellIcon, MoonIcon } from '@/components/icons';
+import { SearchIcon, PlusIcon, UtensilsIcon, BagIcon, BikeIcon, BoltIcon, SettingsIcon, XIcon, LockIcon, BellIcon, MoonIcon, MenuIcon, ChevronUpIcon, CartIcon } from '@/components/icons';
 import { formatBsLong } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea, isDesktopShell } from '@/lib/printing';
 import { getStatus } from '@/lib/offline';
@@ -193,6 +193,14 @@ export default function PosPage() {
   // menu ui
   const [activeCat, setActiveCat] = useState('all');
   const [search, setSearch] = useState('');
+
+  // mobile-only layout state: below the `lg` breakpoint the menu grid and
+  // cart don't fit side-by-side (or even stacked at a usable size), so they
+  // become two full-height views the user switches between, and the utility
+  // row of the top bar collapses into a sheet instead of wrapping. None of
+  // this affects `lg:` and up — desktop keeps the always-visible split.
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // portion picker / open item / held / payment
   const [picker, setPicker] = useState<{ item: MenuItem; variants: MenuItemVariant[] } | null>(null);
@@ -638,6 +646,9 @@ export default function PosPage() {
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emp]);
+  // Land back on the menu (not a stale cart view) whenever a different
+  // order is loaded — mobile-only state, harmless no-op on desktop.
+  useEffect(() => { setMobileCartOpen(false); }, [order?.id]);
   useEffect(() => { if (!order && emp) loadActiveOrders(); /* refresh after settle/void */ // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order]);
 
@@ -1329,7 +1340,7 @@ export default function PosPage() {
           rather than this once-in-a-while utility row, but every control
           here still gets touch-manipulation + press feedback and a real
           (non-emoji) icon so it's still comfortably tappable, just denser. */}
-      <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-b border-[var(--pos-line)] bg-[var(--pos-inset)] px-3 py-2 text-sm sm:px-5 sm:py-2.5">
+      <div className="relative flex flex-wrap items-center justify-between gap-y-1.5 border-b border-[var(--pos-line)] bg-[var(--pos-inset)] px-3 py-2 text-sm sm:px-5 sm:py-2.5">
         <div className="flex items-center gap-2">
           <button
             onClick={goBack}
@@ -1340,17 +1351,21 @@ export default function PosPage() {
             ‹ Back
           </button>
           <span className="font-bold tracking-wide">POS TERMINAL</span>
-          <span className="text-[var(--pos-text-40)]">·</span>
-          <span className="text-[var(--pos-text-60)]">{emp.name} ({emp.role})</span>
-          <button onClick={() => { checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[#E74C3C]/15 px-2.5 text-[11px] font-semibold text-[#E74C3C] transition-transform hover:bg-[#E74C3C]/25 active:scale-95" title="Close the business day">
+          {/* Below `lg` this whole utility cluster (employee/Day End/Theme/
+              Lock) moves into the "≡" sheet — inline it wrapped into a messy
+              multi-row toolbar on phone-width screens with no room left for
+              the actual menu/cart. */}
+          <span className="hidden text-[var(--pos-text-40)] lg:inline">·</span>
+          <span className="hidden text-[var(--pos-text-60)] lg:inline">{emp.name} ({emp.role})</span>
+          <button onClick={() => { checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="hidden min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[#E74C3C]/15 px-2.5 text-[11px] font-semibold text-[#E74C3C] transition-transform hover:bg-[#E74C3C]/25 active:scale-95 lg:flex" title="Close the business day">
             <MoonIcon className="h-3.5 w-3.5" /> Day End
           </button>
-          <ThemeToggleMini />
-          <button onClick={lock} className="flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[var(--pos-surface)] px-2.5 text-[11px] text-[var(--pos-text-60)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-95" title="Lock terminal">
+          <div className="hidden lg:block"><ThemeToggleMini /></div>
+          <button onClick={lock} className="hidden min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[var(--pos-surface)] px-2.5 text-[11px] text-[var(--pos-text-60)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-95 lg:flex" title="Lock terminal">
             <LockIcon className="h-3.5 w-3.5" /> Lock
           </button>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 lg:gap-4">
           <nav className="hidden items-center gap-1 text-xs lg:flex">
             {[
               { label: 'Dashboard', path: '/' },
@@ -1369,13 +1384,61 @@ export default function PosPage() {
               <BellIcon className="h-4 w-4" /> {waiterCalls.length}
             </button>
           )}
-          <span className="text-[var(--pos-text-60)] tabular-nums" title={now.toLocaleDateString()}>
+          <span className="hidden text-[var(--pos-text-60)] tabular-nums lg:inline" title={now.toLocaleDateString()}>
             {formatBsLong(now)} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <button onClick={() => exitTo('/settings')} className="flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md px-2 text-[var(--pos-text-60)] transition-transform hover:bg-[var(--pos-surface-hover)] hover:text-[var(--pos-text)] active:scale-95">
+          <button onClick={() => exitTo('/settings')} className="hidden min-h-[36px] touch-manipulation items-center gap-1 rounded-md px-2 text-[var(--pos-text-60)] transition-transform hover:bg-[var(--pos-surface-hover)] hover:text-[var(--pos-text)] active:scale-95 lg:flex">
             <SettingsIcon className="h-4 w-4" /> Settings
           </button>
+          <button
+            onClick={() => setMobileMenuOpen((v) => !v)}
+            className="flex min-h-[38px] min-w-[38px] touch-manipulation items-center justify-center rounded-lg bg-[var(--pos-surface)] text-[var(--pos-text-70)] transition-transform active:scale-95 lg:hidden"
+            title="Menu"
+          >
+            <MenuIcon className="h-5 w-5" />
+          </button>
         </div>
+
+        {/* Mobile utility sheet — everything hidden above, reachable on phones. */}
+        {mobileMenuOpen && (
+          <div className="absolute left-0 right-0 top-full z-40 flex flex-col gap-1 border-b border-[var(--pos-line)] bg-[var(--pos-inset)] p-3 shadow-lg lg:hidden">
+            <div className="mb-1 flex items-center justify-between px-1 text-xs text-[var(--pos-text-60)]">
+              <span>{emp.name} ({emp.role})</span>
+              <span className="tabular-nums text-[var(--pos-text-40)]">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+            <nav className="flex flex-col gap-0.5">
+              {[
+                { label: 'Dashboard', path: '/' },
+                { label: 'Reservations', path: '/reservations' },
+                { label: 'Orders', path: '/orders' },
+                { label: 'Menu', path: '/menu' },
+              ].map((l) => (
+                <button key={l.path} onClick={() => { setMobileMenuOpen(false); exitTo(l.path); }} className="min-h-[44px] touch-manipulation rounded-md px-2 text-left text-sm text-[var(--pos-text-70)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
+                  {l.label}
+                </button>
+              ))}
+            </nav>
+            <div className="my-1 border-t border-[var(--pos-line)]" />
+            {waiterCalls.length > 0 && (
+              <button onClick={() => { setMobileMenuOpen(false); setCallsOpen(true); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[#F39C12] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
+                <BellIcon className="h-4 w-4" /> Waiter calls ({waiterCalls.length})
+              </button>
+            )}
+            <button onClick={() => { setMobileMenuOpen(false); checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[#E74C3C] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
+              <MoonIcon className="h-4 w-4" /> Day End
+            </button>
+            <button onClick={() => { setMobileMenuOpen(false); exitTo('/settings'); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[var(--pos-text-70)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
+              <SettingsIcon className="h-4 w-4" /> Settings
+            </button>
+            <button onClick={() => { setMobileMenuOpen(false); lock(); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[var(--pos-text-70)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
+              <LockIcon className="h-4 w-4" /> Lock terminal
+            </button>
+            <div className="flex items-center justify-between px-2 py-1">
+              <span className="text-sm text-[var(--pos-text-70)]">Theme</span>
+              <ThemeToggleMini />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Order modes */}
@@ -1506,8 +1569,13 @@ export default function PosPage() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          {/* Menu / grid area */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Menu / grid area — below `lg` this and the cart aside are two
+              full-height views toggled by mobileCartOpen (see the floating
+              cart bar below and the aside's "Back to menu" button) rather
+              than a permanent 45/55 split that leaves almost no room to
+              browse items on a phone. At `lg`+ both are always visible,
+              exactly as before. */}
+          <div className={`${mobileCartOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-1 flex-col`}>
             <div className="border-b border-[var(--pos-line)] p-3">
               <div className="mb-2 flex gap-2">
                 <div className="relative flex-1">
@@ -1559,11 +1627,34 @@ export default function PosPage() {
                 </div>
               )}
             </div>
+            {/* Floating cart bar — phones only; tap to switch to the full
+                cart view (the aside below). Desktop already shows the cart
+                permanently, so this never renders at `lg`+. */}
+            {cart.length > 0 && (
+              <button
+                onClick={() => setMobileCartOpen(true)}
+                className="flex min-h-[52px] shrink-0 touch-manipulation items-center justify-between gap-2 border-t border-[var(--pos-line)] bg-[#2ECC71] px-4 text-black transition-transform active:scale-[0.98] lg:hidden"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold">
+                  <CartIcon className="h-5 w-5" /> {totals.count} item{totals.count === 1 ? '' : 's'}
+                </span>
+                <span className="flex items-center gap-1.5 text-sm font-bold">
+                  {formatMoney(totals.total)} <ChevronUpIcon className="h-4 w-4" />
+                </span>
+              </button>
+            )}
           </div>
 
-          {/* Cart summary */}
-          <aside className="flex max-h-[55%] w-full shrink-0 flex-col border-t border-[var(--pos-line)] bg-[var(--pos-card)] lg:max-h-none lg:w-[400px] lg:border-l lg:border-t-0">
+          {/* Cart summary — full-screen view on phones (toggled via
+              mobileCartOpen), always-visible side panel at `lg`+. */}
+          <aside className={`${mobileCartOpen ? 'flex' : 'hidden'} max-h-full w-full shrink-0 flex-col border-t border-[var(--pos-line)] bg-[var(--pos-card)] lg:flex lg:max-h-none lg:w-[400px] lg:border-l lg:border-t-0`}>
             <div className="border-b border-[var(--pos-line)] px-4 py-3">
+              <button
+                onClick={() => setMobileCartOpen(false)}
+                className="mb-2 flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[var(--pos-surface)] px-2.5 text-xs font-semibold text-[var(--pos-text-70)] transition-transform active:scale-95 lg:hidden"
+              >
+                ‹ Back to menu
+              </button>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Active Cart {order && `· #${order.number}`}</div>

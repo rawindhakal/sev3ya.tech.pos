@@ -100,12 +100,12 @@ export default function PaymentPanel({
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
               {PAYMENT_METHODS.map((m) => (
                 <button
                   key={m.value}
                   onClick={() => update(i, { method: m.value })}
-                  className={`rounded-md border px-1.5 py-2 text-[11px] font-semibold ${
+                  className={`min-h-[36px] touch-manipulation rounded-md border px-1.5 py-2 text-[11px] font-semibold ${
                     line.method === m.value
                       ? 'border-brand-500 bg-brand-50 text-brand-700'
                       : 'border-slate-200 text-slate-500'
