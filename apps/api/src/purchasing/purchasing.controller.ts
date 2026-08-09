@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
@@ -20,6 +21,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { PurchasingService } from './purchasing.service';
+import { PermissionGuard } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 
 class SupplierDto {
   @IsString() @IsNotEmpty() name: string;
@@ -60,14 +63,17 @@ export class PurchasingController {
     return this.purchasing.suppliers();
   }
   @Post('suppliers')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   createSupplier(@Body() dto: SupplierDto) {
     return this.purchasing.createSupplier(dto);
   }
   @Patch('suppliers/:id')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   updateSupplier(@Param('id') id: string, @Body() dto: SupplierDto) {
     return this.purchasing.updateSupplier(id, dto);
   }
   @Delete('suppliers/:id')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   removeSupplier(@Param('id') id: string) {
     return this.purchasing.removeSupplier(id);
   }
@@ -82,6 +88,7 @@ export class PurchasingController {
     return this.purchasing.supplierPayments(id);
   }
   @Post('suppliers/:id/payments')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   recordPayment(@Param('id') id: string, @Body() dto: SupplierPaymentDto) {
     return this.purchasing.recordPayment(id, dto);
   }
@@ -96,22 +103,27 @@ export class PurchasingController {
     return this.purchasing.order(id);
   }
   @Post('purchase-orders')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   createOrder(@Body() dto: CreatePODto) {
     return this.purchasing.createOrder(dto);
   }
   @Post('purchase-orders/auto-generate')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   autoGenerate() {
     return this.purchasing.autoGenerate();
   }
   @Post('purchase-orders/:id/order')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   markOrdered(@Param('id') id: string) {
     return this.purchasing.markOrdered(id);
   }
   @Post('purchase-orders/:id/receive')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   receive(@Param('id') id: string, @Body() dto: ReceiveDto) {
     return this.purchasing.receive(id, dto.receipts);
   }
   @Post('purchase-orders/:id/cancel')
+  @UseGuards(new PermissionGuard(PERMISSIONS.INVENTORY_MANAGE))
   cancel(@Param('id') id: string) {
     return this.purchasing.cancel(id);
   }

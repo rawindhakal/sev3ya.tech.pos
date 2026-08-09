@@ -2,15 +2,22 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { TableStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { OutletsService } from '../outlets/outlets.service';
 
 @Injectable()
 export class TablesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outlets: OutletsService,
+  ) {}
 
   // Returns tables plus their current open order (if any) so the floor
-  // view can show live occupancy in one call.
-  async findAll() {
+  // view can show live occupancy in one call. outletId (multi-outlet, Phase
+  // 3) scopes the floor plan to one location; omitted = every table
+  // (single-outlet tenants, unchanged).
+  async findAll(outletId?: string) {
     const tables = await this.prisma.restaurantTable.findMany({
+      where: outletId ? { outletId } : undefined,
       orderBy: [{ area: 'asc' }, { name: 'asc' }],
       include: {
         orders: {
@@ -41,8 +48,8 @@ export class TablesService {
   }
 
   // Group tables by area for the floor plan.
-  async findByArea() {
-    const tables = await this.findAll();
+  async findByArea(outletId?: string) {
+    const tables = await this.findAll(outletId);
     const areas: Record<string, typeof tables> = {};
     for (const t of tables) {
       const key = t.area ?? 'Unassigned';
@@ -51,8 +58,10 @@ export class TablesService {
     return Object.entries(areas).map(([area, tables]) => ({ area, tables }));
   }
 
-  create(data: { name: string; seats?: number; area?: string; isVip?: boolean }) {
-    return this.prisma.restaurantTable.create({ data });
+  async create(data: { name: string; seats?: number; area?: string; isVip?: boolean; outletId?: string }) {
+    return this.prisma.restaurantTable.create({
+      data: { ...data, outletId: data.outletId ?? (await this.outlets.defaultOutletId()) },
+    });
   }
 
   // Persist many table positions in one transaction (floor-plan save).

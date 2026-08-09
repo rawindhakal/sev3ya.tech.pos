@@ -33,6 +33,7 @@ export interface BillTemplate {
   footerText: string;       // thank-you line
   fontSize: number;         // base px
   paperWidthMm: 58 | 80;
+  marginMm: number;         // blank space left/right of the printed content, on top of paperWidthMm
   boldTotals: boolean;      // bold + larger totals/header for legibility on thermal paper
   showAddress: boolean;
   showPhone: boolean;
@@ -54,6 +55,7 @@ export interface KotTemplate {
   botTitle: string;
   fontSize: number;
   paperWidthMm: 58 | 80;
+  marginMm: number;         // blank space left/right of the printed content, on top of paperWidthMm
   boldTotals: boolean;
   showOrderType: boolean;
   showTable: boolean;
@@ -69,6 +71,7 @@ export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
   footerText: 'Thank you! Please visit again.',
   fontSize: 14,
   paperWidthMm: 80,
+  marginMm: 3,
   boldTotals: true,
   showAddress: true,
   showPhone: true,
@@ -90,6 +93,7 @@ export const DEFAULT_KOT_TEMPLATE: KotTemplate = {
   botTitle: '*** BAR ORDER — BOT ***',
   fontSize: 15,
   paperWidthMm: 80,
+  marginMm: 3,
   boldTotals: true,
   showOrderType: true,
   showTable: true,
@@ -162,15 +166,16 @@ export const ticketTime = (d: Date) =>
 // DayReport) through the desktop shell — no printer dialog. The components use
 // inline styles, so the captured markup is self-contained. Returns false when
 // not in the desktop shell (caller falls back to window.print()).
-export async function silentPrintArea(opts: { printer?: string; widthMm?: number; fontSize?: number }): Promise<boolean> {
+export async function silentPrintArea(opts: { printer?: string; widthMm?: number; marginMm?: number; fontSize?: number }): Promise<boolean> {
   if (typeof window === 'undefined' || !window.cakezakeDesktop?.printHtml) return false; // not the desktop shell — caller falls back to window.print()
   const el = document.getElementById('print-area');
   if (!el) return false;
   const w = opts.widthMm ?? 80;
+  const m = opts.marginMm ?? 3;
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
     body { font-family: ui-monospace, Menlo, monospace; color: #000; background: #fff;
-           width: ${w - 6}mm; margin: 0 auto; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
+           width: ${Math.max(w - m * 2, 20)}mm; margin: 0 auto; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
     #print-area { display: block !important; }
     table { border-collapse: collapse; }
     th, td { padding: 1px 0; }
@@ -189,8 +194,82 @@ export async function silentPrintArea(opts: { printer?: string; widthMm?: number
   }
 }
 
+// Injects/updates a page-scoped <style> tag declaring the physical paper size
+// and margin for the browser print dialog (window.print() fallback, used
+// outside the desktop shell). Without this the browser prints to whatever
+// page size its dialog defaults to (usually A4/Letter) instead of the
+// receipt's actual roll width, which is what clips/cuts printed bills on a
+// thermal printer even though the on-screen preview looks correct.
+function applyPrintPageStyle(widthMm: number, marginMm: number) {
+  if (typeof document === 'undefined') return;
+  let style = document.getElementById('ticket-print-style') as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'ticket-print-style';
+    document.head.appendChild(style);
+  }
+  // @page margin is deliberately 0 — the "margin" a user configures is
+  // instead the blank space around #print-area's own (narrower) width,
+  // centered via margin:auto. This mirrors silentPrintArea's desktop
+  // approach exactly and avoids subtracting the margin twice (once at the
+  // @page level, once at the content level), which would double the gap.
+  const contentWidth = Math.max(widthMm - marginMm * 2, 20);
+  style.textContent = `@media print {
+    @page { size: ${widthMm}mm auto; margin: 0; }
+    body.print-receipt #print-area { width: ${contentWidth}mm !important; margin: 0 auto !important; padding: 0 !important; }
+  }`;
+}
+
+// Single entry point every "print this ticket" action goes through — tries
+// the desktop shell's silent print first, falls back to the browser print
+// dialog (sized correctly via applyPrintPageStyle, not left to the browser's
+// default page size). Centralizing this means every caller (POS, Day-End
+// Z-report, Sales Report reprint) gets identical sizing/margin behavior
+// instead of each hand-rolling its own silentPrintArea + window.print pair.
+export async function printReceiptNow(opts: { printer?: string; widthMm: number; marginMm: number; fontSize: number }): Promise<void> {
+  if (await silentPrintArea(opts)) return;
+  applyPrintPageStyle(opts.widthMm, opts.marginMm);
+  document.body.classList.add('print-receipt');
+  window.print();
+  document.body.classList.remove('print-receipt');
+}
+
+// ── Shared KOT/BOT ticket fields — single source of truth for the manual
+// print path (Receipt.tsx) and the silent auto-print path (kotTicketHtml
+// below), so the two can never drift into different field sets/order/labels.
+export function kotDocNo(station: 'KITCHEN' | 'BAR', orderNumber: number, unsynced?: boolean): string {
+  const prefix = station === 'BAR' ? 'BOT' : 'KOT';
+  return unsynced ? `${prefix}-PENDING` : `${prefix}-${String(orderNumber).padStart(5, '0')}`;
+}
+export function kotMetaPairs(opts: {
+  template: KotTemplate;
+  station: 'KITCHEN' | 'BAR';
+  orderNumber: number;
+  orderType: string;
+  table?: string | null;
+  guestCount?: number | null;
+  unsynced?: boolean;
+}): [string, string][] {
+  const t = opts.template;
+  const now = new Date();
+  const pairs: [string, string][] = [
+    [`${opts.station === 'BAR' ? 'BOT' : 'KOT'} No`, kotDocNo(opts.station, opts.orderNumber, opts.unsynced)],
+    ['Date', ticketDate(now)],
+  ];
+  if (t.showTime) pairs.push(['Time', ticketTime(now)]);
+  if (t.showOrderType) pairs.push(['Order Type', opts.orderType.replace('_', ' ')]);
+  if (t.showTable && opts.table) pairs.push(['Table No', opts.table]);
+  if (t.showGuests && opts.guestCount) pairs.push(['Guest Count', String(opts.guestCount)]);
+  return pairs;
+}
+
 // Standalone, self-contained ticket HTML for silent printing in the desktop
-// shell (thermal-receipt style, monospace, no external assets).
+// shell (thermal-receipt style, monospace, no external assets) — used by
+// AutoPrintAgent for KOTs fired elsewhere (e.g. a waiter's handheld) and
+// queued server-side. Field set/order/labels come from kotMetaPairs/kotDocNo
+// above — the exact same functions Receipt.tsx uses for a manually-printed
+// KOT/BOT — so an auto-printed ticket and a manually-printed one are always
+// identical, regardless of which screen fired the order.
 export function kotTicketHtml(opts: {
   template: KotTemplate;
   station: 'KITCHEN' | 'BAR';
@@ -203,34 +282,25 @@ export function kotTicketHtml(opts: {
 }): string {
   const t = opts.template;
   const title = opts.station === 'BAR' ? t.botTitle : t.kotTitle;
-  const now = new Date();
-  const kotNo = `K-${String(opts.orderNumber).padStart(5, '0')}`;
   const rows = opts.items
     .map(
       (i) => `
       <tr>
+        <td class="qty">${i.quantity}</td>
         <td class="nm">${esc(i.name)}${
           Array.isArray(i.modifiers) && i.modifiers.length
             ? `<div class="sub">+ ${esc(i.modifiers.map((m) => m.name).join(', '))}</div>`
             : ''
         }${t.showItemNotes && i.notes ? `<div class="sub it">» ${esc(i.notes)}</div>` : ''}</td>
-        <td class="qty">${i.quantity}</td>
       </tr>`,
     )
     .join('');
   // Two-column metadata grid — matches the printed convention:
-  //   KOT No: K-10492           Date: 28-Jul-2026
-  //   Time: 07:15 PM            Order Type: Dine-In
-  //   Table No: T-04            Guest Count: 4
+  //   KOT No: KOT-10492          Date: 28-Jul-2026
+  //   Time: 07:15 PM             Order Type: Dine-In
+  //   Table No: T-04             Guest Count: 4
   //   Order Taken By: Captain Ramesh
-  const meta: [string, string][] = [
-    [`${opts.station === 'BAR' ? 'BOT' : 'KOT'} No`, kotNo],
-    ['Date', ticketDate(now)],
-  ];
-  if (t.showTime) meta.push(['Time', ticketTime(now)]);
-  if (t.showOrderType) meta.push(['Order Type', opts.orderType.replace('_', ' ')]);
-  if (t.showTable && opts.table) meta.push(['Table No', opts.table]);
-  if (t.showGuests && opts.guestCount) meta.push(['Guest Count', String(opts.guestCount)]);
+  const meta = kotMetaPairs(opts);
   const metaRows: string[] = [];
   for (let i = 0; i < meta.length; i += 2) {
     const [l1, v1] = meta[i];
@@ -240,11 +310,13 @@ export function kotTicketHtml(opts: {
     );
   }
   const orderTakenBy = t.showWaiter && opts.waiter ? `<div class="row"><span>Order Taken By: <b>${esc(opts.waiter)}</b></span></div>` : '';
+  const w = Math.max(t.paperWidthMm - t.marginMm * 2, 20);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
     body { font-family: ui-monospace, Menlo, monospace; font-size: ${t.fontSize}px; font-weight: ${t.boldTotals ? 600 : 400}; color: #000;
-           width: ${t.paperWidthMm - 6}mm; margin: 0 auto; padding: 4px 2px; }
+           width: ${w}mm; margin: 0 auto; padding: 4px 2px; }
     .ttl { text-align: center; font-weight: 800; font-size: ${t.fontSize + 6}px; margin-bottom: 4px; }
+    .ord { font-weight: 700; }
     .meta { border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 4px 0; }
     .row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
     table { width: 100%; border-collapse: collapse; margin-top: 4px; }
@@ -256,11 +328,12 @@ export function kotTicketHtml(opts: {
     .foot { text-align: center; margin-top: 8px; font-size: ${Math.max(t.fontSize - 2, 10)}px; font-weight: 700; }
   </style></head><body>
     <div class="ttl">${esc(title)}</div>
+    <div class="ord">Order #${opts.orderNumber}</div>
     <div class="meta">
       ${metaRows.join('')}
       ${orderTakenBy}
     </div>
-    <table><thead><tr><th>Item</th><th class="qty">Qty</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead><tr><th class="qty">Qty</th><th>Item</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="foot">— fire to station —</div>
   </body></html>`;
 }

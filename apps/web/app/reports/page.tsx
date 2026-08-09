@@ -5,6 +5,7 @@ import { api, formatMoney } from '@/lib/api';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { notify } from '@/lib/dialog';
+import type { Outlet } from '@/lib/types';
 
 interface Report {
   range: { from: string; to: string };
@@ -51,15 +52,19 @@ export default function ReportsPage() {
   const [data, setData] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [audit, setAudit] = useState<{ employeeName: string; action: string; detail?: string | null; createdAt: string }[] | null>(null);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [outletId, setOutletId] = useState('');
+
+  useEffect(() => { api.get<Outlet[]>('/outlets').then(setOutlets).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     try {
-      setData(await api.get<Report>(`/reports?from=${from}&to=${to}`));
+      setData(await api.get<Report>(`/reports?from=${from}&to=${to}${outletId ? `&outletId=${outletId}` : ''}`));
       setError(null);
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [from, to]);
+  }, [from, to, outletId]);
   useEffect(() => {
     load();
   }, [load]);
@@ -101,6 +106,12 @@ export default function ReportsPage() {
           <input type="date" className="input w-auto" value={from} onChange={(e) => setFrom(e.target.value)} />
           <span className="text-slate-400">→</span>
           <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} />
+          {outlets.length > 1 && (
+            <select className="input w-auto" value={outletId} onChange={(e) => setOutletId(e.target.value)} aria-label="Outlet">
+              <option value="">All outlets</option>
+              {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          )}
           <button
             className="btn-ghost"
             onClick={() => {

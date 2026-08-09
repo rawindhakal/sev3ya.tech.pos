@@ -96,20 +96,50 @@ export interface Waiter {
   isActive: boolean;
 }
 
-export type StaffRole = 'ADMIN' | 'MANAGER' | 'CASHIER' | 'BARISTA' | 'WAITER';
+export type RolePortal = 'BACK_OFFICE' | 'WAITER_ONLY';
+
+export interface Role {
+  id: string;
+  name: string;
+  description?: string | null;
+  portal: RolePortal;
+  isProtected: boolean;
+  permissions: string[]; // flat granted permission keys
+  employeeCount?: number;
+}
+
+export interface Terminal {
+  id: string;
+  name: string;
+  isActive: boolean;
+  outletId: string;
+}
+
+export interface Outlet {
+  id: string;
+  name: string;
+  address?: string | null;
+  phone?: string | null;
+  taxId?: string | null;
+  receiptHeader?: string | null;
+  receiptFooter?: string | null;
+  isDefault: boolean;
+  isActive: boolean;
+  terminals?: Terminal[];
+  _count?: { orders: number; tables: number };
+}
 
 export interface Employee {
   id: string;
   name: string;
-  role: StaffRole;
+  roleId: string;
+  role: string;          // display name of the assigned Role (was a fixed StaffRole union)
+  portal: RolePortal;
+  permissions: string[]; // replaces the old 5 boolean flags
   username?: string | null;
   isActive: boolean;
-  canVoid: boolean;
-  canDiscount: boolean;
-  canManageInventory: boolean;
-  canViewReports: boolean;
-  canManageStaff: boolean;
   clockedIn?: boolean;
+  outlets?: { id: string; name: string; isDefault?: boolean }[]; // multi-outlet (Phase 3), resolved at login
 }
 
 export interface RestaurantTable {
@@ -392,6 +422,59 @@ export interface DashboardData {
     waiter?: string | null;
     createdAt: string;
   }[];
+}
+
+export type JournalStatus = 'POSTED' | 'PENDING_APPROVAL' | 'REJECTED';
+
+export interface JournalApprovalStep {
+  id: string;
+  ruleId: string;
+  stepOrder: number;
+  name: string;
+  approvalsRequired: number;
+}
+
+export interface JournalEntryApproval {
+  id: string;
+  entryId: string;
+  stepOrder: number;
+  approvedBy: string;
+  note?: string | null;
+  createdAt: string;
+}
+
+export interface JournalWorkflowRule {
+  id: string;
+  code: string;
+  name: string;
+  journalEvent: string;
+  minAmountCents?: number | null;
+  maxAmountCents?: number | null;
+  priority: number;
+  postAutomatically: boolean;
+  firstReminderHours?: number | null;
+  repeatReminderHours?: number | null;
+  isActive: boolean;
+  steps: JournalApprovalStep[];
+  _count?: { entries: number };
+}
+
+export interface JournalEntry {
+  id: string;
+  number: number;
+  date: string;
+  dateBs?: string;
+  type: string;
+  narration?: string | null;
+  status: JournalStatus;
+  source: string;
+  sourceId?: string | null;
+  workflowRuleId?: string | null;
+  currentStep?: number | null;
+  amountCents: number;
+  lines: { accountId: string; drCents: number; crCents: number; account: { code: string; name: string } }[];
+  approvals?: JournalEntryApproval[];
+  workflowRule?: JournalWorkflowRule | null;
 }
 
 export interface DiscountPreset {

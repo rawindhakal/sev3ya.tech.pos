@@ -7,7 +7,8 @@ import {
   Min,
 } from 'class-validator';
 import { CashDrawerService } from './cash-drawer.service';
-import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
+import { PermissionGuard, CurrentEmployee, CurrentTerminal } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
 
 class OpenDto {
@@ -34,8 +35,8 @@ export class CashDrawerController {
   constructor(private readonly drawer: CashDrawerService) {}
 
   @Get('current')
-  current(@Query('terminalId') terminalId?: string) {
-    return this.drawer.current(terminalId);
+  current(@Query('terminalId') terminalId?: string, @CurrentTerminal() headerTerminalId?: string) {
+    return this.drawer.current(terminalId ?? headerTerminalId);
   }
 
   @Get('sessions')
@@ -45,8 +46,8 @@ export class CashDrawerController {
 
   // Z-report for the current (or a given) session's business day.
   @Get('report')
-  report(@Query('sessionId') sessionId?: string, @Query('terminalId') terminalId?: string) {
-    return this.drawer.report(sessionId, terminalId);
+  report(@Query('sessionId') sessionId?: string, @Query('terminalId') terminalId?: string, @CurrentTerminal() headerTerminalId?: string) {
+    return this.drawer.report(sessionId, terminalId ?? headerTerminalId);
   }
 
   @Get('sessions/:id')
@@ -55,23 +56,23 @@ export class CashDrawerController {
   }
 
   @Post('open')
-  open(@Body() dto: OpenDto) {
-    return this.drawer.open(dto);
+  open(@Body() dto: OpenDto, @CurrentTerminal() headerTerminalId?: string) {
+    return this.drawer.open({ ...dto, terminalId: dto.terminalId ?? headerTerminalId });
   }
 
   @Post('movement')
-  movement(@Body() dto: MovementDto) {
-    return this.drawer.addMovement(dto);
+  movement(@Body() dto: MovementDto, @CurrentTerminal() headerTerminalId?: string) {
+    return this.drawer.addMovement({ ...dto, terminalId: dto.terminalId ?? headerTerminalId });
   }
 
   @Post('close')
-  close(@Body() dto: CloseDto) {
-    return this.drawer.close(dto);
+  close(@Body() dto: CloseDto, @CurrentTerminal() headerTerminalId?: string) {
+    return this.drawer.close({ ...dto, terminalId: dto.terminalId ?? headerTerminalId });
   }
 
   // Admin can correct the opening balance of the open session at any time.
   @Patch('opening-float')
-  @UseGuards(new RoleGuard(['ADMIN']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.CASH_DRAWER_ADJUST_FLOAT))
   adjustOpeningFloat(
     @Body() dto: { openingFloatCents: number },
     @CurrentEmployee() emp: TokenPayload,

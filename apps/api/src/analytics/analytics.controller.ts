@@ -8,7 +8,7 @@ export class AnalyticsController {
   // from/to (YYYY-MM-DD) select the reporting window shown on the dashboard's
   // quick date filter — defaults to today when omitted, unchanged from before.
   @Get('dashboard')
-  dashboard(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.analytics.dashboard(from, to);
+  dashboard(@Query('from') from?: string, @Query('to') to?: string, @Query('outletId') outletId?: string) {
+    return this.analytics.dashboard(from, to, outletId);
   }
 }

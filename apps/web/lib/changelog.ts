@@ -1,7 +1,28 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '1.9.0';
+export const APP_VERSION = '2.1.0';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.1.0', date: '2026-08-10',
+    changes: [
+      'KOT/BOT printing is now driven by a single shared format — the manual "Print KOT" button and the auto-print daemon that silently prints tickets fired from the Waiter Panel now always produce byte-identical tickets (same field order, same ticket-number format) instead of two implementations that could drift apart',
+      'Fixed: printing settings (fonts, toggles, titles) could go stale for hours on a till left open across a shift — the POS, Waiter Panel and auto-print daemon now re-check saved templates every minute instead of only at launch',
+      'Fixed: bills/KOTs that looked correct on screen could get clipped when printed from a browser (not the desktop app) — the print page size now matches the configured paper width instead of the browser\'s default page size',
+      'New: adjustable print Margin (0–10mm) for both the Bill and KOT/BOT templates under Settings → Printing, with a live preview',
+    ],
+  },
+  {
+    version: '2.0.0', date: '2026-08-09',
+    changes: [
+      'Custom Roles & Permissions: replaced the fixed Admin/Manager/Cashier/Barista/Waiter roles with fully custom, admin-editable roles — create any role, grant exactly the permissions it needs, from a live catalog',
+      'New Roles & Permissions page (Staff) — one protected "Owner" role always has full access as a break-glass account; every other role is yours to define',
+      'Real general-ledger accounting: sales, purchase receipts, supplier payments, customer credit settlements and expenses now all post real, balanced double-entry journal entries automatically — the ledger, trial balance and chart of accounts are no longer just derived reports, they\'re backed by real postings',
+      'New configurable Approval Workflows for accounting — require sign-off above a chosen amount for any transaction type before it posts to the books, with a Pending Approvals queue and full approve/reject audit trail; leave unconfigured and everything posts instantly as before',
+      'Multi-Outlet support: a restaurant can now run more than one physical location under a single login — one shared staff list, customer base and set of books, with per-outlet reporting filters on the dashboard, Reports, Sales Report and Accounting',
+      'Multi-Terminal support: named tills per outlet, now genuinely wired into sign-in, order attribution, the Kitchen Display (a kitchen only ever sees its own outlet\'s tickets) and cash-drawer sessions',
+      'New Outlets & Terminals admin page — add locations, manage their tills, and optionally restrict which outlets a given employee can sign in to',
+    ],
+  },
   {
     version: '1.9.0', date: '2026-07-28',
     changes: [

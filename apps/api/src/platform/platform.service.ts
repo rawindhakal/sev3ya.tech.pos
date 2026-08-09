@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { clientForDb, dropClient } from '../common/tenant-context';
 import { hashPassword } from '../common/password';
 import { invalidateTenantCache } from './tenant.middleware';
+import { seedSystemRolesAndBackfill } from '../roles/system-roles.seed';
 
 const execFileP = promisify(execFile);
 
@@ -88,15 +89,22 @@ export class PlatformService {
       throw new BadRequestException(`Migration failed: ${(err as Error).message.slice(0, 200)}`);
     }
 
-    // 3) Seed the tenant admin + settings inside the new database.
+    // 3) Seed the tenant's roles (just the protected "Owner" role — no legacy
+    //    employees to backfill on a brand-new tenant) + the admin employee.
     const tclient = clientForDb(dbName);
+    await seedSystemRolesAndBackfill(tclient);
+    // Multi-outlet (Phase 3): every tenant needs a default outlet to exist
+    // before its first order/table can be created (outletId is required on
+    // both) — mirrors what migrate-and-backfill-outlets.js seeds for an
+    // already-provisioned tenant.
+    await tclient.outlet.create({ data: { name: dto.name.trim(), isDefault: true } });
+    const owner = await tclient.role.findFirstOrThrow({ where: { isProtected: true } });
     await tclient.employee.create({
       data: {
         name: dto.ownerName?.trim() || 'Admin',
-        role: 'ADMIN',
+        roleId: owner.id,
         username: dto.adminUsername.trim(),
         passwordHash: hashPassword(dto.adminPassword),
-        canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true, canManageStaff: true,
       },
     });
     await tclient.cafeSetting.upsert({

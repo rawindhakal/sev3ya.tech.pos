@@ -22,6 +22,7 @@ import {
 import { Type } from 'class-transformer';
 import { TableStatus } from '@prisma/client';
 import { TablesService } from './tables.service';
+import { CurrentOutlet } from '../common/auth.guard';
 
 class CreateTableDto {
   @IsString() @IsNotEmpty() name: string;
@@ -57,13 +58,13 @@ export class TablesController {
   constructor(private readonly tables: TablesService) {}
 
   @Get()
-  findAll(@Query('groupBy') groupBy?: string) {
-    return groupBy === 'area' ? this.tables.findByArea() : this.tables.findAll();
+  findAll(@Query('groupBy') groupBy?: string, @Query('outletId') outletId?: string) {
+    return groupBy === 'area' ? this.tables.findByArea(outletId) : this.tables.findAll(outletId);
   }
 
   @Post()
-  create(@Body() dto: CreateTableDto) {
-    return this.tables.create(dto);
+  create(@Body() dto: CreateTableDto, @CurrentOutlet() outletId?: string) {
+    return this.tables.create({ ...dto, outletId });
   }
 
   // Persist floor-plan positions for many tables at once (matrix #26).

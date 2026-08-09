@@ -17,9 +17,16 @@ export class ReportsService {
     return { start, end };
   }
 
-  async report(from?: string, to?: string) {
+  // outletId (multi-outlet, Phase 3) scopes the whole Z-report to one
+  // location; omitted = every outlet combined (single-outlet tenants,
+  // unchanged). Ingredient/StockMovement-derived figures (waste, stock-take
+  // variance) stay unscoped — inventory is warehouse-scoped, not
+  // outlet-scoped, see the Phase 3 plan's non-goals.
+  async report(from?: string, to?: string, outletId?: string) {
     const { start, end } = this.range(from, to);
-    const paidWhere = { status: 'PAID' as const, paidAt: { gte: start, lte: end } };
+    const paidWhere = { status: 'PAID' as const, paidAt: { gte: start, lte: end }, ...(outletId ? { outletId } : {}) };
+    const outletSql = outletId ? Prisma.sql`AND o."outletId" = ${outletId}` : Prisma.empty;
+    const outletSqlUnqualified = outletId ? Prisma.sql`AND "outletId" = ${outletId}` : Prisma.empty;
 
     const [
       summary,
@@ -47,19 +54,19 @@ export class ReportsService {
         JOIN orders o ON o.id = oi."orderId"
         JOIN menu_items mi ON mi.id = oi."menuItemId"
         JOIN categories c ON c.id = mi."categoryId"
-        WHERE o.status = 'PAID' AND o."paidAt" BETWEEN ${start} AND ${end}
+        WHERE o.status = 'PAID' AND o."paidAt" BETWEEN ${start} AND ${end} ${outletSql}
         GROUP BY c.name ORDER BY revenue DESC`),
       // Hourly distribution (#187)
       this.prisma.$queryRaw<{ hour: number; revenue: bigint; orders: bigint }[]>(Prisma.sql`
         SELECT EXTRACT(HOUR FROM "paidAt")::int AS hour, SUM("totalCents") AS revenue, COUNT(*) AS orders
-        FROM orders WHERE status = 'PAID' AND "paidAt" BETWEEN ${start} AND ${end}
+        FROM orders WHERE status = 'PAID' AND "paidAt" BETWEEN ${start} AND ${end} ${outletSqlUnqualified}
         GROUP BY 1 ORDER BY 1`),
       // Payment channels (#192)
       this.prisma.payment.groupBy({
         by: ['method'],
         _sum: { amountCents: true },
         _count: true,
-        where: { createdAt: { gte: start, lte: end } },
+        where: { createdAt: { gte: start, lte: end }, ...(outletId ? { order: { outletId } } : {}) },
       }),
       // Order-type split (#197)
       this.prisma.order.groupBy({
@@ -74,7 +81,7 @@ export class ReportsService {
                SUM(oi.quantity) AS qty, SUM(oi."unitPriceCents" * oi.quantity) AS revenue
         FROM order_items oi
         JOIN orders o ON o.id = oi."orderId"
-        WHERE o.status = 'PAID' AND o."paidAt" BETWEEN ${start} AND ${end} AND oi."menuItemId" IS NOT NULL
+        WHERE o.status = 'PAID' AND o."paidAt" BETWEEN ${start} AND ${end} AND oi."menuItemId" IS NOT NULL ${outletSql}
         GROUP BY oi."menuItemId", oi."nameSnapshot" ORDER BY qty DESC`),
       // Recipe cost per menu item (for margins, #188)
       this.prisma.$queryRaw<{ menuitemid: string; costperitem: number }[]>(Prisma.sql`
@@ -85,7 +92,7 @@ export class ReportsService {
       this.prisma.$queryRaw<{ avg_seconds: number | null }[]>(Prisma.sql`
         SELECT AVG(EXTRACT(EPOCH FROM ("paidAt" - "seatedAt"))) AS avg_seconds
         FROM orders WHERE status = 'PAID' AND type = 'DINE_IN'
-          AND "seatedAt" IS NOT NULL AND "paidAt" BETWEEN ${start} AND ${end}`),
+          AND "seatedAt" IS NOT NULL AND "paidAt" BETWEEN ${start} AND ${end} ${outletSqlUnqualified}`),
       // Waste & spillage cost (#198)
       this.prisma.$queryRaw<{ cost: number | null }[]>(Prisma.sql`
         SELECT SUM(-sm.quantity * ing."costPerUnitCents") AS cost
@@ -98,7 +105,7 @@ export class ReportsService {
         WHERE sm.type = 'STOCK_TAKE' AND sm."createdAt" BETWEEN ${start} AND ${end}`),
       // Void/cancellation audit (#08 report)
       this.prisma.order.findMany({
-        where: { status: 'CANCELLED', updatedAt: { gte: start, lte: end }, voidReason: { not: null } },
+        where: { status: 'CANCELLED', updatedAt: { gte: start, lte: end }, voidReason: { not: null }, ...(outletId ? { outletId } : {}) },
         select: { number: true, voidReason: true, updatedAt: true },
         orderBy: { updatedAt: 'desc' },
         take: 50,
@@ -142,14 +149,16 @@ export class ReportsService {
   // Discounts & Complimentary report (matrix Part 2 #5) — every paid order
   // that had a non-zero discount or was comped, who approved it, and a
   // by-approver rollup so an owner can spot who's discounting too freely.
-  async discounts(from?: string, to?: string) {
+  async discounts(from?: string, to?: string, outletId?: string) {
     const { start, end } = this.range(from, to);
+    const outletWhere = outletId ? { outletId } : {};
     const [orders, salesTotal] = await Promise.all([
       this.prisma.order.findMany({
         where: {
           status: 'PAID',
           paidAt: { gte: start, lte: end },
           discountCents: { gt: 0 },
+          ...outletWhere,
         },
         select: {
           id: true, number: true, paidAt: true, type: true, discountCents: true, discountLabel: true,
@@ -160,7 +169,7 @@ export class ReportsService {
       }),
       this.prisma.order.aggregate({
         _sum: { subtotalCents: true },
-        where: { status: 'PAID', paidAt: { gte: start, lte: end } },
+        where: { status: 'PAID', paidAt: { gte: start, lte: end }, ...outletWhere },
       }),
     ]);
 

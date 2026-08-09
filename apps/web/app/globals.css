@@ -187,8 +187,16 @@ input[type="radio"] {
     position: absolute;
     inset: 0;
     display: block;
-    width: 100%;
-    padding: 8px;
+    /* Fallback sizing only — lib/printing.ts's applyPrintPageStyle() injects
+       a #ticket-print-style tag with the template's actual paper width and
+       margin (as !important) right before every print, together with a
+       matching @page size. Without that correct @page declaration, the
+       browser prints to its default page size (A4/Letter) regardless of the
+       physical thermal roll width, which is what clips/cuts a receipt that
+       looks correct on screen. */
+    width: 80mm;
+    margin: 0 auto;
+    padding: 0;
     font-family: ui-monospace, monospace;
     color: #000;
   }

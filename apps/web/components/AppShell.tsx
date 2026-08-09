@@ -11,25 +11,28 @@ import { api, tenantSlug } from '@/lib/api';
 import DialogHost from '@/lib/dialog';
 import type { Employee } from '@/lib/types';
 
-// Permission required to view each admin route (absent = any signed-in user).
-export const ROUTE_PERM: Record<string, keyof Employee> = {
-  '/reports': 'canViewReports',
-  '/finance': 'canViewReports',
-  '/accounting': 'canViewReports',
-  '/mis': 'canViewReports',
-  '/sales-report': 'canViewReports',
-  '/platform': 'canManageStaff',
-  '/inventory': 'canManageInventory',
-  '/purchasing': 'canManageInventory',
-  '/employees': 'canManageStaff',
-  '/attendance': 'canManageStaff',
-  '/settings': 'canManageStaff',
-  '/menu': 'canManageStaff',
-  '/printing': 'canManageStaff',
-  '/coupons': 'canManageStaff',
-  '/gift-cards': 'canManageStaff',
-  '/feedback': 'canViewReports',
-  '/sync-recovery': 'canManageStaff',
+// Permission key required to view each admin route (absent = any signed-in
+// user). Values are permission keys from apps/api/src/common/permissions.ts.
+export const ROUTE_PERM: Record<string, string> = {
+  '/reports': 'reports.view',
+  '/finance': 'reports.view',
+  '/accounting': 'reports.view',
+  '/mis': 'reports.view',
+  '/sales-report': 'reports.view',
+  '/platform': 'platform.manage',
+  '/inventory': 'inventory.manage',
+  '/purchasing': 'inventory.manage',
+  '/employees': 'staff.manage',
+  '/roles': 'roles.manage',
+  '/outlets': 'outlets.manage',
+  '/attendance': 'attendance.manage',
+  '/settings': 'settings.manage',
+  '/menu': 'settings.manage',
+  '/printing': 'settings.manage',
+  '/coupons': 'promotions.manage',
+  '/gift-cards': 'giftcards.manage',
+  '/feedback': 'reports.view',
+  '/sync-recovery': 'syncFailures.manage',
 };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -65,9 +68,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Manager alert: poll for unacknowledged offline-sync failures — a paid or
   // billed order the server rejected on replay must never go unnoticed.
-  // Skipped entirely for staff without canManageStaff (they can't act on it).
+  // Skipped entirely for staff without syncFailures.manage (they can't act on it).
+  const canManageSync = !!emp?.permissions?.includes('syncFailures.manage');
   useEffect(() => {
-    if (!emp?.canManageStaff) { setSyncFailures(0); return; }
+    if (!canManageSync) { setSyncFailures(0); return; }
     let cancelled = false;
     const poll = () =>
       api.get<{ acknowledgedAt: string | null }[]>('/sync-failures', { silent: true })
@@ -76,7 +80,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     poll();
     const id = window.setInterval(poll, 60_000);
     return () => { cancelled = true; window.clearInterval(id); };
-  }, [emp?.canManageStaff]);
+  }, [canManageSync]);
 
   function logout() {
     localStorage.removeItem('cakezake-emp');
@@ -98,12 +102,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     content = isControlHome && !wantsLogin
       ? <LandingPage onSignIn={() => setWantsLogin(true)} />
       : <Login onLogin={setEmp} onBack={isControlHome ? () => setWantsLogin(false) : undefined} />;
-  } else if (!tenantSlug() && emp.canManageStaff) {
+  } else if (!tenantSlug() && emp.permissions?.includes('platform.manage')) {
     // Control context (no restaurant code) is the platform owner's world —
     // the back-office belongs to tenants. Send platform admins to their console.
     if (typeof window !== 'undefined') window.location.replace('/platform');
     content = null;
-  } else if (emp.role === 'WAITER') {
+  } else if (emp.portal === 'WAITER_ONLY') {
     // Waiters are locked to the Waiter Panel — no back-office at all.
     content = (
       <div className="flex h-screen flex-col items-center justify-center gap-4 p-8 text-center">
@@ -115,7 +119,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   } else {
     const perm = ROUTE_PERM[path];
-    const denied = !!perm && !emp[perm];
+    const denied = !!perm && !emp.permissions?.includes(perm);
     content = (
       <div className="flex h-screen flex-col overflow-hidden md:flex-row">
         {/* Mobile top bar with hamburger */}

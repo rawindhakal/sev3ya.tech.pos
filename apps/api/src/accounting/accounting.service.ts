@@ -25,10 +25,16 @@ export class AccountingService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ── Sales Book ───────────────────────────────────────
-  async salesBook(from?: string, to?: string) {
+  // outletId (multi-outlet, Phase 3) is only wired here — Cash Book/Bank
+  // Book/Purchase Register/Day Book/Balance Sheet also draw on
+  // CashMovement/Expense/CreditLedgerEntry/PurchaseOrder, none of which carry
+  // an outletId in this phase's schema (purchasing/expenses/drawer sessions
+  // aren't outlet-attributed yet), so those stay tenant-wide combined —
+  // flagging honestly rather than half-filtering one book and not the rest.
+  async salesBook(from?: string, to?: string, outletId?: string) {
     const { start, end } = range(from, to);
     const orders = await this.prisma.order.findMany({
-      where: { status: 'PAID', paidAt: { gte: start, lte: end } },
+      where: { status: 'PAID', paidAt: { gte: start, lte: end }, ...(outletId ? { outletId } : {}) },
       orderBy: { paidAt: 'asc' },
       include: { payments: true },
     });

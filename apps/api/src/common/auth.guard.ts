@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { TokenPayload, verifyToken } from './token';
 import { tenantContext } from './tenant-context';
 import { IS_PUBLIC_KEY } from './public.decorator';
+import type { PermissionKey } from './permissions';
 
 // Verifies the bearer token AND that it was minted for the tenant (or lack
 // of one — the platform console) currently being served. Without this check,
@@ -43,32 +44,20 @@ function authenticateSoft(req: any): TokenPayload | null {
   return payload;
 }
 
-// Requires a valid staff token; optionally a specific permission flag.
-// Usage: @UseGuards(new AuthGuard('canVoid'))
+// Requires a valid staff token; optionally a specific permission key granted
+// by the signed-in employee's Role. Replaces the old AuthGuard(flag) and
+// RoleGuard([...]) — both collapsed into one mechanism since role-name lists
+// and boolean flags were really the same "does this employee have X" check.
+// Usage: @UseGuards(new PermissionGuard(PERMISSIONS.ORDERS_VOID))
 @Injectable()
-export class AuthGuard implements CanActivate {
-  constructor(private readonly permission?: keyof TokenPayload) {}
+export class PermissionGuard implements CanActivate {
+  constructor(private readonly permission?: PermissionKey) {}
 
   canActivate(ctx: ExecutionContext): boolean {
     const req = ctx.switchToHttp().getRequest();
     const payload = authenticateStrict(req);
-    if (this.permission && !payload[this.permission])
-      throw new ForbiddenException(`Requires "${String(this.permission)}" permission`);
-    return true;
-  }
-}
-
-// Requires a valid staff token with one of the given roles.
-// Usage: @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
-@Injectable()
-export class RoleGuard implements CanActivate {
-  constructor(private readonly roles: string[]) {}
-
-  canActivate(ctx: ExecutionContext): boolean {
-    const req = ctx.switchToHttp().getRequest();
-    const payload = authenticateStrict(req);
-    if (!this.roles.includes(payload.role))
-      throw new ForbiddenException(`Requires ${this.roles.join(' or ')} role`);
+    if (this.permission && !payload.permissions?.includes(this.permission))
+      throw new ForbiddenException(`Requires "${this.permission}" permission`);
     return true;
   }
 }
@@ -112,4 +101,33 @@ import { createParamDecorator } from '@nestjs/common';
 export const CurrentEmployee = createParamDecorator(
   (_data, ctx: ExecutionContext): TokenPayload | undefined =>
     ctx.switchToHttp().getRequest().employee,
+);
+
+// Reads the `X-Outlet` header (multi-outlet, Phase 3) — mirrors the X-Tenant
+// header pattern used for tenant resolution, but this is a per-request,
+// per-employee concern, not infra-level, so it's a plain param decorator
+// rather than a new AsyncLocalStorage context. Validated against the signed-in
+// employee's `outletIds` (null = unrestricted, every pre-Phase-3 employee).
+// Returns undefined if no header was sent — callers decide their own fallback
+// (e.g. resolve from the order's table, or the tenant's default outlet).
+export const CurrentOutlet = createParamDecorator(
+  (_data, ctx: ExecutionContext): string | undefined => {
+    const req = ctx.switchToHttp().getRequest();
+    const outletId = req.headers['x-outlet'] as string | undefined;
+    if (!outletId) return undefined;
+    const allowed: string[] | null = req.employee?.outletIds ?? null;
+    if (allowed && !allowed.includes(outletId)) {
+      throw new ForbiddenException('You are not assigned to this outlet');
+    }
+    return outletId;
+  },
+);
+
+// Reads the `X-Terminal` header (multi-terminal, Phase 3) — the till a
+// device was set up as, set once by the outlet/terminal picker. No
+// employee-assignment check here (unlike CurrentOutlet) since terminals
+// aren't restricted per employee, only outlets are.
+export const CurrentTerminal = createParamDecorator(
+  (_data, ctx: ExecutionContext): string | undefined =>
+    ctx.switchToHttp().getRequest().headers['x-terminal'] as string | undefined,
 );

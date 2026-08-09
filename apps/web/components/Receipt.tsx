@@ -7,7 +7,7 @@
 import { formatMoney } from '@/lib/api';
 import { formatBs } from '@/lib/bs-date';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
-import { billTemplateOf, kotTemplateOf, ticketDate, ticketTime } from '@/lib/printing';
+import { billTemplateOf, kotTemplateOf, kotMetaPairs, ticketDate, ticketTime } from '@/lib/printing';
 import type { Order, OrderItem, Settings } from '@/lib/types';
 
 export type ReceiptMode = 'BILL' | 'KOT' | 'BOT' | 'CANCEL';
@@ -44,9 +44,7 @@ export default function Receipt({
   // fiscal invoice number (or order number) until it does, so show a
   // provisional placeholder instead of a misleading INV-0 / KOT-00000.
   const unsynced = order.number === 0;
-  const docNo = isBill
-    ? order.fiscalInvoiceNo != null ? `INV-${order.fiscalInvoiceNo}` : unsynced ? 'PROVISIONAL' : `INV-${order.number}`
-    : unsynced ? `${mode === 'BOT' ? 'BOT' : 'KOT'}-PENDING` : `${mode === 'BOT' ? 'BOT' : 'KOT'}-${String(order.number).padStart(5, '0')}`;
+  const docNo = order.fiscalInvoiceNo != null ? `INV-${order.fiscalInvoiceNo}` : unsynced ? 'PROVISIONAL' : `INV-${order.number}`;
 
   // Two-column metadata grid: [label, value] pairs laid out two-per-row,
   // e.g. "Bill No: INV-89201    Date: 28-Jul-2026".
@@ -59,14 +57,18 @@ export default function Receipt({
         ...(bt.showGuests ? [['Guest Count', String(order.guestCount)] as [string, string]] : []),
         ...(bt.showCashier && order.cashierName ? [['Cashier', order.cashierName] as [string, string]] : []),
       ]
-    : [
-        [`${mode === 'BOT' ? 'BOT' : 'KOT'} No`, docNo],
-        ['Date', ticketDate(now)],
-        ...(kt.showTime ? [['Time', ticketTime(now)] as [string, string]] : []),
-        ...(kt.showOrderType ? [['Order Type', order.type.replace('_', ' ')] as [string, string]] : []),
-        ...(kt.showTable && order.table ? [['Table No', order.table.name] as [string, string]] : []),
-        ...(kt.showGuests ? [['Guest Count', String(order.guestCount)] as [string, string]] : []),
-      ];
+    // Shared with kotTicketHtml (lib/printing.ts) — the exact same function
+    // builds the auto-printed KOT/BOT's meta grid, so a manually-printed
+    // ticket and an auto-printed one always show identical fields/order.
+    : kotMetaPairs({
+        template: kt,
+        station: mode === 'BOT' ? 'BAR' : 'KITCHEN',
+        orderNumber: order.number,
+        orderType: order.type,
+        table: order.table?.name,
+        guestCount: order.guestCount,
+        unsynced,
+      });
   const metaRows: [string, string][][] = [];
   for (let i = 0; i < metaPairs.length; i += 2) metaRows.push([metaPairs[i], metaPairs[i + 1]].filter(Boolean) as [string, string][]);
 

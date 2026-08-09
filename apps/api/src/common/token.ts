@@ -23,18 +23,30 @@ const SECRET = resolveSecret();
 export interface TokenPayload {
   sub: string;
   name: string;
+  // Display name of the employee's Role (e.g. "Owner", "Manager", or any
+  // custom role name) — free text now that roles are dynamic; never compare
+  // this by string equality for authorization, check `permissions` instead.
   role: string;
+  roleId: string;
+  // BACK_OFFICE | WAITER_ONLY — replaces the old `role === 'WAITER'` check.
+  portal: string;
+  // Flat list of granted permission keys (see common/permissions.ts). This
+  // is resolved from the employee's Role at login time — like the old
+  // boolean flags, a permission change only takes effect on next login
+  // (token is stateless, no DB hit per request).
+  permissions: string[];
+  // Which outlets (physical locations) this employee may select at sign-in —
+  // null means unrestricted (every existing employee, pre-Phase-3, has no
+  // EmployeeOutlet rows and so is unrestricted by design). Resolved at login
+  // time like `permissions`; an outlet assignment change takes effect next
+  // login, same as a permission change.
+  outletIds: string[] | null;
   // Which tenant this token was minted under (control-DB "platform admin"
   // employees get null). Guards must check this matches the tenant of the
   // request being served — otherwise a token issued for one restaurant (or
   // for no tenant at all, i.e. the platform console) can be replayed against
   // a different one just by changing the X-Tenant header.
   tenantId: string | null;
-  canVoid: boolean;
-  canDiscount: boolean;
-  canManageInventory: boolean;
-  canViewReports: boolean;
-  canManageStaff: boolean;
   exp: number;
 }
 

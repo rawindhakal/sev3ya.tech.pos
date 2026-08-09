@@ -18,6 +18,10 @@ import { GiftCardsService } from '../giftcards/giftcards.service';
 import type { TokenPayload } from '../common/token';
 import { ForbiddenException } from '@nestjs/common';
 import { OrderType } from '@prisma/client';
+import { PERMISSIONS } from '../common/permissions';
+import { PostingService } from '../accounting/posting.service';
+import { ACCOUNT_CODES, BANK_METHODS } from '../accounting/default-accounts';
+import { OutletsService } from '../outlets/outlets.service';
 import {
   CartLineDto,
   CreateOrderDto,
@@ -45,6 +49,8 @@ export class OrdersService {
     private readonly crm: CrmService,
     private readonly promotions: PromotionsService,
     private readonly giftCards: GiftCardsService,
+    private readonly posting: PostingService,
+    private readonly outlets: OutletsService,
   ) {}
 
   // Pick the price for a menu item based on the order type (matrix #15).
@@ -119,16 +125,21 @@ export class OrdersService {
     });
   }
 
-  async create(dto: CreateOrderDto) {
+  // headerOutletId comes from the requesting device's X-Outlet header (see
+  // @CurrentOutlet()) — undefined for self-order/guest requests, which have
+  // no employee session at all.
+  async create(dto: CreateOrderDto, headerOutletId?: string) {
     const resolved = await this.resolveLines(dto.items ?? [], dto.type);
     const rates = await this.settings.getRates();
     const charges = this.chargesForType(dto.type, rates);
     const totals = computeTotals(resolved, { ...rates, ...charges });
     const isDineIn = dto.type === 'DINE_IN' && dto.tableId;
 
-    // Max-occupancy guard (matrix #36).
+    // Max-occupancy guard (matrix #36); also the source of truth for a
+    // dine-in order's outlet (a table can't move between locations).
+    let table: { id: string; name: string; seats: number; outletId: string | null } | null = null;
     if (isDineIn) {
-      const table = await this.prisma.restaurantTable.findUnique({
+      table = await this.prisma.restaurantTable.findUnique({
         where: { id: dto.tableId! },
       });
       if (table && dto.guestCount && dto.guestCount > table.seats)
@@ -136,6 +147,12 @@ export class OrdersService {
           `Table ${table.name} seats ${table.seats}; cannot seat ${dto.guestCount} guests`,
         );
     }
+
+    // Outlet resolution order (multi-outlet, Phase 3): explicit X-Outlet
+    // header, else the dine-in table's own outlet, else the tenant's default
+    // outlet — covers every existing single-outlet tenant with zero client
+    // changes needed.
+    const outletId = headerOutletId ?? table?.outletId ?? (await this.outlets.defaultOutletId());
 
     // Re-use an existing EMPTY open order on this table (e.g. someone opened
     // the table and backed out) so tables never look occupied with no items.
@@ -164,6 +181,7 @@ export class OrdersService {
             ...(dto.id ? { id: dto.id } : {}),
             type: dto.type,
             tableId: dto.tableId ?? null,
+            outletId,
             waiterId: dto.waiterId ?? null,
             guestCount: dto.guestCount ?? 1,
             customerName: dto.customerName ?? null,
@@ -349,8 +367,8 @@ export class OrdersService {
   // permission-gated endpoint (unlike the general discount field, which the
   // POS only soft-gates client-side) since this zeroes out the entire order.
   async markComplimentary(id: string, reason: string | undefined, actor?: TokenPayload) {
-    if (!actor?.canDiscount)
-      throw new ForbiddenException('Marking a bill complimentary requires the "canDiscount" permission');
+    if (!actor?.permissions?.includes(PERMISSIONS.ORDERS_DISCOUNT))
+      throw new ForbiddenException('Marking a bill complimentary requires the "orders.discount" permission');
     const order = await this.findOne(id);
     if (order.status === 'PAID') throw new BadRequestException('Order is already paid');
     if (order.items.filter((i) => !i.cancelledAt).length === 0)
@@ -398,8 +416,8 @@ export class OrdersService {
     // A fired item has already reached the kitchen/bar — cancelling it needs
     // the same void permission as cancelling a whole order (matches cancel()
     // below). Unfired lines are just a draft edit, no approval needed.
-    if (wasFired && !actor?.canVoid)
-      throw new ForbiddenException('Cancelling an item already sent to the kitchen requires the "canVoid" permission');
+    if (wasFired && !actor?.permissions?.includes(PERMISSIONS.ORDERS_VOID))
+      throw new ForbiddenException('Cancelling an item already sent to the kitchen requires the "orders.void" permission');
     const updated = await this.prisma.$transaction(async (tx) => {
       if (partial) {
         await tx.orderItem.update({ where: { id: itemId }, data: { quantity: item.quantity - qty } });
@@ -589,6 +607,41 @@ export class OrdersService {
       const fyLabel = (() => { const b = adToBs(paidAt); const y = b.month >= 4 ? b.year : b.year - 1; return `${y}/${(y + 1) % 100}`; })();
       const seq = await tx.order.count({ where: { fiscalYear: fyLabel } });
       await tx.order.update({ where: { id }, data: { fiscalYear: fyLabel, fiscalInvoiceNo: seq + 1 } });
+
+      // Post to the general ledger — skipped for a Rs 0 (fully complimentary)
+      // order, since nothing actually changed hands. One Dr line per tender
+      // (cash/bank/debtors/gift-card-outstanding), Cr Sales + Cr VAT Payable.
+      if (order.totalCents > 0) {
+        const codes = [
+          ACCOUNT_CODES.CASH, ACCOUNT_CODES.BANK, ACCOUNT_CODES.DEBTORS,
+          ACCOUNT_CODES.GIFTCARDS_OUTSTANDING, ACCOUNT_CODES.SALES, ACCOUNT_CODES.VAT_PAYABLE,
+        ];
+        const acctId = await this.posting.accountIdsByCode(tx, codes);
+        const drAccountFor = (method: string) =>
+          method === 'CREDIT' ? acctId[ACCOUNT_CODES.DEBTORS]
+          : method === 'GIFTCARD' ? acctId[ACCOUNT_CODES.GIFTCARDS_OUTSTANDING]
+          : (BANK_METHODS as readonly string[]).includes(method) ? acctId[ACCOUNT_CODES.BANK]
+          : acctId[ACCOUNT_CODES.CASH]; // CASH, OFFLINE
+        const drByAccount = new Map<string, number>();
+        for (const p of dto.payments) {
+          const accId = drAccountFor(p.method);
+          drByAccount.set(accId, (drByAccount.get(accId) ?? 0) + p.amountCents);
+        }
+        const glLines: { accountId: string; drCents?: number; crCents?: number }[] =
+          [...drByAccount.entries()].map(([accountId, drCents]) => ({ accountId, drCents }));
+        glLines.push({ accountId: acctId[ACCOUNT_CODES.SALES], crCents: order.totalCents - order.taxCents });
+        if (order.taxCents > 0) glLines.push({ accountId: acctId[ACCOUNT_CODES.VAT_PAYABLE], crCents: order.taxCents });
+        await this.posting.postOrQueue(tx, {
+          event: 'ORDER_SALE',
+          amountCents: order.totalCents,
+          narration: `Sale — order #${order.number}${order.customerName ? ` (${order.customerName})` : ''}`,
+          lines: glLines,
+          sourceId: order.id,
+          actorName: actor?.name,
+          outletId: order.outletId ?? undefined,
+        });
+      }
+
       // Return the fresh row so redeemedPoints / customerId are reflected.
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
@@ -695,8 +748,8 @@ export class OrdersService {
     if (order.items.length > 0) {
       if (!dto.reason?.trim())
         throw new BadRequestException('A reason is required to void an order with items');
-      if (!actor?.canVoid)
-        throw new ForbiddenException('Voiding an order requires the "canVoid" permission');
+      if (!actor?.permissions?.includes(PERMISSIONS.ORDERS_VOID))
+        throw new ForbiddenException('Voiding an order requires the "orders.void" permission');
     }
     const updated = await this.prisma.$transaction(async (tx) => {
       const u = await tx.order.update({
@@ -858,7 +911,7 @@ export class OrdersService {
       });
       if (!target) {
         target = await tx.order.create({
-          data: { type: 'DINE_IN', tableId: dto.targetTableId, seatedAt: new Date(), waiterId: source.waiterId },
+          data: { type: 'DINE_IN', tableId: dto.targetTableId, outletId: targetTable.outletId, seatedAt: new Date(), waiterId: source.waiterId },
         });
         await tx.restaurantTable.update({ where: { id: dto.targetTableId }, data: { status: 'OCCUPIED' } });
       }

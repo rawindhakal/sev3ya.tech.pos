@@ -25,6 +25,7 @@ const ICON_PATHS: Record<string, React.ReactNode> = {
   Customers: (<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>),
   Inventory: (<><path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="M3.3 7 12 12l8.7-5" /><path d="M12 22V12" /></>),
   Finance: (<><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></>),
+  Accounting: (<><path d="M4 3h16v18l-3-2-3 2-3-2-3 2-3-2-1 2Z" /><path d="M8 7h8" /><path d="M8 11h8" /><path d="M8 15h5" /></>),
   Platform: (<><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></>),
   Staff: (<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>),
   Settings: (<><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></>),
@@ -78,15 +79,22 @@ const NAV: NavNode[] = [
       { href: '/sales-report', label: 'Sales Reports' },
       { href: '/mis', label: 'MIS Reports' },
       { href: '/finance', label: 'P&L & Expenses' },
-      { href: '/accounting', label: 'Accounting' },
-      { href: '/cash-drawer', label: 'Cash Drawer' },
       { href: '/sync-recovery', label: 'Sync Recovery' },
+    ],
+  },
+  {
+    label: 'Accounting', icon: '🧮', feature: 'finance',
+    children: [
+      { href: '/accounting', label: 'Chart of Accounts & Journal' },
+      { href: '/cash-drawer', label: 'Cash Drawer' },
     ],
   },
   {
     label: 'Staff', icon: '🧑‍🤝‍🧑',
     children: [
       { href: '/employees', label: 'Employees' },
+      { href: '/roles', label: 'Roles & Permissions' },
+      { href: '/outlets', label: 'Outlets & Terminals' },
       { href: '/attendance', label: 'Attendance & Payroll' },
     ],
   },
@@ -114,8 +122,9 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
 
   // Unacknowledged offline-sync failures, surfaced as a badge on Finance
   // (where Sync Recovery lives) — skipped for staff who can't act on it.
+  const canManageSync = !!emp?.permissions?.includes('syncFailures.manage');
   useEffect(() => {
-    if (!emp?.canManageStaff) { setSyncFailureCount(0); return; }
+    if (!canManageSync) { setSyncFailureCount(0); return; }
     let cancelled = false;
     const poll = () =>
       api.get<{ acknowledgedAt: string | null }[]>('/sync-failures', { silent: true })
@@ -124,7 +133,7 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
     poll();
     const id = window.setInterval(poll, 60_000);
     return () => { cancelled = true; window.clearInterval(id); };
-  }, [emp?.canManageStaff]);
+  }, [canManageSync]);
 
   // Restore expanded groups; always expand the group holding the current page.
   useEffect(() => {
@@ -148,7 +157,7 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
     if (leafOrNode.feature && features && !features[leafOrNode.feature]) return false;
     if (leafOrNode.href) {
       const perm = ROUTE_PERM[leafOrNode.href];
-      if (perm && emp && !emp[perm]) return false;
+      if (perm && emp && !emp.permissions?.includes(perm)) return false;
     }
     return true;
   };

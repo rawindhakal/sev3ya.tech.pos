@@ -1,6 +1,7 @@
 import { Controller, Get, Header, Post, Query, UseGuards } from '@nestjs/common';
 import { IrdService } from './ird.service';
-import { RoleGuard } from '../common/auth.guard';
+import { PermissionGuard } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 
 @Controller('ird')
 export class IrdController {
@@ -14,7 +15,7 @@ export class IrdController {
 
   // Push unsynced invoices to the IRD CBMS server. Manager/admin only.
   @Post('sync')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.IRD_SYNC))
   sync() {
     return this.ird.sync();
   }

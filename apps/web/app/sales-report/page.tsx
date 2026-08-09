@@ -6,10 +6,10 @@ import { downloadCsv, toCsv } from '@/lib/csv';
 import { exportPdf } from '@/lib/pdf';
 import { adToBs, formatBsLong, fyRangeAd } from '@/lib/bs-date';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
-import type { Category, MenuItem, Order, Settings } from '@/lib/types';
+import type { Category, MenuItem, Order, Outlet, Settings } from '@/lib/types';
 import Modal from '@/components/Modal';
 import Receipt from '@/components/Receipt';
-import { billTemplateOf, getPrinterPrefs, silentPrintArea } from '@/lib/printing';
+import { billTemplateOf, getPrinterPrefs, printReceiptNow } from '@/lib/printing';
 
 // Filterable Sales Report: preset views (Detailed · By Item · By Category ·
 // By Payment · By Day · KOT · BOT · Cancelled Items), filters for date range /
@@ -57,6 +57,8 @@ export default function SalesReportPage() {
   const [itemId, setItemId] = useState('');
   const [method, setMethod] = useState('');
   const [type, setType] = useState('');
+  const [outletId, setOutletId] = useState('');
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [report, setReport] = useState<Report | null>(null);
@@ -73,13 +75,14 @@ export default function SalesReportPage() {
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
     api.get<Settings>('/settings').then(setSettings).catch(() => {});
+    api.get<Outlet[]>('/outlets').then(setOutlets).catch(() => {});
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
       if (preset.id === 'discounts') {
-        const qs = new URLSearchParams({ from, to });
+        const qs = new URLSearchParams({ from, to, ...(outletId ? { outletId } : {}) });
         const d = await api.get<DiscountReport>(`/reports/discounts?${qs}`);
         setDiscountReport(d);
         setReport({
@@ -110,7 +113,7 @@ export default function SalesReportPage() {
           kpis: {},
         });
       } else if (preset.id === 'cancelled') {
-        const qs = new URLSearchParams({ from, to });
+        const qs = new URLSearchParams({ from, to, ...(outletId ? { outletId } : {}) });
         setReport(await api.get<Report>(`/mis/cancelled-items?${qs}`));
       } else {
         const qs = new URLSearchParams({
@@ -118,11 +121,12 @@ export default function SalesReportPage() {
           ...(preset.station ? { station: preset.station } : {}),
           ...(categoryId ? { categoryId } : {}), ...(itemId ? { itemId } : {}),
           ...(method ? { method } : {}), ...(type ? { type } : {}),
+          ...(outletId ? { outletId } : {}),
         });
         setReport(await api.get<Report>(`/mis/sales-detail?${qs}`));
       }
     } catch (e) { setErr((e as Error).message); } finally { setLoading(false); }
-  }, [preset, from, to, categoryId, itemId, method, type]);
+  }, [preset, from, to, categoryId, itemId, method, type, outletId]);
   useEffect(() => { load(); }, [load]);
 
   // Set only once "Reprint bill" is actually clicked — the preview itself
@@ -159,10 +163,7 @@ export default function SalesReportPage() {
     await new Promise((r) => setTimeout(r, 60)); // let the COPY watermark render before it's captured
     const prefs = getPrinterPrefs();
     const tpl = billTemplateOf(settings);
-    if (await silentPrintArea({ printer: prefs.bill, widthMm: tpl.paperWidthMm, fontSize: tpl.fontSize })) return;
-    document.body.classList.add('print-receipt');
-    window.print();
-    document.body.classList.remove('print-receipt');
+    await printReceiptNow({ printer: prefs.bill, widthMm: tpl.paperWidthMm, marginMm: tpl.marginMm, fontSize: tpl.fontSize });
   }
   // Columns change per preset — a stale sort/search would silently no-op.
   useEffect(() => { setSearch(''); setSort(null); }, [preset]);
@@ -277,6 +278,12 @@ export default function SalesReportPage() {
                 {TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
               </select>
             </>
+          )}
+          {outlets.length > 1 && (
+            <select className={sel} value={outletId} onChange={(e) => setOutletId(e.target.value)} aria-label="Outlet filter">
+              <option value="">All outlets</option>
+              {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
           )}
           {activeFilters.length > 0 && (
             <button className="text-xs text-brand-600 underline decoration-dotted"

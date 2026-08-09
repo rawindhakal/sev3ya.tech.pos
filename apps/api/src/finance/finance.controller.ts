@@ -8,7 +8,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { ExpenseCategory } from '@prisma/client';
+import { ExpenseCategory, PaymentMethod } from '@prisma/client';
 import { FinanceService } from './finance.service';
 
 class CreateExpenseDto {
@@ -16,6 +16,8 @@ class CreateExpenseDto {
   @IsInt() @Min(1) amountCents: number;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() incurredAt?: string;
+  // How it was paid — used to post the Cr side (Cash vs Bank & Wallets).
+  @IsOptional() @IsEnum(PaymentMethod) method?: PaymentMethod;
 }
 
 @Controller('finance')

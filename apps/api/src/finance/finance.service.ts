@@ -1,13 +1,29 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ExpenseCategory, Prisma } from '@prisma/client';
+import { ExpenseCategory, PaymentMethod, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { nepalDateKey, nepalStartOfDate, nepalEndOfDate } from '../common/nepal-time';
+import { PostingService } from '../accounting/posting.service';
+import { ACCOUNT_CODES, BANK_METHODS } from '../accounting/default-accounts';
+
+// Which ledger account a given expense category posts its Dr side to.
+const EXPENSE_ACCOUNT_BY_CATEGORY: Record<ExpenseCategory, string> = {
+  RENT: ACCOUNT_CODES.RENT,
+  SALARY: ACCOUNT_CODES.SALARIES,
+  UTILITIES: ACCOUNT_CODES.UTILITIES,
+  MARKETING: ACCOUNT_CODES.MARKETING,
+  MAINTENANCE: ACCOUNT_CODES.MAINTENANCE,
+  SUPPLIES: ACCOUNT_CODES.SUPPLIES,
+  OTHER: ACCOUNT_CODES.MISC_EXPENSES,
+};
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
 @Injectable()
 export class FinanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly posting: PostingService,
+  ) {}
 
   // from/to are YYYY-MM-DD meant in Nepal local time, not the server's own
   // timezone — see common/nepal-time.ts for why that distinction matters.
@@ -25,14 +41,32 @@ export class FinanceService {
       orderBy: { incurredAt: 'desc' },
     });
   }
-  createExpense(dto: { category: ExpenseCategory; amountCents: number; description?: string; incurredAt?: string }) {
-    return this.prisma.expense.create({
-      data: {
-        category: dto.category,
+  createExpense(dto: { category: ExpenseCategory; amountCents: number; description?: string; incurredAt?: string; method?: PaymentMethod }) {
+    const method = dto.method ?? 'CASH';
+    return this.prisma.$transaction(async (tx) => {
+      const expense = await tx.expense.create({
+        data: {
+          category: dto.category,
+          amountCents: dto.amountCents,
+          description: dto.description,
+          method,
+          incurredAt: dto.incurredAt ? new Date(dto.incurredAt) : new Date(),
+        },
+      });
+      const drCode = EXPENSE_ACCOUNT_BY_CATEGORY[dto.category];
+      const acctId = await this.posting.accountIdsByCode(tx, [drCode, ACCOUNT_CODES.CASH, ACCOUNT_CODES.BANK]);
+      const crAccount = (BANK_METHODS as readonly string[]).includes(method) ? acctId[ACCOUNT_CODES.BANK] : acctId[ACCOUNT_CODES.CASH];
+      await this.posting.postOrQueue(tx, {
+        event: 'EXPENSE',
         amountCents: dto.amountCents,
-        description: dto.description,
-        incurredAt: dto.incurredAt ? new Date(dto.incurredAt) : new Date(),
-      },
+        narration: `Expense — ${dto.category}${dto.description ? ` (${dto.description})` : ''}`,
+        lines: [
+          { accountId: acctId[drCode], drCents: dto.amountCents },
+          { accountId: crAccount, crCents: dto.amountCents },
+        ],
+        sourceId: expense.id,
+      });
+      return expense;
     });
   }
   async removeExpense(id: string) {

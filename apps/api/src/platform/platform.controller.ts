@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { PlatformService } from './platform.service';
-import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
+import { PermissionGuard, CurrentEmployee } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
 import { tenantContext } from '../common/tenant-context';
 import { ForbiddenException } from '@nestjs/common';
@@ -15,7 +16,7 @@ function assertControlContext() {
 }
 
 @Controller('platform')
-@UseGuards(new RoleGuard(['ADMIN']))
+@UseGuards(new PermissionGuard(PERMISSIONS.PLATFORM_MANAGE))
 export class PlatformController {
   constructor(private readonly platform: PlatformService) {}
 

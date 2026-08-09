@@ -29,7 +29,16 @@ export default function AutoPrintAgent() {
     let stopped = false;
     let busy = false;
 
-    api.get<Settings>('/settings').then((s) => (settingsRef.current = s)).catch(() => {});
+    // Refetched periodically, not just once at mount — this agent can run
+    // for a whole shift (or longer) inside the desktop shell, so a template
+    // edit saved under Settings → Printing needs to reach it without
+    // requiring an app restart. Every tick would be wasteful; once a minute
+    // is frequent enough for a settings change to take effect promptly.
+    function refreshSettings() {
+      api.get<Settings>('/settings', { silent: true }).then((s) => (settingsRef.current = s)).catch(() => {});
+    }
+    refreshSettings();
+    const settingsIv = window.setInterval(refreshSettings, 60000);
 
     function warnOnce(message: string) {
       const last = lastWarnedRef.current;
@@ -96,6 +105,7 @@ export default function AutoPrintAgent() {
     return () => {
       stopped = true;
       window.clearInterval(iv);
+      window.clearInterval(settingsIv);
     };
   }, []);
 

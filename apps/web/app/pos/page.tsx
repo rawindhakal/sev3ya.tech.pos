@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, formatMoney, dollarsToCents, setCurrencySymbol, tenantSlug, setTenantSlug, QueuedError } from '@/lib/api';
+import { api, formatMoney, dollarsToCents, setCurrencySymbol, tenantSlug, setTenantSlug, QueuedError, getCurrentOutlet, setCurrentOutlet, setCurrentTerminal } from '@/lib/api';
 import type {
   Category,
   DiscountPreset,
@@ -12,6 +12,7 @@ import type {
   Order,
   OrderItem,
   OrderType,
+  Outlet,
   PaymentMethod,
   RestaurantTable,
   Settings,
@@ -30,7 +31,7 @@ import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
 import Spinner from '@/components/Spinner';
 import { SearchIcon, PlusIcon, UtensilsIcon, BagIcon, BikeIcon, BoltIcon, SettingsIcon, XIcon, LockIcon, BellIcon, MoonIcon, MenuIcon, ChevronUpIcon, CartIcon } from '@/components/icons';
 import { formatBsLong } from '@/lib/bs-date';
-import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea, isDesktopShell } from '@/lib/printing';
+import { billTemplateOf, kotTemplateOf, getPrinterPrefs, printReceiptNow, isDesktopShell } from '@/lib/printing';
 import { getStatus, genLocalId } from '@/lib/offline';
 import { playDing } from '@/lib/sound';
 import { notify, promptDialog } from '@/lib/dialog';
@@ -138,6 +139,13 @@ export default function PosPage() {
   const [autoSigningIn, setAutoSigningIn] = useState(false);
   const desktop = isDesktopShell();
 
+  // Multi-outlet (Phase 3): shown once per device only when the signed-in
+  // employee can reach more than one outlet — every existing single-outlet
+  // tenant never sees this, since maybeShowOutletPicker() short-circuits.
+  const [outletPicker, setOutletPicker] = useState<Outlet[] | null>(null);
+  const [pickOutlet, setPickOutlet] = useState('');
+  const [pickTerminal, setPickTerminal] = useState('');
+
 
   // active order context
   const [mode, setMode] = useState<ModeKey | null>(null);
@@ -164,7 +172,7 @@ export default function PosPage() {
   const [mgrAuth, setMgrAuth] = useState<{
     title: string;
     hint?: string;
-    permission?: 'canVoid' | 'canDiscount' | 'canManageStaff';
+    permission: string;
     onApproved: (cred: ManagerCred) => void;
   } | null>(null);
   const [redeemPts, setRedeemPts] = useState(''); // loyalty points to redeem
@@ -228,6 +236,17 @@ export default function PosPage() {
   const [countRs, setCountRs] = useState('');
   const [dayReport, setDayReport] = useState<DayReportData | null>(null);
 
+  // Re-fetched periodically, not just once at mount — a till left open for a
+  // whole shift needs to pick up a bill/KOT template edit saved under
+  // Settings → Printing without requiring a reload (same reasoning as
+  // AutoPrintAgent's own periodic refresh).
+  useEffect(() => {
+    const iv = setInterval(() => {
+      api.get<Settings>('/settings', { silent: true }).then((s) => setSettings(s)).catch(() => {});
+    }, 60000);
+    return () => clearInterval(iv);
+  }, []);
+
   useEffect(() => {
     api.get<Settings>('/settings').then((s) => { setSettings(s); setCurrencySymbol(s.currencySymbol); if (s.defaultGuestCount) setGuestCount(s.defaultGuestCount); }).catch(() => {});
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
@@ -264,12 +283,12 @@ export default function PosPage() {
     try {
       setTenantSlug(restaurantCode);
       const e = await api.post<Employee & { token?: string }>('/employees/login', { username: user.trim(), password: pass });
-      if (desktop && e.role !== 'CASHIER') {
+      if (desktop && !e.permissions?.includes('pos.tillSignIn')) {
         setPassword('');
         if (isAutoLogin) await window.cakezakeDesktop?.clearCreds?.();
         return setPinErr('This till is for cashiers only — managers and admins should sign in from the back office.');
       }
-      if (e.role === 'WAITER') {
+      if (e.portal === 'WAITER_ONLY') {
         setPassword('');
         return setPinErr('Waiters use the Waiter Panel — the POS terminal is for cashiers and managers.');
       }
@@ -283,6 +302,7 @@ export default function PosPage() {
       setUsername('');
       setPassword('');
       setPinErr('');
+      await maybeShowOutletPicker(e);
     } catch {
       // A saved (Remember me) login can go stale after a password change —
       // clear it instead of silently failing on every future app launch.
@@ -292,6 +312,36 @@ export default function PosPage() {
     }
   }
   const login = () => doLogin(restaurant, username, password);
+
+  // Multi-outlet (Phase 3): a device only ever sees this once — after that,
+  // getCurrentOutlet() is already set and (as long as it's still one of this
+  // employee's allowed outlets) every future login on this till skips it.
+  async function maybeShowOutletPicker(e: Employee) {
+    const allowed = e.outlets ?? [];
+    if (allowed.length <= 1) {
+      if (allowed[0]) setCurrentOutlet(allowed[0].id);
+      return;
+    }
+    const existing = getCurrentOutlet();
+    if (existing && allowed.some((o) => o.id === existing)) return;
+    try {
+      const full = await api.get<Outlet[]>('/outlets');
+      const opts = full.filter((o) => allowed.some((a) => a.id === o.id));
+      setPickOutlet(opts.find((o) => o.isDefault)?.id ?? opts[0]?.id ?? '');
+      setPickTerminal('');
+      setOutletPicker(opts);
+    } catch {
+      // No picker if the list can't be fetched — requests simply go out
+      // without an X-Outlet header and the server falls back to the
+      // tenant's default outlet, same as before this feature existed.
+    }
+  }
+  function confirmOutletPicker() {
+    if (!pickOutlet) return;
+    setCurrentOutlet(pickOutlet);
+    setCurrentTerminal(pickTerminal);
+    setOutletPicker(null);
+  }
 
   function lock() {
     setEmp(null);
@@ -338,12 +388,7 @@ export default function PosPage() {
       setDayReport(rep);
       setTimeout(async () => {
         const tpl = billTemplateOf(settings);
-        const ok = await silentPrintArea({ printer: getPrinterPrefs().bill, widthMm: tpl.paperWidthMm, fontSize: tpl.fontSize });
-        if (!ok) {
-          document.body.classList.add('print-receipt');
-          window.print();
-          document.body.classList.remove('print-receipt');
-        }
+        await printReceiptNow({ printer: getPrinterPrefs().bill, widthMm: tpl.paperWidthMm, marginMm: tpl.marginMm, fontSize: tpl.fontSize });
         setTimeout(() => setDayReport(null), 300);
       }, 200);
       setDrawerOpen(false);
@@ -851,12 +896,12 @@ export default function PosPage() {
 
   // Discounts require the discount permission — or a one-off manager approval
   // (username + password; the PIN system is retired).
-  const canDiscountNow = !!emp?.canDiscount || discountApproved;
+  const canDiscountNow = !!emp?.permissions?.includes('orders.discount') || discountApproved;
   function requestDiscountApproval() {
     setMgrAuth({
       title: 'Authorise discount',
       hint: 'A manager or admin must sign in to allow discounts on this order.',
-      permission: 'canDiscount',
+      permission: 'orders.discount',
       onApproved: ({ emp: m }) => {
         setDiscountApproved(true);
         flash(`Discount authorised by ${m.name}`);
@@ -921,7 +966,7 @@ export default function PosPage() {
     setMgrAuth({
       title: 'Approve complimentary bill',
       hint: `Mark this ${formatMoney(totals.subtotal)} bill complimentary (Rs 0 due) — needs a manager or admin sign-in.`,
-      permission: 'canDiscount',
+      permission: 'orders.discount',
       onApproved: async ({ token }) => {
         setBusy(true);
         try {
@@ -1040,13 +1085,7 @@ export default function PosPage() {
     const prefs = getPrinterPrefs();
     const tpl = m === 'BILL' ? billTemplateOf(settings) : kotTemplateOf(settings);
     const printer = m === 'BILL' ? prefs.bill : m === 'BOT' ? prefs.bot || prefs.kot : prefs.kot;
-    if (await silentPrintArea({ printer, widthMm: tpl.paperWidthMm, fontSize: tpl.fontSize })) {
-      await new Promise((r) => setTimeout(r, 120));
-      return;
-    }
-    document.body.classList.add('print-receipt');
-    window.print();
-    document.body.classList.remove('print-receipt');
+    await printReceiptNow({ printer, widthMm: tpl.paperWidthMm, marginMm: tpl.marginMm, fontSize: tpl.fontSize });
     await new Promise((r) => setTimeout(r, 200));
   }
 
@@ -1415,6 +1454,48 @@ export default function PosPage() {
     );
   }
 
+  // ── Outlet/terminal picker (multi-outlet, Phase 3) — shown once per
+  // device, only when this employee can reach more than one outlet. ──
+  if (outletPicker) {
+    const selected = outletPicker.find((o) => o.id === pickOutlet);
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-[var(--pos-bg)] text-[var(--pos-text)]">
+        <div className="w-80 rounded-2xl border border-[var(--pos-line)] bg-[var(--pos-card)] p-6 text-center">
+          <div className="mb-1 text-3xl">🏬</div>
+          <div className="mb-1 font-bold tracking-wide">SET UP THIS TILL</div>
+          <p className="mb-4 text-xs text-[var(--pos-text-40)]">Which outlet and terminal is this device? Only needs setting up once.</p>
+          <div className="space-y-2 text-left">
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Outlet</label>
+              <select
+                value={pickOutlet}
+                onChange={(e) => { setPickOutlet(e.target.value); setPickTerminal(''); }}
+                className="w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2.5 text-sm text-[var(--pos-text)] outline-none focus:border-[#2ECC71]/60"
+              >
+                {outletPicker.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </div>
+            {!!selected?.terminals?.length && (
+              <div>
+                <label className="mb-1 block text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Terminal</label>
+                <select
+                  value={pickTerminal}
+                  onChange={(e) => setPickTerminal(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 py-2.5 text-sm text-[var(--pos-text)] outline-none focus:border-[#2ECC71]/60"
+                >
+                  <option value="">— unassigned —</option>
+                  {selected.terminals.filter((t) => t.isActive).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+          <button onClick={confirmOutletPicker} className="mt-3 w-full rounded-lg bg-[#2ECC71] py-2.5 text-sm font-bold text-black hover:bg-[#28b463]">Continue</button>
+          <button onClick={lock} className="mt-2 text-xs text-[var(--pos-text-40)] hover:text-[var(--pos-text)]">Sign out</button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Open-drawer gate (cash drawer at first login) ──
   if (drawerOpen === false) {
     return (
@@ -1444,7 +1525,7 @@ export default function PosPage() {
         open={!!mgrAuth}
         title={mgrAuth?.title}
         hint={mgrAuth?.hint}
-        permission={mgrAuth?.permission}
+        permission={mgrAuth?.permission ?? ''}
         onApproved={(cred) => mgrAuth?.onApproved(cred)}
         onClose={() => setMgrAuth(null)}
       />
@@ -1580,7 +1661,7 @@ export default function PosPage() {
             </button>
           );
         })}
-        {order && emp.canVoid && (
+        {order && emp.permissions?.includes('orders.void') && (
           <button onClick={voidBasket} className="ml-auto flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg bg-[#E74C3C]/15 px-4 text-sm font-semibold text-[#E74C3C] transition-transform hover:bg-[#E74C3C]/25 active:scale-95">
             <XIcon className="h-4 w-4" /> Void Basket
           </button>
@@ -1711,7 +1792,7 @@ export default function PosPage() {
                 <button className="min-h-[44px] touch-manipulation rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 text-xs font-medium text-[var(--pos-text-70)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-95" onClick={() => setOpenItem({ name: '', price: '', station: 'KITCHEN' })} title="One-off item for this bill only">
                   <PlusIcon className="mr-1 inline h-3.5 w-3.5" />Custom
                 </button>
-                {emp?.canManageStaff && (
+                {emp?.permissions?.includes('settings.manage') && (
                   <button
                     className="min-h-[44px] touch-manipulation rounded-lg border border-[var(--pos-line)] bg-[var(--pos-surface)] px-3 text-xs font-medium text-[var(--pos-text-70)] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-95"
                     onClick={() => setNewMenuItem({ name: '', price: '', station: 'KITCHEN', categoryId: categories[0]?.id ?? '', newCategory: '', useNewCategory: categories.length === 0 })}
@@ -2197,7 +2278,7 @@ export default function PosPage() {
                 onClick={() => setMgrAuth({
                   title: 'Approve cancellation',
                   hint: `Cancel ${cancelReq.qty}× ${cancelReq.line.name} — needs a manager or admin sign-in.`,
-                  permission: 'canVoid',
+                  permission: 'orders.void',
                   onApproved: ({ token }) => void doCancel(token),
                 })}>
                 Continue → manager approval
@@ -2225,7 +2306,7 @@ export default function PosPage() {
                 onClick={() => setMgrAuth({
                   title: 'Approve void',
                   hint: 'Voiding a basket needs an admin or manager sign-in.',
-                  permission: 'canVoid',
+                  permission: 'orders.void',
                   onApproved: ({ token }) => void doVoid(token),
                 })}>
                 Continue → manager approval

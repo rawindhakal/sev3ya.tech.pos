@@ -35,10 +35,13 @@ export default function CashDrawerPage() {
     return () => clearInterval(t);
   }, []);
 
-  // Only an admin may correct the opening balance mid-day (server-enforced too).
+  // Only cashDrawer.adjustFloat holders may correct the opening balance mid-day (server-enforced too).
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
-    try { setIsAdmin(JSON.parse(localStorage.getItem('cakezake-emp') ?? '{}').role === 'ADMIN'); } catch {}
+    try {
+      const permissions: string[] = JSON.parse(localStorage.getItem('cakezake-emp') ?? '{}').permissions ?? [];
+      setIsAdmin(permissions.includes('cashDrawer.adjustFloat'));
+    } catch {}
   }, []);
 
   async function adjustOpeningFloat() {

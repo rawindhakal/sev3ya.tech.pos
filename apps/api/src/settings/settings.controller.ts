@@ -1,7 +1,8 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { SettingsService } from './settings.service';
-import { AuthGuard, CurrentEmployee } from '../common/auth.guard';
+import { PermissionGuard, CurrentEmployee } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
 
 class ResetDataDto {
@@ -74,7 +75,7 @@ export class SettingsController {
 
   // Danger zone — wipe selected sales/operational data categories. Admin-only.
   @Post('reset-data')
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.SETTINGS_MANAGE))
   resetData(@Body() dto: ResetDataDto, @CurrentEmployee() emp: TokenPayload) {
     return this.settings.resetData(dto.categories ?? [], { sub: emp?.sub, name: emp?.name });
   }
@@ -86,20 +87,20 @@ export class SettingsController {
   }
 
   @Post('discount-presets')
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.SETTINGS_MANAGE))
   createDiscountPreset(@Body() dto: DiscountPresetDto) {
     if (!dto.name?.trim() || dto.value == null) throw new BadRequestException('name and value are required');
     return this.settings.createDiscountPreset({ name: dto.name.trim(), type: dto.type ?? 'PCT', value: dto.value, sortOrder: dto.sortOrder });
   }
 
   @Patch('discount-presets/:id')
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.SETTINGS_MANAGE))
   updateDiscountPreset(@Param('id') id: string, @Body() dto: DiscountPresetDto) {
     return this.settings.updateDiscountPreset(id, dto);
   }
 
   @Delete('discount-presets/:id')
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.SETTINGS_MANAGE))
   deleteDiscountPreset(@Param('id') id: string) {
     return this.settings.deleteDiscountPreset(id);
   }

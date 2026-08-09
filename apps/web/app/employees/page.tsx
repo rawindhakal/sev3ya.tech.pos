@@ -2,19 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import type { Employee, StaffRole } from '@/lib/types';
+import type { Employee, Outlet, Role } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { confirmDialog, notify } from '@/lib/dialog';
 
-const ROLES: StaffRole[] = ['ADMIN', 'MANAGER', 'CASHIER', 'BARISTA', 'WAITER'];
-type PermKey = 'canVoid' | 'canDiscount' | 'canManageInventory' | 'canViewReports' | 'canManageStaff';
-const PERMS: { key: PermKey; label: string }[] = [
-  { key: 'canVoid', label: 'Void / refund orders' },
-  { key: 'canDiscount', label: 'Apply discounts' },
-  { key: 'canManageInventory', label: 'Manage inventory' },
-  { key: 'canViewReports', label: 'View reports' },
-  { key: 'canManageStaff', label: 'Manage staff' },
-];
+interface PermissionCatalogEntry { key: string; label: string; module: string }
 
 interface ActiveShift {
   shiftId: string;
@@ -24,37 +16,44 @@ interface ActiveShift {
   clockIn: string;
 }
 
+function myPermissions(): string[] {
+  try { return JSON.parse(localStorage.getItem('cakezake-emp') ?? '{}').permissions ?? []; } catch { return []; }
+}
+
 const blank = {
   id: '',
   name: '',
-  role: 'CASHIER' as StaffRole,
+  roleId: '',
   username: '',
   password: '',
   deviceUserId: '',
   monthlySalary: '',
-  canVoid: false,
-  canDiscount: false,
-  canManageInventory: false,
-  canViewReports: false,
-  canManageStaff: false,
+  outletIds: [] as string[], // multi-outlet (Phase 3); empty = unrestricted
 };
 
 export default function EmployeesPage() {
   const [emps, setEmps] = useState<Employee[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [catalog, setCatalog] = useState<PermissionCatalogEntry[]>([]);
   const [active, setActive] = useState<ActiveShift[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<typeof blank>(blank);
   const [saving, setSaving] = useState(false);
 
+  const labelFor = (key: string) => catalog.find((c) => c.key === key)?.label ?? key;
+
   async function load(silent = false) {
     try {
-      const [e, a] = await Promise.all([
+      const [e, a, r] = await Promise.all([
         api.get<Employee[]>('/employees', { silent }),
         api.get<ActiveShift[]>('/employees/active-shifts', { silent }),
+        api.get<Role[]>('/roles', { silent }),
       ]);
       setEmps(e);
       setActive(a);
+      setRoles(r);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -62,42 +61,50 @@ export default function EmployeesPage() {
   }
   useEffect(() => {
     load();
+    api.get<PermissionCatalogEntry[]>('/roles/permissions-catalog').then(setCatalog).catch(() => {});
+    api.get<Outlet[]>('/outlets').then(setOutlets).catch(() => {});
     const t = setInterval(() => load(true), 15000);
     return () => clearInterval(t);
   }, []);
 
   function openCreate() {
-    setForm(blank);
+    setForm({ ...blank, roleId: roles.find((r) => !r.isProtected)?.id ?? roles[0]?.id ?? '' });
     setModal(true);
   }
   function openEdit(e: Employee) {
-    setForm({ ...blank, ...e, username: e.username ?? '', password: '', deviceUserId: (e as any).deviceUserId ?? '', monthlySalary: (e as any).monthlySalaryCents ? String((e as any).monthlySalaryCents / 100) : '' });
+    setForm({
+      ...blank, id: e.id, name: e.name, roleId: e.roleId, username: e.username ?? '', password: '',
+      deviceUserId: (e as any).deviceUserId ?? '', monthlySalary: (e as any).monthlySalaryCents ? String((e as any).monthlySalaryCents / 100) : '',
+      outletIds: (e.outlets ?? []).map((o) => o.id),
+    });
     setModal(true);
+  }
+  function toggleOutlet(id: string) {
+    setForm((f) => ({ ...f, outletIds: f.outletIds.includes(id) ? f.outletIds.filter((x) => x !== id) : [...f.outletIds, id] }));
   }
 
   async function save(ev: React.FormEvent) {
     ev.preventDefault();
     setSaving(true);
     try {
+      if (!form.roleId) throw new Error('Choose a role');
       const payload: Record<string, unknown> = {
         name: form.name.trim(),
-        role: form.role,
-        canVoid: form.canVoid,
-        canDiscount: form.canDiscount,
-        canManageInventory: form.canManageInventory,
-        canViewReports: form.canViewReports,
-        canManageStaff: form.canManageStaff,
+        roleId: form.roleId,
       };
       if (form.username.trim()) payload.username = form.username.trim();
       payload.deviceUserId = form.deviceUserId.trim() || undefined;
       payload.monthlySalaryCents = Math.round((parseFloat(form.monthlySalary) || 0) * 100);
       if (form.password) payload.password = form.password;
-      if (form.id) {
-        await api.patch(`/employees/${form.id}`, payload);
+      let id = form.id;
+      if (id) {
+        await api.patch(`/employees/${id}`, payload);
       } else {
         if (!form.username.trim() || !form.password) throw new Error('Username and password are required');
-        await api.post('/employees', payload);
+        const created = await api.post<Employee>('/employees', payload);
+        id = created.id;
       }
+      if (outlets.length > 1 && myPermissions().includes('outlets.manage')) await api.patch(`/employees/${id}/outlets`, { outletIds: form.outletIds });
       setModal(false);
       load();
     } catch (e) {
@@ -168,10 +175,10 @@ export default function EmployeesPage() {
                 <td className="p-3"><span className="badge bg-slate-100 text-slate-600">{e.role}</span></td>
                 <td className="p-3">
                   <div className="flex flex-wrap gap-1">
-                    {PERMS.filter((p) => e[p.key]).map((p) => (
-                      <span key={p.key} className="badge bg-brand-50 text-brand-600 text-[10px]">{p.label}</span>
+                    {(e.permissions ?? []).map((key) => (
+                      <span key={key} className="badge bg-brand-50 text-brand-600 text-[10px]">{labelFor(key)}</span>
                     ))}
-                    {PERMS.every((p) => !e[p.key]) && <span className="text-xs text-slate-300">—</span>}
+                    {(!e.permissions || e.permissions.length === 0) && <span className="text-xs text-slate-300">—</span>}
                   </div>
                 </td>
                 <td className="p-3">
@@ -201,9 +208,13 @@ export default function EmployeesPage() {
             </div>
             <div>
               <label className="label">Role</label>
-              <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as StaffRole })}>
-                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              <select className="input" value={form.roleId} onChange={(e) => setForm({ ...form, roleId: e.target.value })} required>
+                <option value="" disabled>Choose a role…</option>
+                {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
+              <p className="mt-1 text-xs text-slate-400">
+                Manage what each role can do on the <a href="/roles" className="underline">Roles &amp; Permissions</a> page.
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -226,17 +237,19 @@ export default function EmployeesPage() {
               <input className="input" inputMode="decimal" value={form.monthlySalary} onChange={(e) => setForm({ ...form, monthlySalary: e.target.value })} placeholder="25000" />
             </div>
           </div>
-          <div>
-            <label className="label">Permissions</label>
-            <div className="space-y-2">
-              {PERMS.map((p) => (
-                <label key={p.key} className="flex items-center gap-2 text-sm text-slate-600">
-                  <input type="checkbox" checked={!!form[p.key]} onChange={(e) => setForm({ ...form, [p.key]: e.target.checked })} />
-                  {p.label}
-                </label>
-              ))}
+          {outlets.length > 1 && myPermissions().includes('outlets.manage') && (
+            <div>
+              <label className="label">Outlets (blank = any outlet)</label>
+              <div className="space-y-1 rounded-lg border border-slate-100 p-3 dark:border-slate-700">
+                {outlets.map((o) => (
+                  <label key={o.id} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <input type="checkbox" checked={form.outletIds.includes(o.id)} onChange={() => toggleOutlet(o.id)} />
+                    {o.name}
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={() => setModal(false)}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>

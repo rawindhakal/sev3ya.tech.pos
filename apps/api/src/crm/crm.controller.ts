@@ -11,7 +11,8 @@ import {
 } from '@nestjs/common';
 import { IsBoolean, IsEmail, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { CrmService } from './crm.service';
-import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
+import { PermissionGuard, CurrentEmployee } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
 
 class CreateCustomerDto {
@@ -94,7 +95,7 @@ export class CrmController {
   }
   // Credit settlement is a money-handling override — manager/admin sign-in only.
   @Post(':id/settle-credit')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.CRM_SETTLE_CREDIT))
   settleCredit(
     @Param('id') id: string,
     @Body() dto: SettleCreditDto,
@@ -112,7 +113,7 @@ export class CrmController {
   // Deleting a customer record is destructive (loses order/credit history
   // linkage) — manager/admin sign-in only, same bar as settle-credit.
   @Delete(':id')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.CRM_DELETE))
   remove(@Param('id') id: string) {
     return this.crm.remove(id);
   }

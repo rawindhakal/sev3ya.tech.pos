@@ -93,11 +93,14 @@ export class MisService {
   }
 
   // ── Tax (Nepal): VAT Summary — BS fiscal-month matrix ──
-  async vatSummary(fy: number): Promise<MisReport> {
+  // outletId (multi-outlet, Phase 3) scopes sales/returns to one location;
+  // purchases stay unscoped (POs aren't outlet-attributed, see non-goals).
+  async vatSummary(fy: number, outletId?: string): Promise<MisReport> {
     const win = fyAdWindow(fy);
+    const outletWhere = outletId ? { outletId } : {};
     const [orders, refunds, pos] = await Promise.all([
-      this.prisma.order.findMany({ where: { status: 'PAID', paidAt: win }, select: { paidAt: true, totalCents: true, taxCents: true } }),
-      this.prisma.order.findMany({ where: { refundCents: { gt: 0 }, refundedAt: win }, select: { refundedAt: true, refundCents: true } }),
+      this.prisma.order.findMany({ where: { status: 'PAID', paidAt: win, ...outletWhere }, select: { paidAt: true, totalCents: true, taxCents: true } }),
+      this.prisma.order.findMany({ where: { refundCents: { gt: 0 }, refundedAt: win, ...outletWhere }, select: { refundedAt: true, refundCents: true } }),
       this.prisma.purchaseOrder.findMany({ where: { status: 'RECEIVED', receivedAt: win }, include: { lines: true } }),
     ]);
     const zero = () => Array(12).fill(0) as number[];
@@ -140,10 +143,10 @@ export class MisService {
   }
 
   // ── Sales: Daily Sales Summary (per-day collections) ──
-  async dailySales(from?: string, to?: string): Promise<MisReport> {
+  async dailySales(from?: string, to?: string, outletId?: string): Promise<MisReport> {
     const { start, end } = range(from, to);
     const payments = await this.prisma.payment.findMany({
-      where: { createdAt: { gte: start, lte: end } },
+      where: { createdAt: { gte: start, lte: end }, ...(outletId ? { order: { outletId } } : {}) },
       select: { createdAt: true, method: true, amountCents: true },
     });
     const days = new Map<string, { cash: number; bank: number; credit: number }>();
@@ -180,10 +183,10 @@ export class MisService {
   }
 
   // ── Sales: Collection report (per-day × tender matrix) ──
-  async collections(from?: string, to?: string): Promise<MisReport> {
+  async collections(from?: string, to?: string, outletId?: string): Promise<MisReport> {
     const { start, end } = range(from, to);
     const payments = await this.prisma.payment.findMany({
-      where: { createdAt: { gte: start, lte: end } },
+      where: { createdAt: { gte: start, lte: end }, ...(outletId ? { order: { outletId } } : {}) },
       select: { createdAt: true, method: true, amountCents: true },
     });
     const methods = ['CASH', ...BANK_METHODS, 'CREDIT', 'OFFLINE'];
@@ -212,8 +215,9 @@ export class MisService {
   }
 
   // ── Sales: Monthly matrix by item / category / customer ──
-  async monthlySales(groupBy: 'item' | 'category' | 'customer', fy: number): Promise<MisReport> {
+  async monthlySales(groupBy: 'item' | 'category' | 'customer', fy: number, outletId?: string): Promise<MisReport> {
     const win = fyAdWindow(fy);
+    const outletWhere = outletId ? { outletId } : {};
     const buckets = new Map<string, number[]>();
     const bump = (name: string, i: number, v: number) => {
       const arr = buckets.get(name) ?? Array(12).fill(0);
@@ -222,7 +226,7 @@ export class MisService {
     };
     if (groupBy === 'customer') {
       const orders = await this.prisma.order.findMany({
-        where: { status: 'PAID', paidAt: win },
+        where: { status: 'PAID', paidAt: win, ...outletWhere },
         select: { paidAt: true, totalCents: true, customerName: true },
       });
       for (const o of orders) {
@@ -231,7 +235,7 @@ export class MisService {
       }
     } else {
       const items = await this.prisma.orderItem.findMany({
-        where: { cancelledAt: null, order: { status: 'PAID', paidAt: win } },
+        where: { cancelledAt: null, order: { status: 'PAID', paidAt: win, ...outletWhere } },
         select: {
           quantity: true, unitPriceCents: true, nameSnapshot: true,
           menuItem: { select: { category: { select: { name: true } } } },
@@ -264,10 +268,10 @@ export class MisService {
   }
 
   // ── Tax: Sales Return Register (refunds) ──
-  async salesReturns(from?: string, to?: string): Promise<MisReport> {
+  async salesReturns(from?: string, to?: string, outletId?: string): Promise<MisReport> {
     const { start, end } = range(from, to);
     const orders = await this.prisma.order.findMany({
-      where: { refundCents: { gt: 0 }, refundedAt: { gte: start, lte: end } },
+      where: { refundCents: { gt: 0 }, refundedAt: { gte: start, lte: end }, ...(outletId ? { outletId } : {}) },
       orderBy: { refundedAt: 'asc' },
       select: { number: true, refundedAt: true, refundCents: true, refundReason: true, customerName: true, totalCents: true },
     });
@@ -327,7 +331,7 @@ export class MisService {
   async salesDetail(q: {
     from?: string; to?: string;
     categoryId?: string; itemId?: string;
-    method?: string; type?: string; station?: string;
+    method?: string; type?: string; station?: string; outletId?: string;
     groupBy?: 'detail' | 'item' | 'category' | 'method' | 'day';
   }): Promise<MisReport & { kpis: Record<string, number> }> {
     const { start, end } = range(q.from, q.to);
@@ -342,6 +346,7 @@ export class MisService {
           paidAt: { gte: start, lte: end },
           ...(q.type ? { type: q.type as any } : {}),
           ...(q.method ? { payments: { some: { method: q.method as any } } } : {}),
+          ...(q.outletId ? { outletId: q.outletId } : {}),
         },
       },
       include: {
@@ -434,12 +439,13 @@ export class MisService {
 
   // Every cancelled order-item line, whoever approved it and why — the audit
   // trail the KOT/BOT reports can't show since those only ever list live items.
-  async cancelledItems(q: { from?: string; to?: string; station?: string }): Promise<MisReport & { kpis: Record<string, number> }> {
+  async cancelledItems(q: { from?: string; to?: string; station?: string; outletId?: string }): Promise<MisReport & { kpis: Record<string, number> }> {
     const { start, end } = range(q.from, q.to);
     const lines = await this.prisma.orderItem.findMany({
       where: {
         cancelledAt: { gte: start, lte: end },
         ...(q.station ? { station: q.station as any } : {}),
+        ...(q.outletId ? { order: { outletId: q.outletId } } : {}),
       },
       include: {
         menuItem: { select: { category: { select: { name: true } } } },

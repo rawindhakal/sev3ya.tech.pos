@@ -40,8 +40,8 @@ export class ReservationsController {
   constructor(private readonly reservations: ReservationsService) {}
 
   @Get()
-  findAll(@Query('date') date?: string, @Query('status') status?: string) {
-    return this.reservations.findAll({ date, status });
+  findAll(@Query('date') date?: string, @Query('status') status?: string, @Query('outletId') outletId?: string) {
+    return this.reservations.findAll({ date, status, outletId });
   }
 
   @Get('waitlist')

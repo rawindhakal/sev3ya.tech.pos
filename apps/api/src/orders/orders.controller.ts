@@ -11,7 +11,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
-import { AuthGuard, SoftAuthGuard, CurrentEmployee } from '../common/auth.guard';
+import { PermissionGuard, SoftAuthGuard, CurrentEmployee, CurrentOutlet, CurrentTerminal } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 import { Public } from '../common/public.decorator';
 import type { TokenPayload } from '../common/token';
 import {
@@ -74,8 +75,8 @@ export class OrdersController {
   }
 
   @Post()
-  create(@Body() dto: CreateOrderDto) {
-    return this.orders.create(dto);
+  create(@Body() dto: CreateOrderDto, @CurrentOutlet() outletId?: string, @CurrentTerminal() terminalId?: string) {
+    return this.orders.create({ ...dto, terminalId: dto.terminalId ?? terminalId }, outletId);
   }
 
   @Public()
@@ -120,9 +121,9 @@ export class OrdersController {
   }
 
   // Mark the whole bill complimentary — needs the manager/admin's own
-  // canDiscount-permitted token (same one-off-approval pattern as void/refund).
+  // orders.discount-permitted token (same one-off-approval pattern as void/refund).
   @Post(':id/complimentary')
-  @UseGuards(new AuthGuard('canDiscount'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ORDERS_DISCOUNT))
   markComplimentary(@Param('id') id: string, @Body() dto: ComplimentaryDto, @CurrentEmployee() emp: TokenPayload) {
     return this.orders.markComplimentary(id, dto.reason, emp);
   }
@@ -153,7 +154,7 @@ export class OrdersController {
   }
 
   @Post(':id/refund')
-  @UseGuards(new AuthGuard('canVoid'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ORDERS_VOID))
   refund(@Param('id') id: string, @Body() dto: RefundDto, @CurrentEmployee() emp: TokenPayload) {
     return this.orders.refund(id, dto, emp);
   }
@@ -179,7 +180,7 @@ export class OrdersController {
     return this.orders.transferItems(id, body, emp);
   }
 
-  // Void (with items → needs canVoid) or discard an empty draft (allowed).
+  // Void (with items → needs orders.void) or discard an empty draft (allowed).
   @Public()
   @Delete(':id')
   @UseGuards(SoftAuthGuard)

@@ -57,9 +57,9 @@ export default function CustomersPage() {
     if (!ledger) return;
     const cents = dollarsToCents(parseFloat(payAmount || '0'));
     if (cents <= 0) return setPayErr('Enter the amount received');
-    let me: { role?: string } = {};
+    let me: { permissions?: string[] } = {};
     try { me = JSON.parse(localStorage.getItem('cakezake-emp') ?? '{}'); } catch {}
-    if (me.role === 'ADMIN' || me.role === 'MANAGER') {
+    if (me.permissions?.includes('crm.settleCredit')) {
       void submitPayment(cents);
     } else {
       setMgrOpen(true);
@@ -252,6 +252,7 @@ export default function CustomersPage() {
                   open={mgrOpen}
                   title="Approve credit settlement"
                   hint="Recording a credit payment needs a manager or admin sign-in."
+                  permission="crm.settleCredit"
                   onApproved={({ token }) => void submitPayment(dollarsToCents(parseFloat(payAmount || '0')), token)}
                   onClose={() => setMgrOpen(false)}
                 />

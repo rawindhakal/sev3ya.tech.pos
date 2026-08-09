@@ -31,14 +31,42 @@ export function setTenantSlug(slug: string) {
   else window.localStorage.removeItem('s3vya-tenant');
 }
 
+// Multi-outlet (Phase 3): which physical location / till this device is
+// currently working as — set once by the outlet+terminal picker (skipped
+// entirely for the common single-outlet case), persisted per-device like the
+// printer prefs in lib/printing.ts, and threaded into every request the same
+// way tenantSlug() feeds X-Tenant.
+export function getCurrentOutlet(): string {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem('cakezake-outlet') ?? '';
+}
+export function setCurrentOutlet(id: string) {
+  if (typeof window === 'undefined') return;
+  if (id.trim()) window.localStorage.setItem('cakezake-outlet', id.trim());
+  else window.localStorage.removeItem('cakezake-outlet');
+}
+export function getCurrentTerminal(): string {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem('cakezake-terminal') ?? '';
+}
+export function setCurrentTerminal(id: string) {
+  if (typeof window === 'undefined') return;
+  if (id.trim()) window.localStorage.setItem('cakezake-terminal', id.trim());
+  else window.localStorage.removeItem('cakezake-terminal');
+}
+
 // Read the staff token (set on PIN login) so requests carry the actor identity.
 function authHeader(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const t = window.localStorage.getItem('cakezake-token');
   const slug = tenantSlug();
+  const outlet = getCurrentOutlet();
+  const terminal = getCurrentTerminal();
   return {
     ...(t ? { Authorization: `Bearer ${t}` } : {}),
     ...(slug ? { 'X-Tenant': slug } : {}),
+    ...(outlet ? { 'X-Outlet': outlet } : {}),
+    ...(terminal ? { 'X-Terminal': terminal } : {}),
   };
 }
 

@@ -31,24 +31,24 @@ model Category {
 }
 
 model MenuItem {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
+  id                 String      @id @default(cuid())
+  name               String
+  description        String?
   // Price stored in minor units (cents) to avoid floating point errors.
   // priceCents is the base (dine-in) price; the tier prices below are
   // optional overrides used for takeaway / delivery (matrix #15).
-  priceCents          Int
-  takeawayPriceCents  Int?
-  deliveryPriceCents  Int?
+  priceCents         Int
+  takeawayPriceCents Int?
+  deliveryPriceCents Int?
   // Which prep station this item routes to (KOT/BOT/Billing) (user workflow).
-  station     PrepStation @default(BILLING)
-  isAvailable Boolean  @default(true)
-  imageUrl    String?
+  station            PrepStation @default(BILLING)
+  isAvailable        Boolean     @default(true)
+  imageUrl           String?
 
   // Combo/meal-deal: this item is sold as a single line (one price, one KOT
   // entry) but bundles other menu items — see ComboComponent. Inventory
   // deduction expands a combo into its components' recipes at sale time.
-  isCombo Boolean @default(false)
+  isCombo         Boolean          @default(false)
   comboComponents ComboComponent[] @relation("ComboOwner")
   usedInCombos    ComboComponent[] @relation("ComboComponentItem")
 
@@ -88,7 +88,7 @@ model MenuItemVariant {
   id         String   @id @default(cuid())
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
-  name       String   // e.g. "30ml", "Large"
+  name       String // e.g. "30ml", "Large"
   priceCents Int
   sortOrder  Int      @default(0)
 
@@ -97,29 +97,29 @@ model MenuItemVariant {
 }
 
 model ModifierGroup {
-  id          String     @id @default(cuid())
-  name        String     // e.g. "Size", "Extra toppings"
+  id        String     @id @default(cuid())
+  name      String // e.g. "Size", "Extra toppings"
   // Selection rules: how many options a customer may pick.
-  minSelect   Int        @default(0)
-  maxSelect   Int        @default(1)
-  sortOrder   Int        @default(0)
-  modifiers   Modifier[]
-  menuItems   MenuItem[] @relation("MenuItemModifierGroups")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  minSelect Int        @default(0)
+  maxSelect Int        @default(1)
+  sortOrder Int        @default(0)
+  modifiers Modifier[]
+  menuItems MenuItem[] @relation("MenuItemModifierGroups")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   @@map("modifier_groups")
 }
 
 model Modifier {
-  id            String        @id @default(cuid())
-  name          String        // e.g. "Large", "Extra cheese"
-  priceCents    Int           @default(0) // price delta this modifier adds
-  sortOrder     Int           @default(0)
-  groupId       String
-  group         ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id         String        @id @default(cuid())
+  name       String // e.g. "Large", "Extra cheese"
+  priceCents Int           @default(0) // price delta this modifier adds
+  sortOrder  Int           @default(0)
+  groupId    String
+  group      ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
   @@index([groupId])
   @@map("modifiers")
@@ -137,24 +137,28 @@ enum TableStatus {
 }
 
 model RestaurantTable {
-  id        String      @id @default(cuid())
-  name      String      // e.g. "T1", "Patio 3"
-  seats     Int         @default(4)
-  area      String?     // e.g. "Ground floor", "Patio"
-  status    TableStatus @default(AVAILABLE)
-  isVip     Boolean     @default(false) // VIP / regulars highlighting (#39)
+  id           String        @id @default(cuid())
+  name         String // e.g. "T1", "Patio 3"
+  seats        Int           @default(4)
+  area         String? // e.g. "Ground floor", "Patio"
+  // Which physical location this table belongs to (multi-outlet, Phase 3) —
+  // a table can't move between locations.
+  outletId     String
+  outlet       Outlet        @relation(fields: [outletId], references: [id])
+  status       TableStatus   @default(AVAILABLE)
+  isVip        Boolean       @default(false) // VIP / regulars highlighting (#39)
   // Floor-plan canvas position within its area (matrix #26).
-  posX      Int?
-  posY      Int?
+  posX         Int?
+  posY         Int?
   // Public QR-ordering token — printed on a table QR code, resolves to this
   // table with no login required (apps/web/app/order/[token]). Generated
   // on-demand (Tables → "Get QR"), not backfilled — null = QR not set up yet.
-  qrToken   String?     @unique
-  orders    Order[]
+  qrToken      String?       @unique
+  orders       Order[]
   reservations Reservation[]
   waiterCalls  WaiterCall[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@map("restaurant_tables")
 }
@@ -195,7 +199,7 @@ model Reservation {
   customerName String
   phone        String?
   partySize    Int               @default(2)
-  reservedAt   DateTime          // requested date/time (≈ now for waitlist)
+  reservedAt   DateTime // requested date/time (≈ now for waitlist)
   isWaitlist   Boolean           @default(false) // walk-in queue vs advance booking
   status       ReservationStatus @default(BOOKED)
   notes        String?
@@ -232,7 +236,7 @@ model OrderFeedback {
   id        String   @id @default(cuid())
   orderId   String   @unique
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  rating    Int      // 1-5
+  rating    Int // 1-5
   comment   String?
   createdAt DateTime @default(now())
 
@@ -265,14 +269,18 @@ enum PrepStation {
 }
 
 model Order {
-  id         String      @id @default(cuid())
+  id     String      @id @default(cuid())
   // Human-friendly running order number.
-  number     Int         @default(autoincrement())
-  type       OrderType   @default(DINE_IN)
-  status     OrderStatus @default(OPEN)
+  number Int         @default(autoincrement())
+  type   OrderType   @default(DINE_IN)
+  status OrderStatus @default(OPEN)
 
   tableId String?
   table   RestaurantTable? @relation(fields: [tableId], references: [id])
+
+  // Which physical location rang this order (multi-outlet, Phase 3).
+  outletId String
+  outlet   Outlet @relation(fields: [outletId], references: [id])
 
   waiterId String?
   waiter   Waiter? @relation(fields: [waiterId], references: [id])
@@ -286,17 +294,17 @@ model Order {
   customerId    String?
   customer      Customer? @relation(fields: [customerId], references: [id])
 
-  items     OrderItem[]
-  payments  Payment[]
+  items    OrderItem[]
+  payments Payment[]
 
   // Denormalised money snapshots (minor units).
-  subtotalCents      Int @default(0)
-  discountCents      Int @default(0)
-  serviceChargeCents Int @default(0)
+  subtotalCents        Int @default(0)
+  discountCents        Int @default(0)
+  serviceChargeCents   Int @default(0)
   packagingChargeCents Int @default(0) // flat charge, TAKEAWAY/DELIVERY
   deliveryChargeCents  Int @default(0) // flat charge, DELIVERY only
-  taxCents           Int @default(0)
-  totalCents         Int @default(0)
+  taxCents             Int @default(0)
+  totalCents           Int @default(0)
 
   // Where this order originated — a self-order (QR) came in with no staff
   // member present, which some UI/permission flows care about.
@@ -306,7 +314,7 @@ model Order {
   giftCardTransactions GiftCardTransaction[]
   couponRedemption     CouponRedemption?
 
-  notes     String?
+  notes String?
 
   // Loyalty points redeemed against this order (#111).
   redeemedPoints Int @default(0)
@@ -317,12 +325,15 @@ model Order {
   fiscalInvoiceNo Int?
 
   // IRD (CBMS) e-billing sync state for this invoice.
-  irdSyncedAt   DateTime?
-  irdSyncStatus String?   // SYNCED | FAILED
+  irdSyncedAt    DateTime?
+  irdSyncStatus  String? // SYNCED | FAILED
   irdSyncMessage String?
 
-  // Which terminal/till rang this order (multi-terminal attribution).
+  // Which terminal/till rang this order (multi-terminal attribution). Always
+  // null before Phase 3 (never wired up in the frontend until now) — safe to
+  // convert straight to a real relation with no data to migrate.
   terminalId String?
+  terminal   Terminal? @relation(fields: [terminalId], references: [id])
 
   // Void / refund audit trail (matrix #10).
   voidReason   String?
@@ -350,12 +361,12 @@ model Order {
   reprintCount Int @default(0)
 
   // Lifecycle timestamps drive turnaround / guest-time metrics.
-  seatedAt  DateTime?  // when the table became occupied for this order
+  seatedAt   DateTime? // when the table became occupied for this order
   kotFiredAt DateTime? // when the KOT was first sent to the kitchen (KDS timer)
-  billedAt  DateTime?
-  paidAt    DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  billedAt   DateTime?
+  paidAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([status])
   @@index([createdAt])
@@ -379,33 +390,61 @@ model Waiter {
 // EMPLOYEES, ROLES & SHIFTS (matrix #126–140, spec §2.1/§3.1 Step 3)
 // ─────────────────────────────────────────────────────────────
 
-enum StaffRole {
-  ADMIN
-  MANAGER
-  CASHIER
-  BARISTA
-  WAITER
+// Whether an employee assigned this role lands in the full back-office UI or
+// is locked to the bare Waiter Panel — replaces the old `role === 'WAITER'`
+// string check now that roles are custom/dynamic (see PermissionGuard).
+enum RolePortal {
+  BACK_OFFICE
+  WAITER_ONLY
+}
+
+// Custom, tenant-defined role — replaces the fixed StaffRole enum + 5 boolean
+// flags on Employee. Exactly one `isProtected` role ("Owner") is seeded per
+// database and always holds every permission in PERMISSIONS
+// (apps/api/src/common/permissions.ts) — it can never be edited or deleted,
+// guaranteeing there's always at least one account that can manage roles.
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  portal      RolePortal       @default(BACK_OFFICE)
+  isProtected Boolean          @default(false)
+  permissions RolePermission[]
+  employees   Employee[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("roles")
+}
+
+// One granted permission key per row. `key` is validated against the fixed
+// PERMISSIONS catalog in application code, not the database — adding a new
+// permission key is a code change, never a migration.
+model RolePermission {
+  id     String @id @default(cuid())
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  key    String
+
+  @@unique([roleId, key])
+  @@index([roleId])
+  @@map("role_permissions")
 }
 
 model Employee {
-  id           String    @id @default(cuid())
-  name         String
-  role         StaffRole @default(CASHIER)
-  username     String?   @unique // username + password login
-  passwordHash String?   // scrypt salt:hash
-  isActive     Boolean   @default(true)
+  id                 String           @id @default(cuid())
+  name               String
+  roleId             String
+  role               Role             @relation(fields: [roleId], references: [id])
+  username           String?          @unique // username + password login
+  passwordHash       String? // scrypt salt:hash
+  isActive           Boolean          @default(true)
   // ZKTeco fingerprint device user ID (maps scans → this employee).
-  deviceUserId String?   @unique
+  deviceUserId       String?          @unique
   // Payroll: fixed monthly salary in paisa (pro-rated by attendance).
-  monthlySalaryCents Int @default(0)
-  attendance   AttendanceLog[]
-
-  // Granular permission matrix (#129, spec §3.1 Step 3).
-  canVoid            Boolean @default(false)
-  canDiscount        Boolean @default(false)
-  canManageInventory Boolean @default(false)
-  canViewReports     Boolean @default(false)
-  canManageStaff     Boolean @default(false)
+  monthlySalaryCents Int              @default(0)
+  attendance         AttendanceLog[]
+  outlets            EmployeeOutlet[]
 
   shifts    Shift[]
   createdAt DateTime @default(now())
@@ -430,32 +469,32 @@ model Shift {
 // ─────────────────────────────────────────────────────────────
 
 model Customer {
-  id              String    @id @default(cuid())
-  name            String
-  phone           String    @unique
-  email           String?
-  birthday        DateTime?
-  loyaltyPoints   Int       @default(0)
-  totalSpentCents Int       @default(0)
+  id                 String              @id @default(cuid())
+  name               String
+  phone              String              @unique
+  email              String?
+  birthday           DateTime?
+  loyaltyPoints      Int                 @default(0)
+  totalSpentCents    Int                 @default(0)
   // Membership number (e.g. RADH1 — initials + sequence), PAN for businesses.
-  memberCode      String?   @unique
-  panNumber       String?
-  isBusiness      Boolean   @default(false)
+  memberCode         String?             @unique
+  panNumber          String?
+  isBusiness         Boolean             @default(false)
   // Outstanding credit the customer owes (CREDIT tender / house account).
-  creditBalanceCents Int    @default(0)
-  visitCount      Int       @default(0)
-  lastVisitAt     DateTime?
-  optIn           Boolean   @default(true) // marketing opt-in (#125 GDPR)
-  orders          Order[]
-  creditLedger    CreditLedgerEntry[]
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  creditBalanceCents Int                 @default(0)
+  visitCount         Int                 @default(0)
+  lastVisitAt        DateTime?
+  optIn              Boolean             @default(true) // marketing opt-in (#125 GDPR)
+  orders             Order[]
+  creditLedger       CreditLedgerEntry[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   @@map("customers")
 }
 
 enum CreditEntryType {
-  CHARGE  // sale put on the customer's account (CREDIT tender)
+  CHARGE // sale put on the customer's account (CREDIT tender)
   PAYMENT // customer paid down their balance
 }
 
@@ -468,8 +507,8 @@ model CreditLedgerEntry {
   customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   type              CreditEntryType
   amountCents       Int
-  method            PaymentMethod?  // how a PAYMENT was received (CASH shows in drawer)
-  orderId           String?         // the sale behind a CHARGE
+  method            PaymentMethod? // how a PAYMENT was received (CASH shows in drawer)
+  orderId           String? // the sale behind a CHARGE
   note              String?
   balanceAfterCents Int
   createdBy         String?
@@ -499,6 +538,10 @@ model Expense {
   category    ExpenseCategory @default(OTHER)
   amountCents Int
   description String?
+  // How it was paid — used to post the Cr side (Cash vs Bank & Wallets) when
+  // this expense is posted to the GL. Previously unrecorded; the old ledger
+  // live-merge silently assumed every expense was a cash outflow.
+  method      PaymentMethod   @default(CASH)
   incurredAt  DateTime        @default(now())
   createdAt   DateTime        @default(now())
 
@@ -511,20 +554,20 @@ model Expense {
 // ─────────────────────────────────────────────────────────────
 
 model GreenBeanBatch {
-  id             String   @id @default(cuid())
-  name           String   // e.g. "Nepal Everest AA"
+  id             String         @id @default(cuid())
+  name           String // e.g. "Nepal Everest AA"
   origin         String?
   estate         String?
-  process        String?  // Washed / Natural / Honey
+  process        String? // Washed / Natural / Honey
   moisturePct    Float?
-  weightKg       Float    // received green weight
-  remainingKg    Float    // remaining un-roasted
-  costPerKgCents Int      @default(0)
-  purchasedAt    DateTime @default(now())
+  weightKg       Float // received green weight
+  remainingKg    Float // remaining un-roasted
+  costPerKgCents Int            @default(0)
+  purchasedAt    DateTime       @default(now())
   roasts         RoastBatch[]
   cuppings       CuppingScore[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@map("green_bean_batches")
 }
@@ -536,11 +579,11 @@ model RoastBatch {
   greenBatch      GreenBeanBatch @relation(fields: [greenBatchId], references: [id], onDelete: Cascade)
   greenInputKg    Float
   roastedOutputKg Float
-  shrinkagePct    Float          // auto-computed (#83)
+  shrinkagePct    Float // auto-computed (#83)
   chargeTempC     Float?
   dropTempC       Float?
   devTimeSec      Int?
-  agtron          Int?           // roast colour (#93)
+  agtron          Int? // roast colour (#93)
   notes           String?
   roastedAt       DateTime       @default(now())
 
@@ -568,7 +611,7 @@ model AuditLog {
   id           String   @id @default(cuid())
   employeeId   String?
   employeeName String
-  action       String   // VOID, REFUND, LOGIN, …
+  action       String // VOID, REFUND, LOGIN, …
   detail       String?
   createdAt    DateTime @default(now())
 
@@ -577,9 +620,9 @@ model AuditLog {
 }
 
 model OrderItem {
-  id         String    @id @default(cuid())
-  orderId    String
-  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   // Nullable so "open items" (custom name/price, not on the menu) are
   // supported (matrix #16).
@@ -587,17 +630,17 @@ model OrderItem {
   menuItem   MenuItem? @relation(fields: [menuItemId], references: [id])
 
   // Snapshot of name/price at time of ordering.
-  nameSnapshot String
+  nameSnapshot   String
   unitPriceCents Int
-  quantity     Int      @default(1)
+  quantity       Int    @default(1)
 
   // Selected modifiers stored as JSON snapshot: [{name, priceCents}]
-  modifiers  Json?
-  kotStatus  KotStatus   @default(PENDING)
-  station    PrepStation @default(BILLING) // snapshot of the item's prep station
-  kotPrintedAt DateTime? // set once a physical KOT/BOT ticket has been printed
-  discountCents Int      @default(0) // item-wise discount (needs manager perm)
-  notes      String?
+  modifiers     Json?
+  kotStatus     KotStatus   @default(PENDING)
+  station       PrepStation @default(BILLING) // snapshot of the item's prep station
+  kotPrintedAt  DateTime? // set once a physical KOT/BOT ticket has been printed
+  discountCents Int         @default(0) // item-wise discount (needs manager perm)
+  notes         String?
 
   // Item-level cancellation (prints a cancellation KOT + audited).
   cancelledAt  DateTime?
@@ -624,19 +667,19 @@ enum PaymentMethod {
 }
 
 model Payment {
-  id         String        @id @default(cuid())
-  orderId    String
-  order      Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id          String        @id @default(cuid())
+  orderId     String
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   amountCents Int
-  method     PaymentMethod @default(CASH)
+  method      PaymentMethod @default(CASH)
   // Set when method = GIFTCARD — which card was redeemed against.
-  giftCardId String?
-  giftCard   GiftCard?     @relation(fields: [giftCardId], references: [id])
+  giftCardId  String?
+  giftCard    GiftCard?     @relation(fields: [giftCardId], references: [id])
   // Set when method = ESEWA/KHALTI/FONEPAY and paid via the real gateway
   // integration (not just a manual "received via X" tag) — the provider's
   // transaction reference, for reconciliation.
-  gatewayRef String?
-  createdAt  DateTime      @default(now())
+  gatewayRef  String?
+  createdAt   DateTime      @default(now())
 
   @@index([orderId])
   @@index([method, createdAt])
@@ -650,20 +693,20 @@ enum CouponType {
 }
 
 model Coupon {
-  id                 String     @id @default(cuid())
-  code               String     @unique
-  type               CouponType @default(PCT)
-  value              Int        // percent (whole number) or Rs in cents, per `type`
-  minOrderCents      Int        @default(0)
-  maxUsesTotal       Int?       // null = unlimited
-  maxUsesPerCustomer Int?       // null = unlimited
-  usedCount          Int        @default(0)
+  id                 String             @id @default(cuid())
+  code               String             @unique
+  type               CouponType         @default(PCT)
+  value              Int // percent (whole number) or Rs in cents, per `type`
+  minOrderCents      Int                @default(0)
+  maxUsesTotal       Int? // null = unlimited
+  maxUsesPerCustomer Int? // null = unlimited
+  usedCount          Int                @default(0)
   startsAt           DateTime?
   expiresAt          DateTime?
-  isActive           Boolean    @default(true)
+  isActive           Boolean            @default(true)
   redemptions        CouponRedemption[]
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@map("coupons")
 }
@@ -686,17 +729,17 @@ model CouponRedemption {
 
 // ── Gift cards / store credit ───────────────────────────────────────
 model GiftCard {
-  id                String   @id @default(cuid())
-  code              String   @unique
+  id                String                @id @default(cuid())
+  code              String                @unique
   initialValueCents Int
   balanceCents      Int
-  isActive          Boolean  @default(true)
+  isActive          Boolean               @default(true)
   issuedToName      String?
   issuedToPhone     String?
   payments          Payment[]
   transactions      GiftCardTransaction[]
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
   @@map("gift_cards")
 }
@@ -723,26 +766,26 @@ model GiftCardTransaction {
 
 model CafeSetting {
   // Single-row table; always addressed by id = "singleton".
-  id                String   @id @default("singleton")
-  restaurantName    String   @default("CakeZake")
+  id                String  @id @default("singleton")
+  restaurantName    String  @default("CakeZake")
   address           String?
   phone             String?
-  taxId             String?  // PAN / VAT registration number
+  taxId             String? // PAN / VAT registration number
   // Configurable tax rates (matrix #7), stored as fractions (0.13 = 13%).
-  vatRate           Float    @default(0.13)
-  serviceChargeRate Float    @default(0)
+  vatRate           Float   @default(0.13)
+  serviceChargeRate Float   @default(0)
   // When true, menu prices already include VAT (tax is back-calculated).
-  pricesIncludeVat  Boolean  @default(false)
+  pricesIncludeVat  Boolean @default(false)
   // Dynamic preferences (Settings → Preferences).
-  currencySymbol    String   @default("Rs")
-  defaultGuestCount Int      @default(1)
+  currencySymbol    String  @default("Rs")
+  defaultGuestCount Int     @default(1)
   receiptHeader     String?
   receiptFooter     String?
   wifiPassword      String?
 
   // Printable ticket templates (visual editor under Settings → Printing).
-  billTemplate      Json?
-  kotTemplate       Json?
+  billTemplate Json?
+  kotTemplate  Json?
 
   // IRD Nepal (CBMS e-billing) integration.
   irdEnabled   Boolean @default(false)
@@ -783,7 +826,7 @@ model CafeSetting {
   featKds          Boolean @default(true)
   featSelfOrder    Boolean @default(true)
 
-  updatedAt         DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 
   @@map("cafe_settings")
 }
@@ -794,7 +837,7 @@ model DiscountPreset {
   id        String       @id @default(cuid())
   name      String
   type      DiscountType @default(PCT)
-  value     Int          // percentage (whole number) or Rs amount in cents, per `type`
+  value     Int // percentage (whole number) or Rs amount in cents, per `type`
   isActive  Boolean      @default(true)
   sortOrder Int          @default(0)
   createdAt DateTime     @default(now())
@@ -818,21 +861,73 @@ enum CashMovementType {
   PAY_OUT
 }
 
+// A physical location this tenant operates (multi-outlet, Phase 3). Also
+// carries optional receipt/branding overrides — null falls back to
+// CafeSetting's tenant-wide default (e.g. a branch can have its own PAN/
+// address on receipts without a whole parallel settings table). One is
+// always auto-seeded (`isDefault: true`) per tenant so single-location
+// restaurants see no UX change — see migrate-and-backfill-outlets.js.
+model Outlet {
+  id                String             @id @default(cuid())
+  name              String
+  address           String?
+  phone             String?
+  taxId             String? // PAN — branches can have distinct VAT registration numbers
+  receiptHeader     String?
+  receiptFooter     String?
+  isDefault         Boolean            @default(false)
+  isActive          Boolean            @default(true)
+  terminals         Terminal[]
+  tables            RestaurantTable[]
+  orders            Order[]
+  employees         EmployeeOutlet[]
+  attendanceDevices AttendanceDevice[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@map("outlets")
+}
+
+// Restricts which outlets a non-privileged employee can select at login.
+// Zero rows for an employee = unrestricted (can select any outlet) — this is
+// what every existing employee has post-migration, so access doesn't change
+// for anyone until an admin explicitly assigns them to specific outlets.
+model EmployeeOutlet {
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  outletId   String
+  outlet     Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, outletId])
+  @@map("employee_outlets")
+}
+
 // A physical POS terminal / till (multi-terminal support).
 model Terminal {
-  id        String   @id @default(cuid())
+  id        String              @id @default(cuid())
   name      String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  isActive  Boolean             @default(true)
+  // Which location this till belongs to.
+  outletId  String
+  outlet    Outlet              @relation(fields: [outletId], references: [id])
+  orders    Order[]
+  sessions  CashDrawerSession[]
+  createdAt DateTime            @default(now())
 
+  @@index([outletId])
   @@map("terminals")
 }
 
 model CashDrawerSession {
-  id                String    @id @default(cuid())
-  terminalId        String?   // which till this session belongs to
-  openedAt          DateTime  @default(now())
-  openingFloatCents Int       @default(0)
+  id                String         @id @default(cuid())
+  // Which till this session belongs to. Always null before Phase 3 (never
+  // wired up in the frontend until now) — safe to convert straight to a real
+  // relation with no data to migrate. Outlet is derived via terminal.outletId,
+  // no separate column needed.
+  terminalId        String?
+  terminal          Terminal?      @relation(fields: [terminalId], references: [id])
+  openedAt          DateTime       @default(now())
+  openingFloatCents Int            @default(0)
   openedBy          String?
   closedAt          DateTime?
   closedBy          String?
@@ -863,25 +958,25 @@ model CashMovement {
 // ─────────────────────────────────────────────────────────────
 
 model Ingredient {
-  id           String  @id @default(cuid())
-  name         String
-  unit         String  @default("g") // base stock unit: g / ml / pcs
+  id               String              @id @default(cuid())
+  name             String
+  unit             String              @default("g") // base stock unit: g / ml / pcs
   // Global on-hand total across all warehouses — kept in sync with the sum of
   // WarehouseStock rows below; stays authoritative for existing code that
   // doesn't care about location (recipe costing, reorder alerts, etc.).
-  stockQty     Float   @default(0)
-  reorderLevel Float   @default(0)   // low-stock threshold (#58)
+  stockQty         Float               @default(0)
+  reorderLevel     Float               @default(0) // low-stock threshold (#58)
   // Cost per base unit, in cents (paisa) — drives valuation (#75).
-  costPerUnitCents Int  @default(0)
+  costPerUnitCents Int                 @default(0)
   // Primary supplier for reordering (supplier catalog mapping, #67).
-  supplierId   String?
-  supplier     Supplier? @relation(fields: [supplierId], references: [id])
-  recipeItems  RecipeItem[]
-  movements    StockMovement[]
-  poLines      PurchaseOrderLine[]
-  warehouseStocks WarehouseStock[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  supplierId       String?
+  supplier         Supplier?           @relation(fields: [supplierId], references: [id])
+  recipeItems      RecipeItem[]
+  movements        StockMovement[]
+  poLines          PurchaseOrderLine[]
+  warehouseStocks  WarehouseStock[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
 
   @@map("ingredients")
 }
@@ -894,14 +989,14 @@ model Ingredient {
 // ─────────────────────────────────────────────────────────────
 
 model Warehouse {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   name      String
   address   String?
-  isActive  Boolean  @default(true)
-  isDefault Boolean  @default(false) // the auto-seeded "Main Store"; can't be deleted
+  isActive  Boolean          @default(true)
+  isDefault Boolean          @default(false) // the auto-seeded "Main Store"; can't be deleted
   stocks    WarehouseStock[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   @@map("warehouses")
 }
@@ -924,17 +1019,17 @@ model WarehouseStock {
 // ─────────────────────────────────────────────────────────────
 
 model Supplier {
-  id          String   @id @default(cuid())
+  id          String            @id @default(cuid())
   name        String
-  contact     String?  // phone / email
+  contact     String? // phone / email
   address     String?
   taxId       String?
-  isActive    Boolean  @default(true)
+  isActive    Boolean           @default(true)
   ingredients Ingredient[]
   orders      PurchaseOrder[]
   payments    SupplierPayment[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   @@map("suppliers")
 }
@@ -948,7 +1043,7 @@ model SupplierPayment {
   supplierId  String
   supplier    Supplier @relation(fields: [supplierId], references: [id])
   amountCents Int
-  method      String?  // free-text: Cash, Bank transfer, Cheque, etc.
+  method      String? // free-text: Cash, Bank transfer, Cheque, etc.
   note        String?
   createdAt   DateTime @default(now())
 
@@ -987,7 +1082,7 @@ model PurchaseOrderLine {
   po            PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
   ingredientId  String
   ingredient    Ingredient    @relation(fields: [ingredientId], references: [id])
-  quantity      Float         // ordered qty in ingredient unit
+  quantity      Float // ordered qty in ingredient unit
   receivedQty   Float         @default(0) // received so far (split delivery #146)
   unitCostCents Int           @default(0)
 
@@ -1017,18 +1112,18 @@ enum StockMovementType {
 }
 
 model StockMovement {
-  id           String            @id @default(cuid())
-  ingredientId String
-  ingredient   Ingredient        @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
-  type         StockMovementType
-  quantity     Float             // signed delta in base unit (− for consumption)
-  reason       String?
+  id            String            @id @default(cuid())
+  ingredientId  String
+  ingredient    Ingredient        @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  type          StockMovementType
+  quantity      Float // signed delta in base unit (− for consumption)
+  reason        String?
   // Which warehouse this movement applies to (null = legacy/global-only
   // movement predating this feature). For TRANSFER, warehouseId is the
   // source (its delta is negative) and toWarehouseId is the destination.
   warehouseId   String?
   toWarehouseId String?
-  createdAt    DateTime          @default(now())
+  createdAt     DateTime          @default(now())
 
   @@index([ingredientId])
   @@index([warehouseId])
@@ -1075,7 +1170,7 @@ model FailedSyncItem {
 }
 
 // ─────────────────────────────────────────────────────────────
-// DOUBLE-ENTRY ACCOUNTING (chart of accounts + manual journals)
+// DOUBLE-ENTRY ACCOUNTING — real GL posting + approval workflows
 // ─────────────────────────────────────────────────────────────
 
 enum AccountType {
@@ -1086,34 +1181,64 @@ enum AccountType {
   EXPENSE
 }
 
-// Chart of accounts. System accounts are seeded and undeletable; their ledger
-// views also merge live POS activity (cash/bank/sales/VAT/debtors).
+// Chart of accounts. System accounts are seeded and undeletable.
 model LedgerAccount {
-  id        String      @id @default(cuid())
-  code      String      @unique // e.g. "1000"
+  id        String        @id @default(cuid())
+  code      String        @unique // e.g. "1000"
   name      String
   type      AccountType
-  group     String?     // e.g. "Current Assets", "Indirect Expenses"
-  isSystem  Boolean     @default(false)
-  isActive  Boolean     @default(true)
+  group     String? // e.g. "Current Assets", "Indirect Expenses"
+  isSystem  Boolean       @default(false)
+  isActive  Boolean       @default(true)
   lines     JournalLine[]
-  createdAt DateTime    @default(now())
+  createdAt DateTime      @default(now())
 
   @@map("ledger_accounts")
 }
 
-// A manual voucher (Journal / Payment / Receipt / Contra). Lines must balance.
+// POSTED = affects balances. PENDING_APPROVAL = real rows, excluded from every
+// balance/ledger/trial-balance query until approved. REJECTED = terminal, also
+// excluded, kept for audit trail.
+enum JournalStatus {
+  POSTED
+  PENDING_APPROVAL
+  REJECTED
+}
+
+// A journal voucher — either hand-entered (source: MANUAL) or auto-posted by
+// the business-transaction hooks in orders/purchasing/crm/finance services
+// (source: ORDER_SALE | PURCHASE_RECEIPT | SUPPLIER_PAYMENT |
+// CREDIT_SETTLEMENT | EXPENSE). Lines must balance (Dr total = Cr total),
+// enforced in PostingService, not the DB. `sourceId` traces back to the
+// originating Order/PurchaseOrder/Supplier/Customer/Expense id — this is how
+// a supplier/customer's ledger ties into the GL without needing one
+// LedgerAccount per party (the standard control-account pattern; Supplier/
+// Customer + their own subsidiary ledgers stay the detail records).
 model JournalEntry {
-  id        String        @id @default(cuid())
-  number    Int           @default(autoincrement())
-  type      String        @default("JOURNAL")
-  date      DateTime      @default(now())
-  narration String?
-  createdBy String?
-  lines     JournalLine[]
-  createdAt DateTime      @default(now())
+  id             String                 @id @default(cuid())
+  number         Int                    @default(autoincrement())
+  type           String                 @default("JOURNAL")
+  date           DateTime               @default(now())
+  narration      String?
+  createdBy      String?
+  status         JournalStatus          @default(POSTED)
+  source         String                 @default("MANUAL")
+  sourceId       String?
+  // Denormalized from the source transaction at posting time (multi-outlet,
+  // Phase 3) — a filter/reporting dimension only. The chart of accounts,
+  // ledger and trial balance stay one consolidated tenant-wide book; this is
+  // not a per-outlet ledger partition.
+  outletId       String?
+  workflowRuleId String?
+  workflowRule   JournalWorkflowRule?   @relation(fields: [workflowRuleId], references: [id])
+  currentStep    Int?
+  approvals      JournalEntryApproval[]
+  lines          JournalLine[]
+  createdAt      DateTime               @default(now())
 
   @@index([date])
+  @@index([status])
+  @@index([source, sourceId])
   @@map("journal_entries")
 }
 
@@ -1130,6 +1255,59 @@ model JournalLine {
   @@map("journal_lines")
 }
 
+// Configurable approval rule — "every journal must match a published
+// workflow" (only true once at least one rule is configured; with zero rules,
+// everything posts immediately, matching today's behavior — see
+// PostingService). `journalEvent` is one of JournalEntry.source's values, or
+// "ANY". The highest-priority active rule whose event + amount range matches
+// wins; `postAutomatically` skips the approval steps entirely.
+model JournalWorkflowRule {
+  id                  String                @id @default(cuid())
+  code                String                @unique
+  name                String
+  journalEvent        String
+  minAmountCents      Int?
+  maxAmountCents      Int?
+  priority            Int                   @default(100)
+  postAutomatically   Boolean               @default(false)
+  // Stored for a future notification phase — not wired to delivery yet.
+  firstReminderHours  Int?
+  repeatReminderHours Int?
+  isActive            Boolean               @default(true)
+  steps               JournalApprovalStep[]
+  entries             JournalEntry[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([journalEvent, isActive])
+  @@map("journal_workflow_rules")
+}
+
+model JournalApprovalStep {
+  id                String              @id @default(cuid())
+  ruleId            String
+  rule              JournalWorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  stepOrder         Int
+  name              String
+  approvalsRequired Int                 @default(1)
+
+  @@unique([ruleId, stepOrder])
+  @@map("journal_approval_steps")
+}
+
+// One approval or rejection action against a step. A step advances once its
+// approval count reaches JournalApprovalStep.approvalsRequired.
+model JournalEntryApproval {
+  id         String       @id @default(cuid())
+  entryId    String
+  entry      JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  stepOrder  Int
+  approvedBy String
+  note       String?
+  createdAt  DateTime     @default(now())
+
+  @@map("journal_entry_approvals")
+}
 
 // Fingerprint punches pulled from the ZKTeco device (or added manually).
 // (deviceUserId, at) is unique so re-syncing never duplicates records.
@@ -1159,6 +1337,11 @@ model AttendanceDevice {
   serial     String    @unique
   name       String?
   isActive   Boolean   @default(true)
+  // Which branch this scanner is installed at (multi-outlet, Phase 3) —
+  // optional, an unassigned device still works, it just won't be included in
+  // outlet-filtered attendance reports.
+  outletId   String?
+  outlet     Outlet?   @relation(fields: [outletId], references: [id])
   lastSeenAt DateTime? // any handshake/heartbeat/push
   lastPushAt DateTime? // last successful ATTLOG push
   pushCount  Int       @default(0) // total punches accepted, lifetime
@@ -1181,30 +1364,30 @@ enum TenantStatus {
 }
 
 model Plan {
-  id                String   @id @default(cuid())
-  code              String   @unique // STARTER | PRO | ENTERPRISE
+  id                String                @id @default(cuid())
+  code              String                @unique // STARTER | PRO | ENTERPRISE
   name              String
   priceMonthlyCents Int
   priceYearlyCents  Int
-  maxEmployees      Int      @default(10)
-  maxItems          Int      @default(200)
-  features          Json?    // marketing bullet list
-  isActive          Boolean  @default(true)
+  maxEmployees      Int                   @default(10)
+  maxItems          Int                   @default(200)
+  features          Json? // marketing bullet list
+  isActive          Boolean               @default(true)
   tenants           Tenant[]
   payments          SubscriptionPayment[]
-  createdAt         DateTime @default(now())
+  createdAt         DateTime              @default(now())
 
   @@map("plans")
 }
 
 model Tenant {
-  id          String       @id @default(cuid())
-  slug        String       @unique // subdomain / x-tenant header value
+  id          String                @id @default(cuid())
+  slug        String                @unique // subdomain / x-tenant header value
   name        String
-  dbName      String       @unique
-  status      TenantStatus @default(TRIAL)
+  dbName      String                @unique
+  status      TenantStatus          @default(TRIAL)
   planId      String?
-  plan        Plan?        @relation(fields: [planId], references: [id])
+  plan        Plan?                 @relation(fields: [planId], references: [id])
   ownerName   String?
   ownerPhone  String?
   ownerEmail  String?
@@ -1212,8 +1395,8 @@ model Tenant {
   paidUntil   DateTime?
   notes       String?
   payments    SubscriptionPayment[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
 
   @@map("tenants")
 }
@@ -1227,8 +1410,8 @@ model SubscriptionPayment {
   planId      String?
   plan        Plan?    @relation(fields: [planId], references: [id])
   amountCents Int
-  method      String   // CASH | BANK_TRANSFER
-  reference   String?  // bank voucher / txn reference
+  method      String // CASH | BANK_TRANSFER
+  reference   String? // bank voucher / txn reference
   months      Int      @default(1)
   status      String   @default("VERIFIED") // PENDING | VERIFIED | REJECTED
   periodStart DateTime

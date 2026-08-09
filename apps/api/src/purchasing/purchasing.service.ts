@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PostingService } from '../accounting/posting.service';
+import { ACCOUNT_CODES } from '../accounting/default-accounts';
 
 const poInclude = {
   supplier: { select: { id: true, name: true } },
@@ -9,7 +11,10 @@ const poInclude = {
 
 @Injectable()
 export class PurchasingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly posting: PostingService,
+  ) {}
 
   // ── Suppliers (#141) ───────────────────────────────
   suppliers() {
@@ -81,10 +86,15 @@ export class PurchasingService {
       throw new BadRequestException('PO must be ordered (and not closed) before receiving');
 
     return this.prisma.$transaction(async (tx) => {
+      // Value received in THIS call only — receive() can be called more than
+      // once for a split delivery, so posting the PO's full value here would
+      // double-count whatever an earlier partial receipt already posted.
+      let receivedValueCents = 0;
       for (const r of receipts) {
         if (r.receiveQty <= 0) continue;
         const line = po.lines.find((l) => l.id === r.lineId);
         if (!line) throw new BadRequestException(`Line ${r.lineId} not on this PO`);
+        receivedValueCents += Math.round(r.receiveQty * line.unitCostCents);
         await tx.purchaseOrderLine.update({
           where: { id: line.id },
           data: { receivedQty: { increment: r.receiveQty } },
@@ -106,6 +116,21 @@ export class PurchasingService {
       const lines = await tx.purchaseOrderLine.findMany({ where: { poId: id } });
       const allIn = lines.every((l) => l.receivedQty >= l.quantity);
       const status = allIn ? 'RECEIVED' : 'PARTIAL';
+
+      if (receivedValueCents > 0) {
+        const acctId = await this.posting.accountIdsByCode(tx, [ACCOUNT_CODES.PURCHASES, ACCOUNT_CODES.CREDITORS]);
+        await this.posting.postOrQueue(tx, {
+          event: 'PURCHASE_RECEIPT',
+          amountCents: receivedValueCents,
+          narration: `Goods received — PO #${po.number} (${po.supplier.name})`,
+          lines: [
+            { accountId: acctId[ACCOUNT_CODES.PURCHASES], drCents: receivedValueCents },
+            { accountId: acctId[ACCOUNT_CODES.CREDITORS], crCents: receivedValueCents },
+          ],
+          sourceId: po.id,
+        });
+      }
+
       return tx.purchaseOrder.update({
         where: { id },
         data: { status, receivedAt: allIn ? new Date() : null },
@@ -156,9 +181,26 @@ export class PurchasingService {
     return this.prisma.supplierPayment.findMany({ where: { supplierId }, orderBy: { createdAt: 'desc' } });
   }
 
-  recordPayment(supplierId: string, dto: { amountCents: number; method?: string; note?: string }) {
-    return this.prisma.supplierPayment.create({
-      data: { supplierId, amountCents: dto.amountCents, method: dto.method, note: dto.note },
+  async recordPayment(supplierId: string, dto: { amountCents: number; method?: string; note?: string }) {
+    const supplier = await this.getSupplier(supplierId);
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.supplierPayment.create({
+        data: { supplierId, amountCents: dto.amountCents, method: dto.method, note: dto.note },
+      });
+      const acctId = await this.posting.accountIdsByCode(tx, [ACCOUNT_CODES.CREDITORS, ACCOUNT_CODES.CASH, ACCOUNT_CODES.BANK]);
+      // dto.method is free-text (not the PaymentMethod enum) — loose match.
+      const isCash = /cash/i.test(dto.method ?? '');
+      await this.posting.postOrQueue(tx, {
+        event: 'SUPPLIER_PAYMENT',
+        amountCents: dto.amountCents,
+        narration: `Payment to ${supplier.name}${dto.note ? ` — ${dto.note}` : ''}`,
+        lines: [
+          { accountId: acctId[ACCOUNT_CODES.CREDITORS], drCents: dto.amountCents },
+          { accountId: isCash ? acctId[ACCOUNT_CODES.CASH] : acctId[ACCOUNT_CODES.BANK], crCents: dto.amountCents },
+        ],
+        sourceId: supplierId,
+      });
+      return payment;
     });
   }
 

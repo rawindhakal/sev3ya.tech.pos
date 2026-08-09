@@ -25,11 +25,20 @@ export class AnalyticsService {
   // Dashboard's quick date filter (Today/Yesterday/This week/This month/
   // custom range) — from/to are YYYY-MM-DD, both inclusive, meant in Nepal
   // local time (not the server's own timezone). Defaults to just today,
-  // matching the page's original fixed behavior.
-  async dashboard(from?: string, to?: string) {
+  // matching the page's original fixed behavior. outletId (multi-outlet,
+  // Phase 3) scopes every metric to one location; omitted = every outlet
+  // combined (single-outlet tenants, unchanged).
+  async dashboard(from?: string, to?: string, outletId?: string) {
     const rangeStart = from ? nepalStartOfDate(from) : this.startOfToday();
     const rangeEnd = to ? nepalEndOfDate(to) : new Date(rangeStart.getTime() + 864e5 - 1);
     const window30 = this.daysAgo(29);
+    const outletWhere: Prisma.OrderWhereInput = outletId ? { outletId } : {};
+    // Conditional AND clauses for the raw-SQL queries below (hand-written SQL
+    // needs its own fragment since it doesn't go through the query builder) —
+    // two variants since some queries alias the orders table as "o" and some
+    // reference it unqualified.
+    const outletSql = outletId ? Prisma.sql`AND o."outletId" = ${outletId}` : Prisma.empty;
+    const outletSqlUnqualified = outletId ? Prisma.sql`AND "outletId" = ${outletId}` : Prisma.empty;
 
     const [
       todaysOrders,
@@ -47,24 +56,24 @@ export class AnalyticsService {
     ] = await Promise.all([
       // Order count in the selected range (excluding cancelled).
       this.prisma.order.count({
-        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, status: { not: 'CANCELLED' } },
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, status: { not: 'CANCELLED' }, ...outletWhere },
       }),
       // Customers (covers) in the selected range.
       this.prisma.order.aggregate({
         _sum: { guestCount: true },
-        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, status: { not: 'CANCELLED' } },
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, status: { not: 'CANCELLED' }, ...outletWhere },
       }),
       // Earnings (paid) in the selected range.
       this.prisma.order.aggregate({
         _sum: { totalCents: true },
         _count: true,
-        where: { status: 'PAID', paidAt: { gte: rangeStart, lte: rangeEnd } },
+        where: { status: 'PAID', paidAt: { gte: rangeStart, lte: rangeEnd }, ...outletWhere },
       }),
       // Last-30-day paid revenue → average daily earning (rolling context stat,
       // independent of the selected range).
       this.prisma.order.aggregate({
         _sum: { totalCents: true },
-        where: { status: 'PAID', paidAt: { gte: window30 } },
+        where: { status: 'PAID', paidAt: { gte: window30 }, ...outletWhere },
       }),
       // Daily sales across the selected range (line graph).
       this.prisma.$queryRaw<{ day: Date; cents: bigint; orders: bigint }[]>(
@@ -73,7 +82,7 @@ export class AnalyticsService {
                  SUM("totalCents") AS cents,
                  COUNT(*) AS orders
           FROM orders
-          WHERE status = 'PAID' AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd}
+          WHERE status = 'PAID' AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}
           GROUP BY 1 ORDER BY 1`,
       ),
       // Amount received by payment method in the selected range.
@@ -81,7 +90,7 @@ export class AnalyticsService {
         by: ['method'],
         _sum: { amountCents: true },
         _count: true,
-        where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, ...(outletId ? { order: { outletId } } : {}) },
       }),
       // Top selling items in the selected range.
       this.prisma.$queryRaw<{ name: string; qty: bigint; revenue: bigint }[]>(
@@ -91,7 +100,7 @@ export class AnalyticsService {
                  SUM(oi."unitPriceCents" * oi.quantity) AS revenue
           FROM order_items oi
           JOIN orders o ON o.id = oi."orderId"
-          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd}
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd} ${outletSql}
           GROUP BY oi."nameSnapshot"
           ORDER BY qty DESC LIMIT 8`,
       ),
@@ -103,7 +112,7 @@ export class AnalyticsService {
                  SUM(o."totalCents") AS revenue
           FROM orders o
           JOIN restaurant_tables t ON t.id = o."tableId"
-          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd}
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd} ${outletSql}
           GROUP BY t.name
           ORDER BY revenue DESC LIMIT 6`,
       ),
@@ -114,7 +123,7 @@ export class AnalyticsService {
           FROM orders
           WHERE status = 'PAID' AND type = 'DINE_IN'
             AND "seatedAt" IS NOT NULL AND "paidAt" IS NOT NULL
-            AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd}`,
+            AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}`,
       ),
       // Turnaround: dine-in paid orders per table used, in the selected range.
       this.prisma.$queryRaw<{ orders: bigint; tables: bigint }[]>(
@@ -122,7 +131,7 @@ export class AnalyticsService {
           SELECT COUNT(*) AS orders, COUNT(DISTINCT "tableId") AS tables
           FROM orders
           WHERE status = 'PAID' AND type = 'DINE_IN'
-            AND "tableId" IS NOT NULL AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd}`,
+            AND "tableId" IS NOT NULL AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}`,
       ),
       // Waiter overview in the selected range.
       this.prisma.$queryRaw<
@@ -135,13 +144,13 @@ export class AnalyticsService {
                  SUM(o."guestCount") AS guests
           FROM orders o
           JOIN waiters w ON w.id = o."waiterId"
-          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd}
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd} ${outletSql}
           GROUP BY w.name
           ORDER BY revenue DESC`,
       ),
       // Recent orders in the selected range.
       this.prisma.order.findMany({
-        where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, ...outletWhere },
         orderBy: { createdAt: 'desc' },
         take: 10,
         include: {

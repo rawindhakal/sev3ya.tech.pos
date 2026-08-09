@@ -1,7 +1,10 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AccountingService } from './accounting.service';
 import { JournalService } from './journal.service';
-import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
+import { WorkflowRulesService } from './workflow-rules.service';
+import { CreateWorkflowRuleDto, UpdateWorkflowRuleDto } from './dto/workflow-rule.dto';
+import { PermissionGuard, CurrentEmployee } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
 
 @Controller('accounting')
@@ -9,6 +12,7 @@ export class AccountingController {
   constructor(
     private readonly acc: AccountingService,
     private readonly journal: JournalService,
+    private readonly workflows: WorkflowRulesService,
   ) {}
 
   // ── Chart of accounts ─────────────────────────────
@@ -18,19 +22,19 @@ export class AccountingController {
   }
 
   @Post('accounts')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
   createAccount(@Body() dto: { code: string; name: string; type: any; group?: string }) {
     return this.journal.createAccount(dto);
   }
 
   @Patch('accounts/:id')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
   updateAccount(@Param('id') id: string, @Body() dto: { name?: string; group?: string; code?: string }) {
     return this.journal.updateAccount(id, dto);
   }
 
   @Delete('accounts/:id')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
   removeAccount(@Param('id') id: string) {
     return this.journal.removeAccount(id);
   }
@@ -41,8 +45,15 @@ export class AccountingController {
     return this.journal.entries(from, to);
   }
 
+  // Must be registered before any GET journal/:id route is ever added.
+  @Get('journal/pending')
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_APPROVE))
+  pendingApprovals() {
+    return this.journal.pendingApprovals();
+  }
+
   @Post('journal')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
   createEntry(
     @Body() dto: { date?: string; type?: string; narration?: string; lines: { accountId: string; drCents?: number; crCents?: number }[] },
     @CurrentEmployee() emp: TokenPayload,
@@ -50,10 +61,47 @@ export class AccountingController {
     return this.journal.createEntry(dto, emp?.name);
   }
 
+  @Post('journal/:id/approve')
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_APPROVE))
+  approveEntry(@Param('id') id: string, @Body() dto: { note?: string }, @CurrentEmployee() emp: TokenPayload) {
+    return this.journal.approve(id, emp.name, dto?.note);
+  }
+
+  @Post('journal/:id/reject')
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_APPROVE))
+  rejectEntry(@Param('id') id: string, @Body() dto: { reason: string }, @CurrentEmployee() emp: TokenPayload) {
+    return this.journal.reject(id, dto?.reason, emp.name);
+  }
+
   @Delete('journal/:id')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
   removeEntry(@Param('id') id: string, @CurrentEmployee() emp: TokenPayload) {
     return this.journal.removeEntry(id, emp?.name);
+  }
+
+  // ── Approval workflow rules ───────────────────────
+  @Get('workflows')
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
+  workflowRules() {
+    return this.workflows.findAll();
+  }
+
+  @Post('workflows')
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
+  createWorkflowRule(@Body() dto: CreateWorkflowRuleDto) {
+    return this.workflows.create(dto);
+  }
+
+  @Patch('workflows/:id')
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
+  updateWorkflowRule(@Param('id') id: string, @Body() dto: UpdateWorkflowRuleDto) {
+    return this.workflows.update(id, dto);
+  }
+
+  @Delete('workflows/:id')
+  @UseGuards(new PermissionGuard(PERMISSIONS.ACCOUNTING_MANAGE))
+  removeWorkflowRule(@Param('id') id: string) {
+    return this.workflows.remove(id);
   }
 
   // ── Ledger & trial balance ────────────────────────
@@ -68,8 +116,8 @@ export class AccountingController {
   }
 
   @Get('sales-book')
-  salesBook(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.acc.salesBook(from, to);
+  salesBook(@Query('from') from?: string, @Query('to') to?: string, @Query('outletId') outletId?: string) {
+    return this.acc.salesBook(from, to, outletId);
   }
 
   @Get('purchase-register')

@@ -253,7 +253,7 @@ export default function OrdersPage() {
         open={!!mgrAuth}
         title={mgrAuth?.title}
         hint={mgrAuth?.hint}
-        permission="canVoid"
+        permission="orders.void"
         onApproved={({ token }) => { mgrAuth?.onApproved(token); setVoidReq(null); setRefundReq(null); }}
         onClose={() => setMgrAuth(null)}
       />

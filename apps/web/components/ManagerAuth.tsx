@@ -17,14 +17,16 @@ export default function ManagerAuth({
   open,
   title = 'Manager approval required',
   hint,
-  permission, // additionally require a specific permission flag
+  permission, // the specific permission key this action requires (required —
+  // no coarse "any manager" fallback, so every call site scopes the dialog to
+  // exactly the permission the underlying API endpoint itself enforces)
   onApproved,
   onClose,
 }: {
   open: boolean;
   title?: string;
   hint?: string;
-  permission?: 'canVoid' | 'canDiscount' | 'canManageStaff';
+  permission: string;
   onApproved: (cred: ManagerCred) => void;
   onClose: () => void;
 }) {
@@ -46,9 +48,7 @@ export default function ManagerAuth({
         username: username.trim(),
         password,
       });
-      if (!['ADMIN', 'MANAGER'].includes(emp.role)) {
-        setErr('Only an admin or manager can approve this');
-      } else if (permission && !emp[permission]) {
+      if (!emp.permissions?.includes(permission)) {
         setErr(`${emp.name} does not have the required permission`);
       } else if (!emp.token) {
         setErr('Sign-in failed');

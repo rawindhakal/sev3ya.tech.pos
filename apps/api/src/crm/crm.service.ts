@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PostingService } from '../accounting/posting.service';
+import { ACCOUNT_CODES, BANK_METHODS } from '../accounting/default-accounts';
 
 // 1 loyalty point per Rs 10 spent.
 const POINTS_PER_CENT = 1 / 1000;
@@ -29,7 +31,10 @@ function decorate<T extends { totalSpentCents: number; visitCount: number; lastV
 
 @Injectable()
 export class CrmService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly posting: PostingService,
+  ) {}
 
   // Called inside the payment transaction — upserts the customer by phone,
   // awards points, and rolls up spend / visits (matrix #111, #112).
@@ -169,6 +174,21 @@ export class CrmService {
           });
         }
       }
+
+      const acctId = await this.posting.accountIdsByCode(tx, [ACCOUNT_CODES.CASH, ACCOUNT_CODES.BANK, ACCOUNT_CODES.DEBTORS]);
+      const drAccount = (BANK_METHODS as readonly string[]).includes(method) ? acctId[ACCOUNT_CODES.BANK] : acctId[ACCOUNT_CODES.CASH];
+      await this.posting.postOrQueue(tx, {
+        event: 'CREDIT_SETTLEMENT',
+        amountCents: pay,
+        narration: `Credit settlement — ${c.name} (${method})`,
+        lines: [
+          { accountId: drAccount, drCents: pay },
+          { accountId: acctId[ACCOUNT_CODES.DEBTORS], crCents: pay },
+        ],
+        sourceId: id,
+        actorName,
+      });
+
       return { ...updated, paidCents: pay };
     });
   }

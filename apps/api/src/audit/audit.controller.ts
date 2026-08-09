@@ -1,6 +1,7 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { AuditService } from './audit.service';
-import { AuthGuard } from '../common/auth.guard';
+import { PermissionGuard } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 
 @Controller('audit')
 export class AuditController {
@@ -8,7 +9,7 @@ export class AuditController {
 
   // Viewing the audit trail requires the reports permission.
   @Get()
-  @UseGuards(new AuthGuard('canViewReports'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.REPORTS_VIEW))
   list() {
     return this.audit.list();
   }

@@ -5,13 +5,24 @@ import { api, formatMoney } from '@/lib/api';
 import { downloadCsv, toCsv, exportObjects } from '@/lib/csv';
 import { formatBsLong } from '@/lib/bs-date';
 import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
+import type { Outlet } from '@/lib/types';
 
 // Accounting books (Tally / Busy-style), derived live from POS operations:
 // Day Book · Sales Book · Purchase Register · Cash Book · Bank Book ·
 // Balance Sheet (P&L lives under Finance). Every book exports to CSV.
 
-const TABS = ['Day Book', 'Sales Book', 'Purchase Register', 'Cash Book', 'Bank Book', 'Journal', 'Ledger', 'Trial Balance', 'Chart of Accounts', 'Balance Sheet'] as const;
+const TABS = ['Day Book', 'Sales Book', 'Purchase Register', 'Cash Book', 'Bank Book', 'Journal', 'Pending Approvals', 'Approval Workflows', 'Ledger', 'Trial Balance', 'Chart of Accounts', 'Balance Sheet'] as const;
 type Tab = (typeof TABS)[number];
+
+function myPermissions(): string[] {
+  try { return JSON.parse(localStorage.getItem('cakezake-emp') ?? '{}').permissions ?? []; } catch { return []; }
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  POSTED: 'bg-emerald-100 text-emerald-700',
+  PENDING_APPROVAL: 'bg-amber-100 text-amber-700',
+  REJECTED: 'bg-red-100 text-red-600',
+};
 
 interface Account {
   id: string; code: string; name: string; type: string; group?: string | null;
@@ -27,15 +38,19 @@ export default function AccountingPage() {
   const [date, setDate] = useState(iso(new Date()));
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [outletId, setOutletId] = useState('');
+  useEffect(() => { api.get<Outlet[]>('/outlets').then(setOutlets).catch(() => {}); }, []);
 
-  const SELF_LOADING: Tab[] = ['Journal', 'Ledger', 'Trial Balance', 'Chart of Accounts'];
+  const SELF_LOADING: Tab[] = ['Journal', 'Pending Approvals', 'Approval Workflows', 'Ledger', 'Trial Balance', 'Chart of Accounts'];
   const load = useCallback(async () => {
     setError(null);
     if (SELF_LOADING.includes(tab)) return; // those tabs fetch their own data
     try {
       const url =
         tab === 'Day Book' ? `/accounting/day-book?date=${date}` :
-        tab === 'Sales Book' ? `/accounting/sales-book?from=${from}&to=${to}` :
+        // outletId only wired server-side for Sales Book — see accounting.service.ts.
+        tab === 'Sales Book' ? `/accounting/sales-book?from=${from}&to=${to}${outletId ? `&outletId=${outletId}` : ''}` :
         tab === 'Purchase Register' ? `/accounting/purchase-register?from=${from}&to=${to}` :
         tab === 'Cash Book' ? `/accounting/cash-book?from=${from}&to=${to}` :
         tab === 'Bank Book' ? `/accounting/bank-book?from=${from}&to=${to}` :
@@ -45,7 +60,7 @@ export default function AccountingPage() {
       setError((e as Error).message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, from, to, date]);
+  }, [tab, from, to, date, outletId]);
   useEffect(() => { load(); }, [load]);
 
   const rs = (c: number) => (c / 100).toFixed(2);
@@ -118,6 +133,12 @@ export default function AccountingPage() {
               <span className="text-slate-400">→</span>
               <input type="date" className="input w-auto" value={to} onChange={(e) => setTo(e.target.value)} />
             </>
+          )}
+          {tab === 'Sales Book' && outlets.length > 1 && (
+            <select className="input w-auto" value={outletId} onChange={(e) => setOutletId(e.target.value)} aria-label="Outlet">
+              <option value="">All outlets</option>
+              {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
           )}
           {!SELF_LOADING.includes(tab) && <button className="btn-ghost" onClick={exportCsv} disabled={!data}>⬇ CSV</button>}
         </div>
@@ -220,6 +241,8 @@ export default function AccountingPage() {
       )}
 
       {tab === 'Journal' && <JournalTab from={from} to={to} />}
+      {tab === 'Pending Approvals' && <ApprovalsTab />}
+      {tab === 'Approval Workflows' && <WorkflowsTab />}
       {tab === 'Ledger' && <LedgerTab from={from} to={to} />}
       {tab === 'Trial Balance' && <TrialTab from={from} to={to} />}
       {tab === 'Chart of Accounts' && <ChartTab />}
@@ -388,33 +411,52 @@ function JournalTab({ from, to }: { from: string; to: string }) {
     try { await api.delete(`/accounting/journal/${id}`); load(); } catch (e) { notify((e as Error).message, 'error'); }
   }
 
+  const canApprove = myPermissions().includes('accounting.approve');
+  async function approve(id: string) {
+    try { await api.post(`/accounting/journal/${id}/approve`, {}); load(); } catch (e) { notify((e as Error).message, 'error'); }
+  }
+  async function reject(id: string) {
+    const reason = await promptDialog('Reason for rejecting this voucher:', '', { title: 'Reject voucher' });
+    if (!reason?.trim()) return;
+    try { await api.post(`/accounting/journal/${id}/reject`, { reason: reason.trim() }); load(); } catch (e) { notify((e as Error).message, 'error'); }
+  }
+
   return (
     <div className="space-y-4">
       {err && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-slate-400">Manual vouchers (Journal / Payment / Receipt / Contra). Creating and deleting needs a manager/admin sign-in.</p>
+        <p className="text-xs text-slate-400">Manual vouchers (Journal / Payment / Receipt / Contra), plus auto-posted entries from sales, purchasing, credit settlements &amp; expenses. Creating and deleting needs a manager/admin sign-in.</p>
         <div className="flex gap-2">
-          <button className="btn-ghost" onClick={() => exportObjects('journal.csv', entries.flatMap((e) => e.lines.map((l: any) => ({ voucher: e.number, dateBS: e.dateBs, type: e.type, account: `${l.account.code} ${l.account.name}`, dr: (l.drCents / 100).toFixed(2), cr: (l.crCents / 100).toFixed(2), narration: e.narration ?? '' }))))}>⬇ CSV</button>
+          <button className="btn-ghost" onClick={() => exportObjects('journal.csv', entries.flatMap((e) => e.lines.map((l: any) => ({ voucher: e.number, dateBS: e.dateBs, type: e.type, status: e.status, account: `${l.account.code} ${l.account.name}`, dr: (l.drCents / 100).toFixed(2), cr: (l.crCents / 100).toFixed(2), narration: e.narration ?? '' }))))}>⬇ CSV</button>
           <button className="btn-primary" onClick={() => setOpen(true)}>+ New voucher</button>
         </div>
       </div>
 
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-slate-100"><th className={thc}>Vch #</th><th className={thc}>Date (BS)</th><th className={thc}>Type</th><th className={thc}>Narration</th><th className={thc}>Accounts</th><th className={`${thc} text-right`}>Amount</th><th className="p-2" /></tr></thead>
+          <thead><tr className="border-b border-slate-100"><th className={thc}>Vch #</th><th className={thc}>Date (BS)</th><th className={thc}>Type</th><th className={thc}>Status</th><th className={thc}>Narration</th><th className={thc}>Accounts</th><th className={`${thc} text-right`}>Amount</th><th className="p-2" /></tr></thead>
           <tbody className="divide-y divide-slate-50">
             {entries.map((e) => (
               <tr key={e.id}>
                 <td className={`${tdc} font-medium`}>#{e.number}</td>
                 <td className={`${tdc} tabular-nums`}>{e.dateBs}</td>
                 <td className={tdc}><span className="badge bg-slate-100 text-slate-500">{e.type}</span></td>
+                <td className={tdc}><span className={`badge ${STATUS_BADGE[e.status] ?? 'bg-slate-100 text-slate-500'}`}>{e.status === 'PENDING_APPROVAL' ? 'Pending approval' : e.status === 'REJECTED' ? 'Rejected' : 'Posted'}</span></td>
                 <td className={tdc}>{e.narration ?? '—'}</td>
                 <td className={`${tdc} text-xs`}>{e.lines.map((l: any) => `${l.drCents ? 'Dr' : 'Cr'} ${l.account.name}`).join(' · ')}</td>
                 <td className={`${tdrc} font-semibold`}>{formatMoney(e.amountCents)}</td>
-                <td className="p-2 text-right"><button onClick={() => remove(e.id, e.number)} className="text-slate-300 hover:text-red-600">🗑</button></td>
+                <td className="p-2 text-right whitespace-nowrap">
+                  {e.status === 'PENDING_APPROVAL' && canApprove && (
+                    <>
+                      <button title="Approve" onClick={() => approve(e.id)} className="px-1 text-emerald-500 hover:text-emerald-700">✓</button>
+                      <button title="Reject" onClick={() => reject(e.id)} className="px-1 text-red-400 hover:text-red-600">✕</button>
+                    </>
+                  )}
+                  {e.type === 'JOURNAL' && e.source === 'MANUAL' && <button onClick={() => remove(e.id, e.number)} className="text-slate-300 hover:text-red-600">🗑</button>}
+                </td>
               </tr>
             ))}
-            {entries.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-slate-400">No vouchers in range — create one with “+ New voucher”.</td></tr>}
+            {entries.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-slate-400">No vouchers in range — create one with “+ New voucher”.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -455,6 +497,185 @@ function JournalTab({ from, to }: { from: string; to: string }) {
             <div className="flex justify-end gap-2">
               <button className="btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
               <button className="btn-primary" disabled={!balanced || busy} onClick={save}>{busy ? 'Saving…' : 'Save voucher'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Pending approvals (entries awaiting sign-off) ─────
+function ApprovalsTab() {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const canApprove = myPermissions().includes('accounting.approve');
+
+  const load = useCallback(() => {
+    api.get<any[]>('/accounting/journal/pending').then(setEntries).catch((e) => setErr((e as Error).message));
+  }, []);
+  useEffect(load, [load]);
+
+  async function approve(id: string) {
+    try { await api.post(`/accounting/journal/${id}/approve`, {}); load(); } catch (e) { notify((e as Error).message, 'error'); }
+  }
+  async function reject(id: string) {
+    const reason = await promptDialog('Reason for rejecting this voucher:', '', { title: 'Reject voucher' });
+    if (!reason?.trim()) return;
+    try { await api.post(`/accounting/journal/${id}/reject`, { reason: reason.trim() }); load(); } catch (e) { notify((e as Error).message, 'error'); }
+  }
+
+  if (!canApprove) return <p className="text-sm text-slate-400">Your role doesn&apos;t have permission to approve journal entries.</p>;
+
+  return (
+    <div className="space-y-4">
+      {err && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
+      <p className="text-xs text-slate-400">Entries held for approval by a configured workflow rule. Balances won&apos;t reflect these until posted.</p>
+      {entries.length === 0 && !err && <p className="text-sm text-slate-400">Nothing waiting on you right now.</p>}
+      <div className="space-y-3">
+        {entries.map((e) => {
+          const step = e.workflowRule?.steps?.find((s: any) => s.stepOrder === e.currentStep);
+          const approvalsSoFar = (e.approvals ?? []).filter((a: any) => a.stepOrder === e.currentStep && !a.note?.startsWith('REJECTED:')).length;
+          return (
+            <div key={e.id} className="card p-4">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="font-semibold text-slate-800">Voucher #{e.number}</span>{' '}
+                  <span className="badge bg-slate-100 text-slate-500">{e.source}</span>{' '}
+                  <span className="text-xs text-slate-400">{e.workflowRule?.name}{step ? ` — step "${step.name}" (${approvalsSoFar}/${step.approvalsRequired})` : ''}</span>
+                </div>
+                <span className="font-semibold tabular-nums">{formatMoney(e.lines.reduce((s: number, l: any) => s + l.drCents, 0))}</span>
+              </div>
+              <p className="mb-2 text-sm text-slate-600">{e.narration ?? '—'}</p>
+              <div className="mb-3 text-xs text-slate-500">{e.lines.map((l: any) => `${l.drCents ? 'Dr' : 'Cr'} ${l.account.code} ${l.account.name} ${formatMoney(l.drCents || l.crCents)}`).join(' · ')}</div>
+              <div className="flex justify-end gap-2">
+                <button className="btn-ghost text-red-600" onClick={() => reject(e.id)}>Reject</button>
+                <button className="btn-primary" onClick={() => approve(e.id)}>Approve</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Approval workflow rules (admin config) ────────────
+const JOURNAL_EVENTS = ['ANY', 'MANUAL', 'ORDER_SALE', 'PURCHASE_RECEIPT', 'SUPPLIER_PAYMENT', 'CREDIT_SETTLEMENT', 'EXPENSE'];
+
+function WorkflowsTab() {
+  const [rules, setRules] = useState<any[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const blank = { code: '', name: '', journalEvent: 'ANY', minAmountCents: '', maxAmountCents: '', priority: 100, postAutomatically: false, isActive: true, steps: [{ stepOrder: 1, name: 'Manager approval', approvalsRequired: 1 }] };
+  const [form, setForm] = useState<any>(blank);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api.get<any[]>('/accounting/workflows').then(setRules).catch((e) => setErr((e as Error).message));
+  }, []);
+  useEffect(load, [load]);
+
+  function openNew() { setEditing(null); setForm(blank); setOpen(true); }
+  function openEdit(r: any) {
+    setEditing(r);
+    setForm({
+      code: r.code, name: r.name, journalEvent: r.journalEvent,
+      minAmountCents: r.minAmountCents != null ? String(r.minAmountCents / 100) : '',
+      maxAmountCents: r.maxAmountCents != null ? String(r.maxAmountCents / 100) : '',
+      priority: r.priority, postAutomatically: r.postAutomatically, isActive: r.isActive,
+      steps: r.steps.map((s: any) => ({ stepOrder: s.stepOrder, name: s.name, approvalsRequired: s.approvalsRequired })),
+    });
+    setOpen(true);
+  }
+
+  async function save() {
+    setBusy(true);
+    try {
+      const dto = {
+        code: form.code.trim(), name: form.name.trim(), journalEvent: form.journalEvent,
+        minAmountCents: form.minAmountCents ? Math.round(parseFloat(form.minAmountCents) * 100) : undefined,
+        maxAmountCents: form.maxAmountCents ? Math.round(parseFloat(form.maxAmountCents) * 100) : undefined,
+        priority: Number(form.priority) || 100,
+        postAutomatically: form.postAutomatically, isActive: form.isActive,
+        steps: form.steps.map((s: any, i: number) => ({ stepOrder: i + 1, name: s.name, approvalsRequired: Number(s.approvalsRequired) || 1 })),
+      };
+      if (editing) await api.patch(`/accounting/workflows/${editing.id}`, dto);
+      else await api.post('/accounting/workflows', dto);
+      setOpen(false);
+      load();
+    } catch (e) { notify((e as Error).message, 'error'); } finally { setBusy(false); }
+  }
+  async function remove(r: any) {
+    if (!(await confirmDialog(`Delete workflow rule "${r.name}"?${r._count?.entries ? ' It has history, so it will be deactivated instead.' : ''}`, { danger: true, confirmLabel: 'Delete' }))) return;
+    try { await api.delete(`/accounting/workflows/${r.id}`); load(); } catch (e) { notify((e as Error).message, 'error'); }
+  }
+
+  return (
+    <div className="space-y-4">
+      {err && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-slate-400">Route transactions above a threshold through sign-off before they post to the ledger. With no active rule for an event, it posts immediately — same as before this feature existed.</p>
+        <button className="btn-primary" onClick={openNew}>+ New rule</button>
+      </div>
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-slate-100"><th className={thc}>Name</th><th className={thc}>Event</th><th className={thc}>Amount range</th><th className={thc}>Steps</th><th className={thc}>Auto-post</th><th className={thc}>Active</th><th className="p-2" /></tr></thead>
+          <tbody className="divide-y divide-slate-50">
+            {rules.map((r) => (
+              <tr key={r.id}>
+                <td className={`${tdc} font-medium text-slate-700`}>{r.name} <span className="text-xs text-slate-400">({r.code})</span></td>
+                <td className={tdc}><span className="badge bg-slate-100 text-slate-500">{r.journalEvent}</span></td>
+                <td className={`${tdc} text-xs`}>{r.minAmountCents != null ? formatMoney(r.minAmountCents) : '—'} – {r.maxAmountCents != null ? formatMoney(r.maxAmountCents) : '—'}</td>
+                <td className={tdc}>{r.steps.map((s: any) => s.name).join(' → ')}</td>
+                <td className={tdc}>{r.postAutomatically ? 'Yes' : 'No'}</td>
+                <td className={tdc}>{r.isActive ? <span className="badge bg-emerald-100 text-emerald-700">Active</span> : <span className="badge bg-slate-100 text-slate-400">Inactive</span>}</td>
+                <td className="w-20 p-2 text-right">
+                  <button title="Edit" onClick={() => openEdit(r)} className="px-1 text-slate-400 hover:text-slate-600">✏️</button>
+                  <button title="Delete" onClick={() => remove(r)} className="px-1 text-slate-400 hover:text-red-600">🗑</button>
+                </td>
+              </tr>
+            ))}
+            {rules.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-slate-400">No workflow rules — everything posts immediately.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-4 text-lg font-bold text-slate-800">{editing ? 'Edit workflow rule' : 'New workflow rule'}</h2>
+            <div className="mb-3 grid grid-cols-2 gap-3">
+              <div><label className="label">Code</label><input className="input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="LARGE_SALES" /></div>
+              <div><label className="label">Name</label><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Large sales sign-off" /></div>
+              <div><label className="label">Journal event</label>
+                <select className="input" value={form.journalEvent} onChange={(e) => setForm({ ...form, journalEvent: e.target.value })}>
+                  {JOURNAL_EVENTS.map((ev) => <option key={ev}>{ev}</option>)}
+                </select></div>
+              <div><label className="label">Priority</label><input type="number" className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} /></div>
+              <div><label className="label">Min amount (Rs)</label><input className="input" inputMode="decimal" value={form.minAmountCents} onChange={(e) => setForm({ ...form, minAmountCents: e.target.value })} placeholder="0" /></div>
+              <div><label className="label">Max amount (Rs)</label><input className="input" inputMode="decimal" value={form.maxAmountCents} onChange={(e) => setForm({ ...form, maxAmountCents: e.target.value })} placeholder="no limit" /></div>
+            </div>
+            <div className="mb-3 flex gap-4 text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={form.postAutomatically} onChange={(e) => setForm({ ...form, postAutomatically: e.target.checked })} /> Post automatically (rule matches but skips approval)</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> Active</label>
+            </div>
+
+            <label className="label">Approval steps (in order)</label>
+            {form.steps.map((s: any, i: number) => (
+              <div key={i} className="mb-2 grid grid-cols-[1fr_6rem_2rem] items-center gap-2">
+                <input className="input" value={s.name} placeholder="Step name" onChange={(e) => setForm({ ...form, steps: form.steps.map((x: any, j: number) => (j === i ? { ...x, name: e.target.value } : x)) })} />
+                <input type="number" min={1} className="input text-right" value={s.approvalsRequired} onChange={(e) => setForm({ ...form, steps: form.steps.map((x: any, j: number) => (j === i ? { ...x, approvalsRequired: e.target.value } : x)) })} />
+                <button className="text-slate-300 hover:text-red-500" onClick={() => setForm({ ...form, steps: form.steps.filter((_: any, j: number) => j !== i) })} disabled={form.steps.length <= 1}>✕</button>
+              </div>
+            ))}
+            <button className="btn-ghost mb-3 text-xs" onClick={() => setForm({ ...form, steps: [...form.steps, { stepOrder: form.steps.length + 1, name: '', approvalsRequired: 1 }] })}>+ step</button>
+
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
+              <button className="btn-primary" disabled={busy || !form.code.trim() || !form.name.trim() || form.steps.some((s: any) => !s.name.trim())} onClick={save}>{busy ? 'Saving…' : 'Save rule'}</button>
             </div>
           </div>
         </div>

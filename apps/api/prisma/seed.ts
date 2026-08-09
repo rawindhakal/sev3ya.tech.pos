@@ -1,5 +1,7 @@
 import { PrismaClient, OrderType, PaymentMethod } from '@prisma/client';
 import { hashPassword } from '../src/common/password';
+import { seedSystemRolesAndBackfill } from '../src/roles/system-roles.seed';
+import { PERMISSIONS } from '../src/common/permissions';
 
 const prisma = new PrismaClient();
 
@@ -26,6 +28,8 @@ async function main() {
   await prisma.supplier.deleteMany();
   await prisma.shift.deleteMany();
   await prisma.employee.deleteMany();
+  await prisma.rolePermission.deleteMany();
+  await prisma.role.deleteMany();
   await prisma.cashMovement.deleteMany();
   await prisma.cashDrawerSession.deleteMany();
   await prisma.reservation.deleteMany();
@@ -35,6 +39,8 @@ async function main() {
   await prisma.category.deleteMany();
   await prisma.restaurantTable.deleteMany();
   await prisma.waiter.deleteMany();
+  await prisma.terminal.deleteMany();
+  await prisma.outlet.deleteMany();
 
   // Modifier groups (prices in paisa: 1 NPR = 100 paisa)
   const sizeGroup = await prisma.modifierGroup.create({
@@ -159,15 +165,26 @@ async function main() {
       });
   }
 
+  // Outlet (multi-outlet, Phase 3) — every tenant always has at least this
+  // one default outlet + till, same as migrate-and-backfill-outlets.js seeds
+  // for an already-provisioned tenant.
+  const mainOutlet = await prisma.outlet.create({ data: { name: 'CakeZake', isDefault: true } });
+  await prisma.terminal.createMany({
+    data: [
+      { name: 'Counter 1', outletId: mainOutlet.id },
+      { name: 'Bar Till', outletId: mainOutlet.id },
+    ],
+  });
+
   // Tables
   await prisma.restaurantTable.createMany({
     data: [
-      { name: 'T1', seats: 2, area: 'Ground floor' },
-      { name: 'T2', seats: 4, area: 'Ground floor' },
-      { name: 'T3', seats: 4, area: 'Ground floor' },
-      { name: 'T4', seats: 6, area: 'Ground floor' },
-      { name: 'P1', seats: 2, area: 'Patio' },
-      { name: 'P2', seats: 4, area: 'Patio' },
+      { name: 'T1', seats: 2, area: 'Ground floor', outletId: mainOutlet.id },
+      { name: 'T2', seats: 4, area: 'Ground floor', outletId: mainOutlet.id },
+      { name: 'T3', seats: 4, area: 'Ground floor', outletId: mainOutlet.id },
+      { name: 'T4', seats: 6, area: 'Ground floor', outletId: mainOutlet.id },
+      { name: 'P1', seats: 2, area: 'Patio', outletId: mainOutlet.id },
+      { name: 'P2', seats: 4, area: 'Patio', outletId: mainOutlet.id },
     ],
   });
 
@@ -181,17 +198,43 @@ async function main() {
     ],
   });
 
-  // Employees + role permissions (Phase 5). Username/password only (no PINs).
-  await prisma.employee.deleteMany();
+  // Roles + employees. Username/password only (no PINs). The protected
+  // "Owner" role (100% of PERMISSIONS, undeletable) is seeded here too but
+  // deliberately left unassigned — matches production, where Owner exists
+  // as a break-glass role, not a day-to-day account.
+  await seedSystemRolesAndBackfill(prisma); // creates just the protected Owner role (no legacy employees to backfill)
+
+  const makeRole = (name: string, portal: 'BACK_OFFICE' | 'WAITER_ONLY', keys: string[]) =>
+    prisma.role.create({ data: { name, portal, permissions: { create: keys.map((key) => ({ key })) } } });
+
+  const [adminRole, managerRole, cashierRole, baristaRole, waiterRole] = await Promise.all([
+    makeRole('Admin', 'BACK_OFFICE', [
+      PERMISSIONS.ORDERS_VOID, PERMISSIONS.ORDERS_DISCOUNT, PERMISSIONS.STAFF_MANAGE, PERMISSIONS.ROLES_MANAGE,
+      PERMISSIONS.ATTENDANCE_MANAGE, PERMISSIONS.SETTINGS_MANAGE, PERMISSIONS.INVENTORY_MANAGE, PERMISSIONS.REPORTS_VIEW,
+      PERMISSIONS.ACCOUNTING_MANAGE, PERMISSIONS.GIFTCARDS_MANAGE, PERMISSIONS.PROMOTIONS_MANAGE, PERMISSIONS.SYNC_FAILURES_MANAGE,
+      PERMISSIONS.CRM_SETTLE_CREDIT, PERMISSIONS.CRM_DELETE, PERMISSIONS.CASH_DRAWER_ADJUST_FLOAT, PERMISSIONS.IRD_SYNC,
+      PERMISSIONS.PLATFORM_MANAGE,
+    ]),
+    makeRole('Manager', 'BACK_OFFICE', [
+      PERMISSIONS.ORDERS_VOID, PERMISSIONS.ORDERS_DISCOUNT, PERMISSIONS.INVENTORY_MANAGE, PERMISSIONS.REPORTS_VIEW,
+      PERMISSIONS.ACCOUNTING_MANAGE, PERMISSIONS.ATTENDANCE_MANAGE, PERMISSIONS.IRD_SYNC,
+      PERMISSIONS.CRM_SETTLE_CREDIT, PERMISSIONS.CRM_DELETE,
+    ]),
+    makeRole('Cashier', 'BACK_OFFICE', [PERMISSIONS.ORDERS_DISCOUNT, PERMISSIONS.POS_TILL_SIGNIN]),
+    makeRole('Barista', 'BACK_OFFICE', []),
+    makeRole('Waiter', 'WAITER_ONLY', []),
+  ]);
+
   await prisma.employee.createMany({
     data: [
-      { name: 'Admin', role: 'ADMIN', username: 'admin', passwordHash: hashPassword(process.env.SEED_ADMIN_PASSWORD ?? 'admin123'), canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true, canManageStaff: true },
-      { name: 'Manager Gita', role: 'MANAGER', username: 'gita', passwordHash: hashPassword(process.env.SEED_MANAGER_PASSWORD ?? 'manager123'), canVoid: true, canDiscount: true, canManageInventory: true, canViewReports: true },
-      { name: 'Cashier Ram', role: 'CASHIER', username: 'ram', passwordHash: hashPassword(process.env.SEED_CASHIER_PASSWORD ?? 'cashier123'), canDiscount: true },
-      { name: 'Barista Sita', role: 'BARISTA', username: 'sita', passwordHash: hashPassword(process.env.SEED_BARISTA_PASSWORD ?? 'barista123') },
-      { name: 'Waiter Hari', role: 'WAITER', username: 'hari', passwordHash: hashPassword(process.env.SEED_WAITER_PASSWORD ?? 'waiter123') },
+      { name: 'Admin', roleId: adminRole.id, username: 'admin', passwordHash: hashPassword(process.env.SEED_ADMIN_PASSWORD ?? 'admin123') },
+      { name: 'Manager Gita', roleId: managerRole.id, username: 'gita', passwordHash: hashPassword(process.env.SEED_MANAGER_PASSWORD ?? 'manager123') },
+      { name: 'Cashier Ram', roleId: cashierRole.id, username: 'ram', passwordHash: hashPassword(process.env.SEED_CASHIER_PASSWORD ?? 'cashier123') },
+      { name: 'Barista Sita', roleId: baristaRole.id, username: 'sita', passwordHash: hashPassword(process.env.SEED_BARISTA_PASSWORD ?? 'barista123') },
+      { name: 'Waiter Hari', roleId: waiterRole.id, username: 'hari', passwordHash: hashPassword(process.env.SEED_WAITER_PASSWORD ?? 'waiter123') },
     ],
   });
+  console.log('  roles seeded: Owner, Admin, Manager, Cashier, Barista, Waiter');
 
   // Prep-station routing: drinks → BAR (BOT), food/bakery → KITCHEN (KOT).
   for (const [catName, station] of [
@@ -309,6 +352,7 @@ async function main() {
           type,
           status: 'PAID',
           tableId: table?.id ?? null,
+          outletId: mainOutlet.id,
           waiterId: waiter.id,
           guestCount,
           customerId: customer?.id ?? null,

@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { GiftCardsService } from './giftcards.service';
-import { AuthGuard } from '../common/auth.guard';
+import { PermissionGuard } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 
 class IssueGiftCardDto {
   @IsInt() @Min(1) valueCents: number;
@@ -26,7 +27,7 @@ export class GiftCardsController {
   }
 
   @Post()
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.GIFTCARDS_MANAGE))
   issue(@Body() dto: IssueGiftCardDto) {
     return this.giftCards.issue(dto);
   }
@@ -44,13 +45,13 @@ export class GiftCardsController {
   }
 
   @Post(':code/topup')
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.GIFTCARDS_MANAGE))
   topUp(@Param('code') code: string, @Body() dto: TopUpDto) {
     return this.giftCards.topUp(code, dto.amountCents, dto.note);
   }
 
   @Patch(':code/active')
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.GIFTCARDS_MANAGE))
   setActive(@Param('code') code: string, @Body() dto: SetActiveDto) {
     return this.giftCards.setActive(code, dto.isActive);
   }

@@ -183,7 +183,7 @@ export class AttendanceService {
     const nextMonth = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
     const end = new Date(nepalStartOfDate(`${nextMonth}-01`).getTime() - 1);
     const grid = await this.dayGrid(start, end);
-    const allEmps = await this.prisma.employee.findMany({ where: { isActive: true } });
+    const allEmps = await this.prisma.employee.findMany({ where: { isActive: true }, include: { role: { select: { name: true } } } });
 
     const rows = allEmps.map((e) => {
       const g = grid.get(e.id);
@@ -197,7 +197,7 @@ export class AttendanceService {
       return {
         employeeId: e.id,
         name: e.name,
-        role: e.role,
+        role: e.role.name,
         monthlySalaryCents: e.monthlySalaryCents,
         presentDays,
         totalHours: Math.round(hours * 10) / 10,

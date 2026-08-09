@@ -9,10 +9,13 @@ export class KdsService {
     private readonly sms: SmsService,
   ) {}
 
-  // Active kitchen tickets: fired orders not yet served/closed.
-  async tickets() {
+  // Active kitchen tickets: fired orders not yet served/closed. outletId
+  // (multi-outlet, Phase 3) scopes the board to one location — a kitchen at
+  // Outlet A must never see Outlet B's tickets, so the POS/KDS frontend
+  // always passes its resolved outlet once more than one outlet exists.
+  async tickets(outletId?: string) {
     const orders = await this.prisma.order.findMany({
-      where: { status: { in: ['SENT_TO_KITCHEN', 'READY'] } },
+      where: { status: { in: ['SENT_TO_KITCHEN', 'READY'] }, ...(outletId ? { outletId } : {}) },
       orderBy: { kotFiredAt: 'asc' },
       include: {
         table: { select: { name: true } },
@@ -43,15 +46,15 @@ export class KdsService {
   }
 
   // Split view for the token display: processing vs ready (spec §4.2).
-  async tokens() {
-    const tickets = await this.tickets();
+  async tokens(outletId?: string) {
+    const tickets = await this.tickets(outletId);
     return {
       processing: tickets.filter((t) => t.status === 'SENT_TO_KITCHEN').map((t) => ({ number: t.number, table: t.table })),
       ready: tickets.filter((t) => t.status === 'READY').map((t) => ({ number: t.number, table: t.table })),
     };
   }
 
-  async markItem(itemId: string, status: 'PREPARING' | 'READY' | 'SERVED') {
+  async markItem(itemId: string, status: 'PREPARING' | 'READY' | 'SERVED', outletId?: string) {
     const item = await this.prisma.orderItem.findUnique({ where: { id: itemId } });
     if (!item) throw new BadRequestException('Order item not found');
     await this.prisma.orderItem.update({ where: { id: itemId }, data: { kotStatus: status } });
@@ -72,13 +75,13 @@ export class KdsService {
         }
       }
     }
-    return this.tickets();
+    return this.tickets(outletId);
   }
 
   // Undo an accidental "ready" tap — puts the item back in progress and, if
   // the order had already advanced to READY on the strength of it, reopens
   // the order too so it doesn't quietly fall off a chef's board mid-cook.
-  async unmarkItem(itemId: string) {
+  async unmarkItem(itemId: string, outletId?: string) {
     const item = await this.prisma.orderItem.findUnique({ where: { id: itemId } });
     if (!item) throw new BadRequestException('Order item not found');
     await this.prisma.orderItem.update({ where: { id: itemId }, data: { kotStatus: 'PREPARING' } });
@@ -86,7 +89,7 @@ export class KdsService {
     if (order?.status === 'READY') {
       await this.prisma.order.update({ where: { id: item.orderId }, data: { status: 'SENT_TO_KITCHEN' } });
     }
-    return this.tickets();
+    return this.tickets(outletId);
   }
 
   // Bump (complete) a ticket off the board. With no station, closes the
@@ -94,7 +97,7 @@ export class KdsService {
   // items are marked done — the order itself only closes once every
   // station's items are finished, so e.g. the kitchen finishing first
   // doesn't silently drop the bar's half of the ticket.
-  async bump(orderId: string, station?: 'KITCHEN' | 'BAR' | 'BILLING') {
+  async bump(orderId: string, station?: 'KITCHEN' | 'BAR' | 'BILLING', outletId?: string) {
     await this.prisma.orderItem.updateMany({
       where: { orderId, cancelledAt: null, ...(station ? { station } : {}) },
       data: { kotStatus: 'SERVED' },
@@ -106,7 +109,7 @@ export class KdsService {
       where: { id: orderId },
       data: { status: remaining === 0 ? 'SERVED' : 'SENT_TO_KITCHEN' },
     });
-    return this.tickets();
+    return this.tickets(outletId);
   }
 
   // Chef flags a menu item out of stock from the KDS (matrix #51).

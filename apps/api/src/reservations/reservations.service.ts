@@ -10,9 +10,13 @@ export class ReservationsService {
   private tableSelect = { table: { select: { id: true, name: true, area: true } } };
 
   // Bookings for a given day (default today); waitlist is returned separately.
-  async findAll(params: { date?: string; status?: string }) {
+  // outletId (multi-outlet, Phase 3) joins through the assigned table's own
+  // outlet — a reservation has no outletId of its own, since a table-linked
+  // booking's location is exactly its table's location.
+  async findAll(params: { date?: string; status?: string; outletId?: string }) {
     const where: Prisma.ReservationWhereInput = { isWaitlist: false };
     if (params.status) where.status = params.status as ReservationStatus;
+    if (params.outletId) where.table = { outletId: params.outletId };
     if (params.date) {
       // params.date is meant in Nepal local time, not the server's own
       // timezone — see common/nepal-time.ts.

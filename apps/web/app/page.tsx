@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, formatMoney } from '@/lib/api';
-import type { DashboardData } from '@/lib/types';
+import type { DashboardData, Outlet } from '@/lib/types';
 import LineChart from '@/components/LineChart';
 import Spinner from '@/components/Spinner';
 import { PAYMENT_METHOD_COLOR, PAYMENT_METHOD_LABEL } from '@/lib/constants';
@@ -47,20 +47,24 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [preset, setPreset] = useState<PresetKey>('today');
   const [range, setRange] = useState(() => presetRange('today'));
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [outletId, setOutletId] = useState('');
 
   function choosePreset(key: PresetKey) {
     setPreset(key);
     if (key !== 'custom') setRange(presetRange(key));
   }
 
+  useEffect(() => { api.get<Outlet[]>('/outlets').then(setOutlets).catch(() => {}); }, []);
+
   function load() {
     setError(null);
     api
-      .get<DashboardData>(`/analytics/dashboard?from=${range.from}&to=${range.to}`)
+      .get<DashboardData>(`/analytics/dashboard?from=${range.from}&to=${range.to}${outletId ? `&outletId=${outletId}` : ''}`)
       .then(setData)
       .catch((e) => setError((e as Error).message));
   }
-  useEffect(load, [range]);
+  useEffect(load, [range, outletId]);
 
   // Possessive form for stat labels ("Today's Orders") and a plain form for
   // section subtitles ("Today", "Jul 1 → Jul 18").
@@ -142,6 +146,12 @@ export default function DashboardPage() {
             <span className="text-slate-400">→</span>
             <input type="date" className="input w-auto" value={range.to} min={range.from} max={iso(today())} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} aria-label="To date" />
           </>
+        )}
+        {outlets.length > 1 && (
+          <select className="input w-auto" value={outletId} onChange={(e) => setOutletId(e.target.value)} aria-label="Outlet">
+            <option value="">All outlets</option>
+            {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
         )}
       </div>
 

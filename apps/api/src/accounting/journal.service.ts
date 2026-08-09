@@ -1,42 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AccountType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PostingService } from './posting.service';
+import { ensureChart } from './default-accounts';
 import { formatBs } from '../common/bs-date';
 
-// Double-entry layer: chart of accounts + manual journal vouchers + ledger
-// statements + trial balance. System accounts are seeded automatically and
-// their ledger views also merge live POS activity (cash, bank, sales, VAT,
-// debtors) so the ledger reads like Tally's.
-
-const DEFAULT_ACCOUNTS: { code: string; name: string; type: AccountType; group: string; isSystem?: boolean }[] = [
-  { code: '1000', name: 'Cash in Hand', type: 'ASSET', group: 'Current Assets', isSystem: true },
-  { code: '1100', name: 'Bank & Wallets', type: 'ASSET', group: 'Current Assets', isSystem: true },
-  { code: '1200', name: 'Sundry Debtors (Customer Credit)', type: 'ASSET', group: 'Current Assets', isSystem: true },
-  { code: '1300', name: 'Inventory / Stock', type: 'ASSET', group: 'Current Assets', isSystem: true },
-  { code: '1400', name: 'Fixed Assets', type: 'ASSET', group: 'Fixed Assets' },
-  { code: '2000', name: 'Sundry Creditors (Suppliers)', type: 'LIABILITY', group: 'Current Liabilities', isSystem: true },
-  { code: '2100', name: 'VAT Payable', type: 'LIABILITY', group: 'Duties & Taxes', isSystem: true },
-  { code: '2200', name: 'Salaries Payable', type: 'LIABILITY', group: 'Current Liabilities' },
-  { code: '3000', name: "Owner's Capital", type: 'EQUITY', group: 'Capital Account' },
-  { code: '3100', name: 'Drawings', type: 'EQUITY', group: 'Capital Account' },
-  { code: '4000', name: 'Sales Account', type: 'INCOME', group: 'Sales Accounts', isSystem: true },
-  { code: '4100', name: 'Other Income', type: 'INCOME', group: 'Indirect Income' },
-  { code: '5000', name: 'Purchases', type: 'EXPENSE', group: 'Purchase Accounts', isSystem: true },
-  { code: '5100', name: 'Rent', type: 'EXPENSE', group: 'Indirect Expenses' },
-  { code: '5200', name: 'Salaries & Wages', type: 'EXPENSE', group: 'Indirect Expenses' },
-  { code: '5300', name: 'Utilities', type: 'EXPENSE', group: 'Indirect Expenses' },
-  { code: '5400', name: 'Marketing', type: 'EXPENSE', group: 'Indirect Expenses' },
-  { code: '5500', name: 'Miscellaneous Expenses', type: 'EXPENSE', group: 'Indirect Expenses' },
-];
-
-const BANK_METHODS = ['BANK', 'CARD', 'FONEPAY', 'ESEWA', 'KHALTI'] as const;
+// Double-entry layer: chart of accounts + journal vouchers (manual and
+// auto-posted from orders/purchasing/crm/finance — see PostingService) +
+// ledger statements + trial balance. System accounts are seeded
+// automatically (see default-accounts.ts). Balances are computed purely from
+// real JournalLine rows — every business transaction actually posts one,
+// there is no live re-derivation from operational tables anymore.
 
 // Dr-nature accounts grow with debits; Cr-nature with credits.
 const DR_NATURE: AccountType[] = ['ASSET', 'EXPENSE'];
 
 interface StatementLine {
   at: Date;
-  source: 'JOURNAL' | 'POS';
   voucher?: string;
   particulars: string;
   drCents: number;
@@ -45,28 +25,27 @@ interface StatementLine {
 
 @Injectable()
 export class JournalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly posting: PostingService,
+  ) {}
 
-  // Seed/refresh the default chart (idempotent; runs on first access).
-  private async ensureChart() {
-    const count = await this.prisma.ledgerAccount.count();
-    if (count > 0) return;
-    await this.prisma.ledgerAccount.createMany({
-      data: DEFAULT_ACCOUNTS.map((a) => ({ ...a, isSystem: a.isSystem ?? false })),
-      skipDuplicates: true,
-    });
+  private seedChart() {
+    return ensureChart(this.prisma);
   }
 
   // ── Chart of accounts ────────────────────────────────
   async accounts() {
-    await this.ensureChart();
+    await this.seedChart();
     const accts = await this.prisma.ledgerAccount.findMany({
       where: { isActive: true },
       orderBy: { code: 'asc' },
     });
-    // Manual-journal balance per account.
+    // Balance per account — POSTED entries only; a pending/rejected entry's
+    // lines are real rows but must not move any balance until approved.
     const sums = await this.prisma.journalLine.groupBy({
       by: ['accountId'],
+      where: { entry: { status: 'POSTED' } },
       _sum: { drCents: true, crCents: true },
     });
     const byId = new Map(sums.map((s) => [s.accountId, s]));
@@ -80,7 +59,7 @@ export class JournalService {
   }
 
   async createAccount(dto: { code: string; name: string; type: AccountType; group?: string }) {
-    await this.ensureChart();
+    await this.seedChart();
     if (!dto.code?.trim() || !dto.name?.trim()) throw new BadRequestException('Code and name are required');
     return this.prisma.ledgerAccount.create({
       data: { code: dto.code.trim(), name: dto.name.trim(), type: dto.type, group: dto.group?.trim() || null },
@@ -108,11 +87,14 @@ export class JournalService {
   }
 
   // ── Manual journal vouchers ──────────────────────────
+  // Routed through PostingService like every auto-posted transaction, so a
+  // manual voucher is subject to the same approval-workflow matching (an
+  // admin can require sign-off on manual journals above a threshold, say).
   async createEntry(
     dto: { date?: string; type?: string; narration?: string; lines: { accountId: string; drCents?: number; crCents?: number }[] },
     actorName?: string,
   ) {
-    await this.ensureChart();
+    await this.seedChart();
     const lines = (dto.lines ?? []).filter((l) => (l.drCents ?? 0) > 0 || (l.crCents ?? 0) > 0);
     if (lines.length < 2) throw new BadRequestException('A voucher needs at least two lines');
     for (const l of lines) {
@@ -122,24 +104,23 @@ export class JournalService {
     const dr = lines.reduce((s, l) => s + (l.drCents ?? 0), 0);
     const cr = lines.reduce((s, l) => s + (l.crCents ?? 0), 0);
     if (dr !== cr) throw new BadRequestException(`Voucher does not balance: Dr ${dr / 100} ≠ Cr ${cr / 100}`);
-    const type = ['JOURNAL', 'PAYMENT', 'RECEIPT', 'CONTRA'].includes(dto.type ?? '') ? dto.type : 'JOURNAL';
+    const type = ['JOURNAL', 'PAYMENT', 'RECEIPT', 'CONTRA'].includes(dto.type ?? '') ? dto.type! : 'JOURNAL';
 
-    return this.prisma.journalEntry.create({
-      data: {
+    return this.prisma.$transaction((tx) =>
+      this.posting.postOrQueue(tx, {
+        event: 'MANUAL',
         type,
+        amountCents: dr,
         date: dto.date ? new Date(dto.date) : new Date(),
-        narration: dto.narration?.trim() || null,
-        createdBy: actorName,
-        lines: {
-          create: lines.map((l) => ({ accountId: l.accountId, drCents: l.drCents ?? 0, crCents: l.crCents ?? 0 })),
-        },
-      },
-      include: { lines: { include: { account: { select: { code: true, name: true } } } } },
-    });
+        narration: dto.narration?.trim() || '(no narration)',
+        lines,
+        actorName,
+      }),
+    );
   }
 
   async entries(from?: string, to?: string) {
-    await this.ensureChart();
+    await this.seedChart();
     const start = from ? new Date(from) : new Date(Date.now() - 30 * 864e5);
     const end = to ? new Date(`${to}T23:59:59.999`) : new Date();
     const rows = await this.prisma.journalEntry.findMany({
@@ -155,9 +136,70 @@ export class JournalService {
     }));
   }
 
+  // ── Approvals ─────────────────────────────────────────
+  pendingApprovals() {
+    return this.prisma.journalEntry.findMany({
+      where: { status: 'PENDING_APPROVAL' },
+      orderBy: { date: 'desc' },
+      include: {
+        lines: { include: { account: { select: { code: true, name: true } } } },
+        workflowRule: { include: { steps: { orderBy: { stepOrder: 'asc' } } } },
+        approvals: true,
+      },
+    });
+  }
+
+  // Records an approval for the entry's current step; advances to the next
+  // step once that step's approvalsRequired is met, or posts the entry if
+  // that was the last step.
+  async approve(id: string, actorName: string, note?: string) {
+    const entry = await this.prisma.journalEntry.findUnique({
+      where: { id },
+      include: { workflowRule: { include: { steps: { orderBy: { stepOrder: 'asc' } } } }, approvals: true },
+    });
+    if (!entry) throw new NotFoundException('Journal entry not found');
+    if (entry.status !== 'PENDING_APPROVAL') throw new BadRequestException(`Entry is ${entry.status.toLowerCase()}, not pending approval`);
+    const steps = entry.workflowRule?.steps ?? [];
+    const stepIdx = steps.findIndex((s) => s.stepOrder === entry.currentStep);
+    if (stepIdx === -1) throw new BadRequestException('Entry has no matching approval step — contact an admin');
+    const step = steps[stepIdx];
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.journalEntryApproval.create({ data: { entryId: id, stepOrder: step.stepOrder, approvedBy: actorName, note } });
+      const approvalsForStep = await tx.journalEntryApproval.count({ where: { entryId: id, stepOrder: step.stepOrder } });
+      if (approvalsForStep < step.approvalsRequired) {
+        // Still needs more sign-off on this same step.
+        return tx.journalEntry.findUniqueOrThrow({ where: { id }, include: { lines: true, approvals: true } });
+      }
+      const next = steps[stepIdx + 1];
+      return tx.journalEntry.update({
+        where: { id },
+        data: next ? { currentStep: next.stepOrder } : { status: 'POSTED', currentStep: null },
+        include: { lines: { include: { account: { select: { code: true, name: true } } } }, approvals: true },
+      });
+    });
+  }
+
+  async reject(id: string, reason: string, actorName: string) {
+    if (!reason?.trim()) throw new BadRequestException('A reason is required to reject a journal entry');
+    const entry = await this.prisma.journalEntry.findUnique({ where: { id } });
+    if (!entry) throw new NotFoundException('Journal entry not found');
+    if (entry.status !== 'PENDING_APPROVAL') throw new BadRequestException(`Entry is ${entry.status.toLowerCase()}, not pending approval`);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.journalEntryApproval.create({ data: { entryId: id, stepOrder: entry.currentStep ?? 0, approvedBy: actorName, note: `REJECTED: ${reason.trim()}` } });
+      return tx.journalEntry.update({
+        where: { id },
+        data: { status: 'REJECTED' },
+        include: { lines: { include: { account: { select: { code: true, name: true } } } }, approvals: true },
+      });
+    });
+  }
+
   async removeEntry(id: string, actorName?: string) {
     const e = await this.prisma.journalEntry.findUnique({ where: { id } });
     if (!e) throw new NotFoundException('Voucher not found');
+    if (e.source !== 'MANUAL')
+      throw new BadRequestException('Auto-posted entries cannot be deleted from the Journal — reverse the originating transaction instead');
     await this.prisma.journalEntry.delete({ where: { id } });
     await this.prisma.auditLog.create({
       data: { employeeName: actorName ?? 'system', action: 'JOURNAL_DELETED', detail: `Voucher #${e.number} (${e.type}) ${e.narration ?? ''}` },
@@ -166,71 +208,30 @@ export class JournalService {
   }
 
   // ── Ledger statement for one account ─────────────────
-  // Merges manual journal lines with live POS activity for system accounts.
+  // Pure JournalLine rows — every business transaction now actually posts
+  // one (see PostingService + the auto-posting hooks in orders/purchasing/
+  // crm/finance), so there's no more live re-derivation from operational
+  // tables to merge in here.
   async ledger(accountId: string, from?: string, to?: string) {
-    await this.ensureChart();
+    await this.seedChart();
     const account = await this.prisma.ledgerAccount.findUnique({ where: { id: accountId } });
     if (!account) throw new NotFoundException('Account not found');
     const start = from ? new Date(from) : new Date(Date.now() - 30 * 864e5);
     const end = to ? new Date(`${to}T23:59:59.999`) : new Date();
     const window = { gte: start, lte: end };
 
-    const manual = await this.prisma.journalLine.findMany({
-      where: { accountId, entry: { date: window } },
+    const rowsRaw = await this.prisma.journalLine.findMany({
+      where: { accountId, entry: { date: window, status: 'POSTED' } },
       include: { entry: true },
       orderBy: { entry: { date: 'asc' } },
     });
-    const lines: StatementLine[] = manual.map((l) => ({
+    const lines: StatementLine[] = rowsRaw.map((l) => ({
       at: l.entry.date,
-      source: 'JOURNAL',
       voucher: `#${l.entry.number} ${l.entry.type}`,
       particulars: l.entry.narration ?? '(no narration)',
       drCents: l.drCents,
       crCents: l.crCents,
     }));
-
-    // Live POS activity for the mapped system accounts.
-    if (account.isSystem) {
-      if (account.code === '1000') {
-        const [pays, moves, exps] = await Promise.all([
-          this.prisma.payment.findMany({ where: { method: 'CASH', createdAt: window }, include: { order: { select: { number: true } } } }),
-          this.prisma.cashMovement.findMany({ where: { createdAt: window, type: { in: ['PAY_IN', 'PAY_OUT'] } } }),
-          this.prisma.expense.findMany({ where: { incurredAt: window } }),
-        ]);
-        lines.push(
-          ...pays.map((p): StatementLine => ({ at: p.createdAt, source: 'POS', particulars: `Cash sale — invoice #${p.order.number}`, drCents: p.amountCents, crCents: 0 })),
-          ...moves.map((m): StatementLine => ({ at: m.createdAt, source: 'POS', particulars: `${m.type === 'PAY_IN' ? 'Pay-in' : 'Pay-out'}${m.reason ? ` — ${m.reason}` : ''}`, drCents: m.type === 'PAY_IN' ? m.amountCents : 0, crCents: m.type === 'PAY_OUT' ? m.amountCents : 0 })),
-          ...exps.map((e): StatementLine => ({ at: e.incurredAt, source: 'POS', particulars: `Expense — ${e.category}${e.description ? ` (${e.description})` : ''}`, drCents: 0, crCents: e.amountCents })),
-        );
-      } else if (account.code === '1100') {
-        const pays = await this.prisma.payment.findMany({ where: { method: { in: BANK_METHODS as any }, createdAt: window }, include: { order: { select: { number: true } } } });
-        const settle = await this.prisma.creditLedgerEntry.findMany({ where: { type: 'PAYMENT', method: { in: BANK_METHODS as any }, createdAt: window }, include: { customer: { select: { name: true } } } });
-        lines.push(
-          ...pays.map((p): StatementLine => ({ at: p.createdAt, source: 'POS', particulars: `${p.method} — invoice #${p.order.number}`, drCents: p.amountCents, crCents: 0 })),
-          ...settle.map((s): StatementLine => ({ at: s.createdAt, source: 'POS', particulars: `${s.method} — credit settlement ${s.customer.name}`, drCents: s.amountCents, crCents: 0 })),
-        );
-      } else if (account.code === '1200') {
-        const led = await this.prisma.creditLedgerEntry.findMany({ where: { createdAt: window }, include: { customer: { select: { name: true } } } });
-        lines.push(...led.map((l): StatementLine => ({
-          at: l.createdAt, source: 'POS',
-          particulars: `${l.type === 'CHARGE' ? 'Credit sale' : `Paid ${l.method}`} — ${l.customer.name}`,
-          drCents: l.type === 'CHARGE' ? l.amountCents : 0,
-          crCents: l.type === 'PAYMENT' ? l.amountCents : 0,
-        })));
-      } else if (account.code === '4000') {
-        const orders = await this.prisma.order.findMany({ where: { status: 'PAID', paidAt: window }, select: { number: true, paidAt: true, totalCents: true, taxCents: true, customerName: true } });
-        lines.push(...orders.map((o): StatementLine => ({ at: o.paidAt!, source: 'POS', particulars: `Sale — invoice #${o.number}${o.customerName ? ` (${o.customerName})` : ''}`, drCents: 0, crCents: o.totalCents - o.taxCents })));
-      } else if (account.code === '2100') {
-        const orders = await this.prisma.order.findMany({ where: { status: 'PAID', paidAt: window, taxCents: { gt: 0 } }, select: { number: true, paidAt: true, taxCents: true } });
-        lines.push(...orders.map((o): StatementLine => ({ at: o.paidAt!, source: 'POS', particulars: `VAT on invoice #${o.number}`, drCents: 0, crCents: o.taxCents })));
-      } else if (account.code === '5000') {
-        const pos = await this.prisma.purchaseOrder.findMany({ where: { status: 'RECEIVED', receivedAt: window }, include: { supplier: { select: { name: true } }, lines: true } });
-        lines.push(...pos.map((p): StatementLine => ({ at: p.receivedAt!, source: 'POS', particulars: `Purchase — PO #${p.number} (${p.supplier.name})`, drCents: p.lines.reduce((s, l) => s + Math.round(l.quantity * l.unitCostCents), 0), crCents: 0 })));
-      } else if (account.code === '2000') {
-        const pos = await this.prisma.purchaseOrder.findMany({ where: { status: 'RECEIVED', receivedAt: window }, include: { supplier: { select: { name: true } }, lines: true } });
-        lines.push(...pos.map((p): StatementLine => ({ at: p.receivedAt!, source: 'POS', particulars: `Payable — PO #${p.number} (${p.supplier.name})`, drCents: 0, crCents: p.lines.reduce((s, l) => s + Math.round(l.quantity * l.unitCostCents), 0) })));
-      }
-    }
 
     lines.sort((a, b) => a.at.getTime() - b.at.getTime());
     let bal = 0;
@@ -251,14 +252,14 @@ export class JournalService {
     };
   }
 
-  // ── Trial balance (manual journals) ──────────────────
+  // ── Trial balance ─────────────────────────────────────
   async trialBalance(from?: string, to?: string) {
-    await this.ensureChart();
+    await this.seedChart();
     const start = from ? new Date(from) : new Date(Date.now() - 365 * 864e5);
     const end = to ? new Date(`${to}T23:59:59.999`) : new Date();
     const accts = await this.prisma.ledgerAccount.findMany({ where: { isActive: true }, orderBy: { code: 'asc' } });
     const lines = await this.prisma.journalLine.findMany({
-      where: { entry: { date: { gte: start, lte: end } } },
+      where: { entry: { date: { gte: start, lte: end }, status: 'POSTED' } },
       select: { accountId: true, drCents: true, crCents: true },
     });
     const sums = new Map<string, { dr: number; cr: number }>();
@@ -288,7 +289,7 @@ export class JournalService {
         closingDrCents: rows.reduce((s, r) => s + r.closingDrCents, 0),
         closingCrCents: rows.reduce((s, r) => s + r.closingCrCents, 0),
       },
-      note: 'Trial balance of manual journal vouchers. POS activity is reflected in the derived books and merged ledger views.',
+      note: 'Trial balance of all posted journal entries (manual and auto-posted from orders, purchasing, credit settlements and expenses). Entries pending approval are excluded until posted.',
     };
   }
 }

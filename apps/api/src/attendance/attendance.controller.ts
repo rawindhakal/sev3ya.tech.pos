@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
-import { RoleGuard, CurrentEmployee } from '../common/auth.guard';
+import { PermissionGuard, CurrentEmployee } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
 
 @Controller('attendance')
@@ -9,13 +10,13 @@ export class AttendanceController {
 
   // Re-attach unmapped punches after assigning device IDs to employees.
   @Post('relink')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ATTENDANCE_MANAGE))
   relink() {
     return this.att.relink();
   }
 
   @Post('manual')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ATTENDANCE_MANAGE))
   manual(@Body() dto: { employeeId: string; at: string }, @CurrentEmployee() emp: TokenPayload) {
     return this.att.addManual(dto.employeeId, dto.at, emp?.name);
   }
@@ -23,19 +24,19 @@ export class AttendanceController {
   // Cloud-push (ADMS) devices — registered on first handshake by IclockService,
   // approved/renamed/deactivated here.
   @Get('devices')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ATTENDANCE_MANAGE))
   devices() {
     return this.att.devices();
   }
 
   @Patch('devices/:id')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ATTENDANCE_MANAGE))
   updateDevice(@Param('id') id: string, @Body() dto: { name?: string; isActive?: boolean }) {
     return this.att.updateDevice(id, dto);
   }
 
   @Delete('devices/:id')
-  @UseGuards(new RoleGuard(['ADMIN', 'MANAGER']))
+  @UseGuards(new PermissionGuard(PERMISSIONS.ATTENDANCE_MANAGE))
   deleteDevice(@Param('id') id: string) {
     return this.att.deleteDevice(id);
   }

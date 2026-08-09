@@ -2,7 +2,8 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@n
 import { IsBoolean, IsEnum, IsISO8601, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { CouponType } from '@prisma/client';
 import { PromotionsService } from './promotions.service';
-import { AuthGuard } from '../common/auth.guard';
+import { PermissionGuard } from '../common/auth.guard';
+import { PERMISSIONS } from '../common/permissions';
 import { Public } from '../common/public.decorator';
 
 class CreateCouponDto {
@@ -41,19 +42,19 @@ export class PromotionsController {
   }
 
   @Post()
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.PROMOTIONS_MANAGE))
   create(@Body() dto: CreateCouponDto) {
     return this.promotions.createCoupon(dto);
   }
 
   @Patch(':id')
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.PROMOTIONS_MANAGE))
   update(@Param('id') id: string, @Body() dto: UpdateCouponDto) {
     return this.promotions.updateCoupon(id, dto);
   }
 
   @Delete(':id')
-  @UseGuards(new AuthGuard('canManageStaff'))
+  @UseGuards(new PermissionGuard(PERMISSIONS.PROMOTIONS_MANAGE))
   remove(@Param('id') id: string) {
     return this.promotions.deleteCoupon(id);
   }

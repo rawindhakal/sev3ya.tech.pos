@@ -23,9 +23,10 @@ import { AuditModule } from './audit/audit.module';
 import { CrmModule } from './crm/crm.module';
 import { FinanceModule } from './finance/finance.module';
 import { RoasteryModule } from './roastery/roastery.module';
-import { TerminalsModule } from './terminals/terminals.module';
 import { IrdModule } from './ird/ird.module';
+import { OutletsModule } from './outlets/outlets.module';
 import { AccountingModule } from './accounting/accounting.module';
+import { PostingModule } from './accounting/posting.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { PlatformModule } from './platform/platform.module';
 import { SelfOrderModule } from './self-order/self-order.module';
@@ -33,6 +34,7 @@ import { PaymentsGatewayModule } from './payments-gateway/payments-gateway.modul
 import { NotificationsModule } from './notifications/notifications.module';
 import { IclockModule } from './iclock/iclock.module';
 import { SyncFailuresModule } from './sync-failures/sync-failures.module';
+import { RolesModule } from './roles/roles.module';
 
 @Module({
   imports: [
@@ -56,16 +58,18 @@ import { SyncFailuresModule } from './sync-failures/sync-failures.module';
     PurchasingModule,
     ReportsModule,
     AuditModule,
+    PostingModule,
     CrmModule,
     FinanceModule,
     RoasteryModule,
-    TerminalsModule,
     IrdModule,
     AccountingModule,
     AttendanceModule,
     IclockModule,
     PlatformModule,
     SyncFailuresModule,
+    RolesModule,
+    OutletsModule,
   ],
   controllers: [HealthController],
   providers: [
