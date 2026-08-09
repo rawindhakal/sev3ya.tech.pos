@@ -68,6 +68,18 @@ export function isNetworkError(err: unknown): boolean {
   return err instanceof TypeError; // fetch throws TypeError on connection failure
 }
 
+// Client-minted id for anything created while offline (orders, cart lines) —
+// lets the terminal keep working against a real id before the create request
+// has actually reached the server. Not a cuid: nothing server-side validates
+// id *shape*, only uniqueness, so a plain random string is sufficient.
+export function genLocalId(prefix: string): string {
+  const raw =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().replace(/-/g, '')
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  return `${prefix}${raw}`;
+}
+
 // ── Heartbeat ─────────────────────────────────────────
 let heartbeatStarted = false;
 

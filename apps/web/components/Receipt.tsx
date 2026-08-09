@@ -39,9 +39,14 @@ export default function Receipt({
 
   const ticketTitle =
     mode === 'KOT' ? kt.kotTitle : mode === 'BOT' ? kt.botTitle : '*** ITEM CANCELLATION ***';
+  // number === 0 is the "not yet assigned" sentinel for an order that was
+  // created offline and hasn't synced to the server yet — there is no real
+  // fiscal invoice number (or order number) until it does, so show a
+  // provisional placeholder instead of a misleading INV-0 / KOT-00000.
+  const unsynced = order.number === 0;
   const docNo = isBill
-    ? order.fiscalInvoiceNo != null ? `INV-${order.fiscalInvoiceNo}` : `INV-${order.number}`
-    : `${mode === 'BOT' ? 'BOT' : 'KOT'}-${String(order.number).padStart(5, '0')}`;
+    ? order.fiscalInvoiceNo != null ? `INV-${order.fiscalInvoiceNo}` : unsynced ? 'PROVISIONAL' : `INV-${order.number}`
+    : unsynced ? `${mode === 'BOT' ? 'BOT' : 'KOT'}-PENDING` : `${mode === 'BOT' ? 'BOT' : 'KOT'}-${String(order.number).padStart(5, '0')}`;
 
   // Two-column metadata grid: [label, value] pairs laid out two-per-row,
   // e.g. "Bill No: INV-89201    Date: 28-Jul-2026".
@@ -106,7 +111,7 @@ export default function Receipt({
       <div style={{ borderTop: '2px dashed #000', borderBottom: '2px dashed #000', padding: '4px 0' }}>
         {!isBill && (
           <div style={{ fontWeight: 700 }}>
-            Order #{order.number}
+            Order {unsynced ? 'OFFLINE' : `#${order.number}`}
           </div>
         )}
         {metaRows.map((pair, idx) => (

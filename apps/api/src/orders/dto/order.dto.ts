@@ -8,6 +8,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
   ValidateNested,
@@ -46,6 +47,11 @@ export class AttachCustomerDto {
 }
 
 export class CreateOrderDto {
+  // Client-minted id for an order created while the terminal was offline —
+  // lets the POS start building a cart against it before the create request
+  // has reached the server. Omitted on the normal (online) path; Prisma
+  // mints its own cuid as before.
+  @IsOptional() @IsString() @Matches(/^[A-Za-z0-9]{8,48}$/) id?: string;
   @IsEnum(OrderType) type: OrderType;
   @IsOptional() @IsString() tableId?: string;
   @IsOptional() @IsString() waiterId?: string;

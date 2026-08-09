@@ -1,7 +1,7 @@
 // Thin typed fetch wrapper around the CakeZake POS API.
 
 import { cacheRead, cacheWrite, isNetworkError } from './offline';
-import { enqueue, flush, type OutboxItem } from './outbox';
+import { enqueue, flush, quarantine, type OutboxItem } from './outbox';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
@@ -149,6 +149,7 @@ export const api = {
   postQueued: <T>(path: string, body: unknown) => queuedMutation<T>('POST', path, body),
   putQueued: <T>(path: string, body: unknown) => queuedMutation<T>('PUT', path, body),
   patchQueued: <T>(path: string, body: unknown) => queuedMutation<T>('PATCH', path, body),
+  deleteQueued: <T>(path: string, body?: unknown) => queuedMutation<T>('DELETE', path, body),
 };
 
 // Replay one queued write with its stable idempotency key so the server dedupes.
@@ -160,9 +161,33 @@ function replay(item: OutboxItem): Promise<unknown> {
   });
 }
 
-// Drain the outbox (call on reconnect).
+// Drain the outbox (call on reconnect). A write the server genuinely rejects
+// (not a connectivity blip) is reported to /sync-failures so a manager can
+// see and reconcile it in the Sync Recovery view — never silently dropped.
 export function syncOutbox() {
-  return flush((item) => replay(item).then(() => undefined), isNetworkError);
+  return flush(
+    (item) => replay(item).then(() => undefined),
+    isNetworkError,
+    async (item, err) => {
+      try {
+        await request('/sync-failures', {
+          method: 'POST',
+          body: JSON.stringify({
+            method: item.method,
+            path: item.path,
+            body: item.body,
+            idempotencyKey: item.idempotencyKey,
+            errorMessage: err instanceof Error ? err.message : String(err),
+          }),
+        });
+      } catch {
+        // Even the failure-report call failed (e.g. dropped again mid-flush)
+        // — fall back to a local quarantine list rather than losing the
+        // record of the rejection outright.
+        quarantine(item, err);
+      }
+    },
+  );
 }
 
 // Money helpers — API stores integer minor units (paisa for NPR).

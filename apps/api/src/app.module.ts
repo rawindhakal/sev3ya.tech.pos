@@ -32,6 +32,7 @@ import { SelfOrderModule } from './self-order/self-order.module';
 import { PaymentsGatewayModule } from './payments-gateway/payments-gateway.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { IclockModule } from './iclock/iclock.module';
+import { SyncFailuresModule } from './sync-failures/sync-failures.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { IclockModule } from './iclock/iclock.module';
     AttendanceModule,
     IclockModule,
     PlatformModule,
+    SyncFailuresModule,
   ],
   controllers: [HealthController],
   providers: [

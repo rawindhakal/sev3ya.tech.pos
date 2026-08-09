@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -138,7 +139,11 @@ export class OrdersService {
 
     // Re-use an existing EMPTY open order on this table (e.g. someone opened
     // the table and backed out) so tables never look occupied with no items.
-    if (isDineIn) {
+    // Skipped whenever the client supplied its own id (an offline-originated
+    // create): the client has already queued subsequent cart/KOT/bill/pay
+    // calls against ITS id, so this must land at that exact id or every one
+    // of those calls 404s on replay and the order is lost.
+    if (isDineIn && !dto.id) {
       const empty = await this.prisma.order.findFirst({
         where: { tableId: dto.tableId!, status: 'OPEN', items: { none: {} } },
         include: orderInclude,
@@ -152,36 +157,44 @@ export class OrdersService {
       }
     }
 
-    const order = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.order.create({
-        data: {
-          type: dto.type,
-          tableId: dto.tableId ?? null,
-          waiterId: dto.waiterId ?? null,
-          guestCount: dto.guestCount ?? 1,
-          customerName: dto.customerName ?? null,
-          customerPhone: dto.customerPhone ?? null,
-          terminalId: dto.terminalId ?? null,
-          seatedAt: isDineIn ? new Date() : null,
-          subtotalCents: totals.subtotalCents,
-          serviceChargeCents: totals.serviceChargeCents,
-          packagingChargeCents: totals.packagingChargeCents,
-          deliveryChargeCents: totals.deliveryChargeCents,
-          taxCents: totals.taxCents,
-          totalCents: totals.totalCents,
-          items: { create: resolved },
-        },
-        include: orderInclude,
-      });
-      if (isDineIn) {
-        await tx.restaurantTable.update({
-          where: { id: dto.tableId! },
-          data: { status: 'OCCUPIED' },
+    try {
+      const order = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.order.create({
+          data: {
+            ...(dto.id ? { id: dto.id } : {}),
+            type: dto.type,
+            tableId: dto.tableId ?? null,
+            waiterId: dto.waiterId ?? null,
+            guestCount: dto.guestCount ?? 1,
+            customerName: dto.customerName ?? null,
+            customerPhone: dto.customerPhone ?? null,
+            terminalId: dto.terminalId ?? null,
+            seatedAt: isDineIn ? new Date() : null,
+            subtotalCents: totals.subtotalCents,
+            serviceChargeCents: totals.serviceChargeCents,
+            packagingChargeCents: totals.packagingChargeCents,
+            deliveryChargeCents: totals.deliveryChargeCents,
+            taxCents: totals.taxCents,
+            totalCents: totals.totalCents,
+            items: { create: resolved },
+          },
+          include: orderInclude,
         });
+        if (isDineIn) {
+          await tx.restaurantTable.update({
+            where: { id: dto.tableId! },
+            data: { status: 'OCCUPIED' },
+          });
+        }
+        return created;
+      });
+      return order;
+    } catch (e) {
+      if ((e as { code?: string })?.code === 'P2002') {
+        throw new ConflictException(`Order id ${dto.id} already exists`);
       }
-      return created;
-    });
-    return order;
+      throw e;
+    }
   }
 
   findAll(params: { status?: string; today?: boolean }) {
@@ -247,6 +260,7 @@ export class OrdersService {
     // Resolve pricing/station for the genuinely new lines only.
     const newLines = dto.items.filter((l) => !l.id || !existingById.has(l.id));
     const resolvedNew = await this.resolveLines(newLines, existing.type);
+    const resolvedByLine = new Map(newLines.map((l, i) => [l, resolvedNew[i]]));
 
     return this.prisma.$transaction(async (tx) => {
       // Remove lines the user deleted — but only if never fired & not cancelled.
@@ -269,12 +283,25 @@ export class OrdersService {
           });
         }
       }
-      // Create new lines as PENDING.
-      let ni = 0;
+      // Create new lines as PENDING. Upsert (not blind create) keyed by the
+      // client-minted line id: if this exact line was already persisted by
+      // an earlier replay of a queued cart-save (offline outbox retry), this
+      // is a harmless idempotent update instead of a duplicate row — see
+      // the POS offline-mode plan for why this matters (repeated cart saves
+      // for the same order used to double every previously-added line).
       for (const line of dto.items) {
         if (!line.id || !existingById.has(line.id)) {
-          await tx.orderItem.create({ data: { orderId: id, ...resolvedNew[ni] } });
-          ni++;
+          const resolved = resolvedByLine.get(line)!;
+          await tx.orderItem.upsert({
+            where: { id: line.id ?? '__none__' },
+            update: {
+              quantity: line.quantity,
+              discountCents: line.discountCents ?? 0,
+              notes: line.notes ?? null,
+              modifiers: (line.modifiers ?? []) as unknown as Prisma.InputJsonValue,
+            },
+            create: { ...(line.id ? { id: line.id } : {}), orderId: id, ...resolved },
+          });
         }
       }
       // Recompute from non-cancelled items.

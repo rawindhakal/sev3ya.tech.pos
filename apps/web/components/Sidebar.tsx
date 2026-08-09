@@ -80,6 +80,7 @@ const NAV: NavNode[] = [
       { href: '/finance', label: 'P&L & Expenses' },
       { href: '/accounting', label: 'Accounting' },
       { href: '/cash-drawer', label: 'Cash Drawer' },
+      { href: '/sync-recovery', label: 'Sync Recovery' },
     ],
   },
   {
@@ -105,10 +106,25 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
   const pathname = usePathname();
   const [features, setFeatures] = useState<Features | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [syncFailureCount, setSyncFailureCount] = useState(0);
 
   useEffect(() => {
     api.get<{ features?: Features; currencySymbol?: string }>('/settings').then((s) => { setFeatures(s.features ?? null); setCurrencySymbol(s.currencySymbol); }).catch(() => {});
   }, [pathname]);
+
+  // Unacknowledged offline-sync failures, surfaced as a badge on Finance
+  // (where Sync Recovery lives) — skipped for staff who can't act on it.
+  useEffect(() => {
+    if (!emp?.canManageStaff) { setSyncFailureCount(0); return; }
+    let cancelled = false;
+    const poll = () =>
+      api.get<{ acknowledgedAt: string | null }[]>('/sync-failures', { silent: true })
+        .then((items) => { if (!cancelled) setSyncFailureCount(items.filter((i) => !i.acknowledgedAt).length); })
+        .catch(() => {});
+    poll();
+    const id = window.setInterval(poll, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [emp?.canManageStaff]);
 
   // Restore expanded groups; always expand the group holding the current page.
   useEffect(() => {
@@ -190,6 +206,9 @@ export default function Sidebar({ emp, onLogout }: { emp?: Employee | null; onLo
                 <span className="flex items-center gap-3">
                   <NavIcon label={node.label} />
                   <span>{node.label}</span>
+                  {node.label === 'Finance' && syncFailureCount > 0 && (
+                    <span className="badge bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400">{syncFailureCount}</span>
+                  )}
                 </span>
                 <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-0' : '-rotate-90'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="m6 9 6 6 6-6" />

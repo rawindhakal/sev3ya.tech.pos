@@ -7,7 +7,10 @@
 const CACHE = 's3vyapos-v1';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/waiter'])).catch(() => {}));
+  // /pos is precached too: the Electron till (apps/desktop) loads this route
+  // directly, and without it cached a fully-offline cold start can't render
+  // the POS shell at all — it never gets a chance to fall back to /.
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/waiter', '/pos'])).catch(() => {}));
   self.skipWaiting();
 });
 

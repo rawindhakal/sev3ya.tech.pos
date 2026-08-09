@@ -1050,6 +1050,30 @@ model IdempotencyKey {
   @@map("idempotency_keys")
 }
 
+// A write the offline outbox eventually delivered to the server, but which
+// the server genuinely rejected (not a connectivity blip) — e.g. an invalid
+// gift-card code discovered only at sync time, or a client-id collision on
+// order create. Surfaced in the back-office Sync Recovery view so a manager
+// can manually re-enter or reconcile it; never retried automatically (a
+// rejected write usually needs a human decision, not another attempt).
+model FailedSyncItem {
+  id             String    @id @default(cuid())
+  orderId        String?
+  method         String
+  path           String
+  body           Json?
+  idempotencyKey String    @unique
+  errorMessage   String?
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  createdAt      DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([orderId])
+  @@index([acknowledgedAt])
+  @@map("failed_sync_items")
+}
+
 // ─────────────────────────────────────────────────────────────
 // DOUBLE-ENTRY ACCOUNTING (chart of accounts + manual journals)
 // ─────────────────────────────────────────────────────────────

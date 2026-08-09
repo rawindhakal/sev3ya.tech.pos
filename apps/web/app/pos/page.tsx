@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, formatMoney, dollarsToCents, setCurrencySymbol, tenantSlug, setTenantSlug } from '@/lib/api';
+import { api, formatMoney, dollarsToCents, setCurrencySymbol, tenantSlug, setTenantSlug, QueuedError } from '@/lib/api';
 import type {
   Category,
   DiscountPreset,
@@ -31,7 +31,7 @@ import Spinner from '@/components/Spinner';
 import { SearchIcon, PlusIcon, UtensilsIcon, BagIcon, BikeIcon, BoltIcon, SettingsIcon, XIcon, LockIcon, BellIcon, MoonIcon, MenuIcon, ChevronUpIcon, CartIcon } from '@/components/icons';
 import { formatBsLong } from '@/lib/bs-date';
 import { billTemplateOf, kotTemplateOf, getPrinterPrefs, silentPrintArea, isDesktopShell } from '@/lib/printing';
-import { getStatus } from '@/lib/offline';
+import { getStatus, genLocalId } from '@/lib/offline';
 import { playDing } from '@/lib/sound';
 import { notify, promptDialog } from '@/lib/dialog';
 
@@ -47,7 +47,7 @@ const MODES: { key: ModeKey; label: string; icon: typeof UtensilsIcon }[] = [
 
 interface CartLine {
   key: string;
-  id?: string; // server OrderItem id once saved (enables reconcile + KOT status)
+  id?: string; // client-minted at add-time (genLocalId); becomes the real OrderItem id on save — enables reconcile + KOT status, and lets a queued cart-save replay safely without duplicating the line
   menuItemId?: string;
   variantId?: string; // chosen portion (only sent for new lines)
   name: string;
@@ -58,6 +58,7 @@ interface CartLine {
   notes?: string;
   kotStatus?: string; // undefined/PENDING = editable; else fired (locked)
   station?: string;
+  synced?: boolean; // true once a real server round-trip has confirmed this exact line exists on the order (set by orderToCart()) — distinct from `id`, which is minted client-side immediately on add
 }
 
 const isFired = (l: CartLine) => !!l.kotStatus && l.kotStatus !== 'PENDING';
@@ -102,6 +103,7 @@ function orderToCart(o: Order): CartLine[] {
       notes: it.notes ?? undefined,
       kotStatus: it.kotStatus,
       station: it.station,
+      synced: true,
     }));
 }
 
@@ -463,6 +465,43 @@ export default function PosPage() {
   async function startOrder(type: OrderType, tbl: RestaurantTable | null, quick = false, customer?: { name: string; phone: string }) {
     setBusy(true);
     try {
+      if (getStatus() === 'offline') {
+        // Mint the order's id ourselves so the terminal can immediately build
+        // a cart against it — the server would otherwise only assign one once
+        // the queued create actually reaches it. `number` stays 0 as the
+        // "not yet assigned" sentinel; orderLabel() renders that as OFFLINE.
+        const localId = genLocalId('ord');
+        await fireAndForgetQueued(api.postQueued<Order>('/orders', {
+          id: localId,
+          type,
+          tableId: tbl?.id,
+          waiterId: waiterId || undefined,
+          guestCount,
+          customerName: customer?.name || undefined,
+          customerPhone: customer?.phone || undefined,
+        }));
+        const draft: Order = {
+          id: localId, number: 0, type, status: 'OPEN',
+          tableId: tbl?.id ?? null, waiterId: waiterId || null, guestCount,
+          customerName: customer?.name ?? null, customerPhone: customer?.phone ?? null,
+          subtotalCents: 0, taxCents: 0, discountCents: 0, serviceChargeCents: 0,
+          packagingChargeCents: 0, deliveryChargeCents: 0, totalCents: 0, refundCents: 0,
+          items: [], payments: [],
+          table: tbl ? { id: tbl.id, name: tbl.name } : null, waiter: null,
+          createdAt: new Date().toISOString(),
+        };
+        setOrder(draft);
+        setTable(tbl);
+        setIsQuick(quick);
+        setCart([]);
+        setDiscount('');
+        setDiscountLabel('');
+        setIsComplimentary(false);
+        setDiscountApproved(false);
+        setOverlay(null);
+        flash('Order started offline — will sync when back online');
+        return;
+      }
       const created = await api.post<Order>('/orders', {
         type,
         tableId: tbl?.id,
@@ -485,6 +524,13 @@ export default function PosPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // Renders the human-facing order number, or OFFLINE when it hasn't been
+  // assigned yet (an order created while disconnected — number stays the 0
+  // sentinel until the queued create syncs and the server mints the real one).
+  function orderLabel(o: Pick<Order, 'number'>): string {
+    return o.number ? `#${o.number}` : 'OFFLINE';
   }
 
   function resume(o: Order) {
@@ -736,6 +782,7 @@ export default function PosPage() {
       if (existing) return prev.map((l) => (l.key === existing.key ? { ...l, quantity: l.quantity + 1 } : l));
       return [...prev, {
         key: lineKey(item.id + (variant?.id ?? ''), mods),
+        id: genLocalId('itm'),
         menuItemId: item.id,
         variantId: variant?.id,
         name: variant ? `${item.name} (${variant.name})` : item.name,
@@ -751,7 +798,7 @@ export default function PosPage() {
     if (!openItem) return;
     const priceCents = Math.round((parseFloat(openItem.price) || 0) * 100);
     if (!openItem.name.trim() || priceCents <= 0) return flash('Enter a name and price above zero');
-    setCart((prev) => [...prev, { key: `open::${openItem.name}::${Date.now()}`, name: openItem.name.trim(), unitPriceCents: priceCents, modifiers: [], quantity: 1, station: openItem.station }]);
+    setCart((prev) => [...prev, { key: `open::${openItem.name}::${Date.now()}`, id: genLocalId('itm'), name: openItem.name.trim(), unitPriceCents: priceCents, modifiers: [], quantity: 1, station: openItem.station }]);
     setOpenItem(null);
   }
 
@@ -920,9 +967,26 @@ export default function PosPage() {
   }
 
   // ── Persist + actions ──────────────────────────────
-  async function persistCart(): Promise<Order> {
-    if (!order) throw new Error('No active order');
-    const saved = await api.put<Order>(`/orders/${order.id}/cart`, {
+
+  // Apply an optimistic patch to the currently-open order — used by every
+  // offline write below, since there's no server response to merge in yet.
+  function patchOrderLocally(patch: Partial<Order>) {
+    setOrder((o) => (o ? { ...o, ...patch } : o));
+  }
+
+  // Swallow a QueuedError (the write is safely queued for later sync) but let
+  // any other exception — a real bug, not connectivity — propagate to the
+  // caller's own catch/notify().
+  async function fireAndForgetQueued(promise: Promise<unknown>) {
+    try {
+      await promise;
+    } catch (e) {
+      if (!(e instanceof QueuedError)) throw e;
+    }
+  }
+
+  function buildCartBody() {
+    return {
       items: cart.map((l) => ({
         id: l.id, // preserve fired items & reconcile
         ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : { name: l.name, unitPriceCents: l.unitPriceCents, station: l.station ?? 'BILLING' }),
@@ -936,10 +1000,34 @@ export default function PosPage() {
       isComplimentary,
       waiterId: waiterId || undefined,
       guestCount,
-    });
+    };
+  }
+
+  async function persistCart(): Promise<Order> {
+    if (!order) throw new Error('No active order');
+    const saved = await api.put<Order>(`/orders/${order.id}/cart`, buildCartBody());
     setOrder(saved);
     setCart(orderToCart(saved)); // re-sync so new lines pick up their ids
     return saved;
+  }
+
+  // Offline cart save: queue the write and mirror the client-computed totals
+  // onto the local order so the UI (PaymentPanel, receipts) stays correct
+  // without a server round trip. There is no server order to await offline.
+  async function queuePersistCart() {
+    if (!order) throw new Error('No active order');
+    await fireAndForgetQueued(api.putQueued(`/orders/${order.id}/cart`, buildCartBody()));
+    patchOrderLocally({
+      subtotalCents: totals.subtotal,
+      discountCents: totals.discountCents + totals.redeemCents,
+      serviceChargeCents: totals.serviceCharge,
+      packagingChargeCents: totals.packaging,
+      deliveryChargeCents: totals.delivery,
+      taxCents: totals.tax,
+      totalCents: totals.total,
+      guestCount,
+      waiterId: waiterId || null,
+    });
   }
 
   // Print one ticket. In the desktop app this prints silently to the printer
@@ -983,31 +1071,15 @@ export default function PosPage() {
   // Offline KOT — fire the kitchen/bar ticket without the server. Prints the
   // pending lines locally (station looked up from the cached menu for new lines),
   // marks them fired, and queues the cart-save + KOT-fire to replay on reconnect.
-  // Only for an order that already exists on the server (created while online).
   async function offlineKot(print: boolean) {
-    if (!order?.id) return flash('Cannot start a new order while offline');
+    if (!order) return flash('No active order');
     const toFire = cart.filter((l) => !isFired(l));
     if (!toFire.length) return flash('Nothing new to fire');
     const stationFor = (l: CartLine) => l.station || items.find((m) => m.id === l.menuItemId)?.station || 'BILLING';
 
     // Queue the persist + fire (FIFO: cart save first, then KOT), idempotent.
-    const cartBody = {
-      items: cart.map((l) => ({
-        id: l.id,
-        ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : { name: l.name, unitPriceCents: l.unitPriceCents, station: l.station ?? 'BILLING' }),
-        quantity: l.quantity,
-        discountCents: l.discountCents || 0,
-        modifiers: l.modifiers,
-        notes: l.notes,
-      })),
-      discountCents: totals.discountCents + totals.redeemCents,
-      discountLabel: isComplimentary ? 'Complimentary' : discountLabel || undefined,
-      isComplimentary,
-      waiterId: waiterId || undefined,
-      guestCount,
-    };
-    try { await api.putQueued(`/orders/${order.id}/cart`, cartBody); } catch { /* queued */ }
-    try { await api.postQueued(`/orders/${order.id}/kot`, {}); } catch { /* queued */ }
+    await queuePersistCart();
+    await fireAndForgetQueued(api.postQueued(`/orders/${order.id}/kot`, {}));
 
     // Print locally, split by station.
     if (print) {
@@ -1022,12 +1094,33 @@ export default function PosPage() {
     flash('KOT printed offline — will sync when back online');
   }
 
+  // Offline bill: queue the cart save + bill call, flip status locally, and
+  // print an ESTIMATED BILL (the client-mirrored totals are already correct
+  // per the canonical VAT formula — see project docs — so this is safe to
+  // show before the server has actually seen it).
+  async function offlineBill() {
+    if (!order) return;
+    await queuePersistCart();
+    await fireAndForgetQueued(api.postQueued(`/orders/${order.id}/bill`, {}));
+    patchOrderLocally({ status: 'BILLED' });
+    await printTicket({ ...order, status: 'BILLED' } as Order, 'BILL', undefined, 'ESTIMATED BILL');
+    flash('Estimated bill printed — will sync when back online');
+  }
+
   async function runAction(kind: 'kot' | 'kot_print' | 'bill' | 'pay') {
     if (cart.length === 0) return flash('Add at least one item first');
-    // Offline: KOT still works locally; billing/payment need the server.
     if (getStatus() === 'offline') {
-      if (kind === 'kot' || kind === 'kot_print') { setBusy(true); try { await offlineKot(kind === 'kot_print'); } finally { setBusy(false); } return; }
-      return flash('Offline — KOT works, but billing & payment need the connection');
+      setBusy(true);
+      try {
+        if (kind === 'kot' || kind === 'kot_print') { await offlineKot(kind === 'kot_print'); return; }
+        if (kind === 'bill') { await offlineBill(); return; }
+        if (kind === 'pay') { await offlineBill(); setPayOpen(true); return; } // opens the same PaymentPanel used online
+      } catch (e) {
+        notify((e as Error).message, 'error');
+      } finally {
+        setBusy(false);
+      }
+      return;
     }
     setBusy(true);
     try {
@@ -1055,8 +1148,8 @@ export default function PosPage() {
   // Cancel flow: proper modal (qty + reason) then manager/admin sign-in —
   // no browser prompts, works in the desktop shell.
   function cancelLine(l: CartLine) {
-    if (!l.id && (!l.kotStatus || l.kotStatus === 'PENDING')) {
-      // Never persisted anywhere — just drop it locally, nothing to audit.
+    if (!l.synced && (!l.kotStatus || l.kotStatus === 'PENDING')) {
+      // Never confirmed by the server — just drop it locally, nothing to audit.
       setCart((prev) => prev.filter((x) => x.key !== l.key));
       return;
     }
@@ -1108,11 +1201,38 @@ export default function PosPage() {
     if (!order) return;
     setBusy(true);
     try {
-      await api.post(`/orders/${order.id}/pay`, {
+      const body = {
         payments,
         redeemPoints: totals.redeemPoints || undefined,
         customerPhone: order.customerPhone ?? undefined,
-      });
+      };
+      if (getStatus() === 'offline') {
+        // All tenders — including gateway ones (FONEPAY/ESEWA/KHALTI/CARD) —
+        // may be queued offline: those payments happen on rails independent
+        // of this terminal's own connectivity (a card machine, or the
+        // customer's phone for a QR wallet), so being offline here doesn't
+        // mean the payment failed, just that recording it is delayed. A
+        // GIFTCARD/CREDIT tender is the one case that can genuinely be
+        // rejected on sync (bad code, insufficient balance/credit) — that's
+        // exactly what the Sync Recovery view is for, not something to block
+        // here.
+        await fireAndForgetQueued(api.postQueued(`/orders/${order.id}/pay`, body));
+        const paidOrder: Order = {
+          ...order,
+          status: 'PAID',
+          payments: payments.map((p, i) => ({ id: `local-${i}`, method: p.method, amountCents: p.amountCents, giftCardId: null, gatewayRef: null })),
+        };
+        setPayOpen(false);
+        flash('Order settled offline ✓ — will sync when back online');
+        // No real fiscal invoice number exists until the server processes
+        // the sale — print one provisional copy, not the two-copy TAX
+        // INVOICE/INVOICE pair, and rely on the existing Sales Reports
+        // reprint once it has synced for the real tax invoice.
+        try { await printTicket(paidOrder, 'BILL', undefined, 'PROVISIONAL — pending sync'); } catch { /* best-effort */ }
+        resetTerminal();
+        return;
+      }
+      await api.post(`/orders/${order.id}/pay`, body);
       setPayOpen(false);
       flash(totals.redeemPoints ? `Settled ✓ · ${totals.redeemPoints} pts redeemed` : `Order #${order.number} settled ✓`);
       // Nepal billing practice: after settlement print the TAX INVOICE and a
@@ -1150,7 +1270,7 @@ export default function PosPage() {
   // empty draft (freeing its table).
   async function holdCurrent() {
     if (order && cart.length > 0) await persistCart();
-    else if (order && cart.length === 0) await api.delete(`/orders/${order.id}`);
+    else if (order && cart.length === 0) await fireAndForgetQueued(api.deleteQueued(`/orders/${order.id}`));
   }
 
   function clearContext() {
@@ -1211,8 +1331,8 @@ export default function PosPage() {
   function voidBasket() {
     if (!order) return resetTerminal();
     if (cart.length === 0) {
-      // Empty basket — nothing sold; just discard the order.
-      api.delete(`/orders/${order.id}`).catch(() => {}).finally(() => resetTerminal());
+      // Empty basket — nothing sold; just discard the order (queued if offline).
+      api.deleteQueued(`/orders/${order.id}`).catch(() => {}).finally(() => resetTerminal());
       return;
     }
     setVoidReq({ reason: '' });
@@ -1657,7 +1777,7 @@ export default function PosPage() {
               </button>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Active Cart {order && `· #${order.number}`}</div>
+                  <div className="text-xs uppercase tracking-wider text-[var(--pos-text-40)]">Active Cart {order && `· ${orderLabel(order)}`}</div>
                   <div className="font-bold">
                     {table ? `Table ${table.name}` : isQuick ? 'Quick Bill' : mode === 'DELIVERY' ? 'Home Delivery' : 'Takeaway'}
                   </div>
@@ -2026,7 +2146,7 @@ export default function PosPage() {
         <div className="mb-4 max-h-48 space-y-1 overflow-y-auto">
           {cart.map((l) => (
             <label key={l.key} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-              <input type="checkbox" checked={!!moveSel[l.id ?? '']} disabled={!l.id} onChange={(e) => setMoveSel((s) => ({ ...s, [l.id!]: e.target.checked }))} />
+              <input type="checkbox" checked={!!moveSel[l.id ?? '']} disabled={!l.synced} onChange={(e) => setMoveSel((s) => ({ ...s, [l.id!]: e.target.checked }))} />
               {!!moveSel[l.id ?? ''] && l.quantity > 1 && (
                 <input type="number" min={1} max={l.quantity} value={moveQty[l.id!] ?? l.quantity}
                   onChange={(e) => setMoveQty((m) => ({ ...m, [l.id!]: Math.min(l.quantity, Math.max(1, Number(e.target.value) || 1)) }))}
@@ -2092,7 +2212,7 @@ export default function PosPage() {
         {voidReq && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              This voids <strong>all {cart.length} item(s)</strong> on order #{order?.number} — it cannot be undone and is audited.
+              This voids <strong>all {cart.length} item(s)</strong> on order {order ? orderLabel(order) : ''} — it cannot be undone and is audited.
             </p>
             <div>
               <label className="label">Reason (required)</label>

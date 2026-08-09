@@ -6,7 +6,8 @@ import Sidebar from './Sidebar';
 import Login from './Login';
 import LandingPage from './LandingPage';
 import GlobalTopProgressBar from './TopProgressBar';
-import { tenantSlug } from '@/lib/api';
+import Link from 'next/link';
+import { api, tenantSlug } from '@/lib/api';
 import DialogHost from '@/lib/dialog';
 import type { Employee } from '@/lib/types';
 
@@ -28,6 +29,7 @@ export const ROUTE_PERM: Record<string, keyof Employee> = {
   '/coupons': 'canManageStaff',
   '/gift-cards': 'canManageStaff',
   '/feedback': 'canViewReports',
+  '/sync-recovery': 'canManageStaff',
 };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -41,6 +43,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [wantsLogin, setWantsLogin] = useState(false);
+  const [syncFailures, setSyncFailures] = useState(0);
 
   // Close the mobile drawer on navigation.
   useEffect(() => { setNavOpen(false); }, [path]);
@@ -59,6 +62,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
   }, []);
+
+  // Manager alert: poll for unacknowledged offline-sync failures — a paid or
+  // billed order the server rejected on replay must never go unnoticed.
+  // Skipped entirely for staff without canManageStaff (they can't act on it).
+  useEffect(() => {
+    if (!emp?.canManageStaff) { setSyncFailures(0); return; }
+    let cancelled = false;
+    const poll = () =>
+      api.get<{ acknowledgedAt: string | null }[]>('/sync-failures', { silent: true })
+        .then((items) => { if (!cancelled) setSyncFailures(items.filter((i) => !i.acknowledgedAt).length); })
+        .catch(() => {});
+    poll();
+    const id = window.setInterval(poll, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [emp?.canManageStaff]);
 
   function logout() {
     localStorage.removeItem('cakezake-emp');
@@ -121,6 +139,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         <main className="min-h-0 flex-1 overflow-y-auto">
+          {syncFailures > 0 && path !== '/sync-recovery' && (
+            <Link
+              href="/sync-recovery"
+              className="flex items-center justify-between bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+            >
+              <span>{syncFailures} offline sync failure{syncFailures === 1 ? '' : 's'} need review — an order or payment may not have reached the server</span>
+              <span className="underline">Open Sync Recovery →</span>
+            </Link>
+          )}
           {denied ? (
             <div className="flex h-full flex-col items-center justify-center p-8 text-center text-slate-400">
               <div className="mb-2 text-5xl">🔒</div>
