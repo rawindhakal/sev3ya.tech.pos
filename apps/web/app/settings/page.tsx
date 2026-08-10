@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import type { DiscountPreset, Features, Settings } from '@/lib/types';
 import Modal from '@/components/Modal';
-import { APP_VERSION, CHANGELOG } from '@/lib/changelog';
+import { APP_VERSION, CHANGELOG, DESKTOP_APP_VERSION } from '@/lib/changelog';
 import { confirmDialog, notify } from '@/lib/dialog';
 
 // UI feature key → backend column.
@@ -401,7 +401,7 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <a href="https://s3vya.tech/downloads/s3vyaPOS-Setup-0.1.0.exe" download
+          <a href={`https://s3vya.tech/downloads/s3vyaPOS-Setup-${DESKTOP_APP_VERSION}.exe`} download
             className="group flex items-center gap-4 rounded-xl border border-slate-200 p-4 transition-colors hover:border-brand-400 hover:bg-brand-50/40 dark:border-slate-600">
             <svg className="h-9 w-9 shrink-0 text-slate-500 group-hover:text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M3 5.5 10.5 4.5v7H3z" /><path d="M12.5 4.2 21 3v8.5h-8.5z" /><path d="M3 13h7.5v7L3 18.5z" /><path d="M12.5 13H21v8l-8.5-1.2z" />
@@ -411,7 +411,7 @@ export default function SettingsPage() {
               <span className="block text-xs text-slate-400">.exe installer · 64-bit · ~78 MB</span>
             </span>
           </a>
-          <a href="https://s3vya.tech/downloads/s3vyaPOS-0.1.0-arm64.dmg" download
+          <a href={`https://s3vya.tech/downloads/s3vyaPOS-${DESKTOP_APP_VERSION}-arm64.dmg`} download
             className="group flex items-center gap-4 rounded-xl border border-slate-200 p-4 transition-colors hover:border-brand-400 hover:bg-brand-50/40 dark:border-slate-600">
             <svg className="h-9 w-9 shrink-0 text-slate-500 group-hover:text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z" /><path d="M10 2c1 .5 2 2 2 5" />

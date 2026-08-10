@@ -82,7 +82,19 @@ function createWindow() {
   // Cashier terminal: no application/dev menu chrome.
   Menu.setApplicationMenu(null);
 
-  createTray(win);
+  // Tray creation must never be able to stop the till from opening. It ran
+  // unguarded here before — if it threw for any reason (a Windows machine
+  // with no notification area available, a driver/GPU quirk, anything),
+  // createWindow() aborted right at this line: the BrowserWindow was
+  // already constructed and visible on screen, but win.loadURL(POS_URL)
+  // below was never reached, so the till just showed a permanently blank
+  // window with no error — indistinguishable from "the app isn't opening"
+  // to whoever's staring at it.
+  try {
+    createTray(win);
+  } catch (err) {
+    console.error('[s3vyaPOS] Tray creation failed, continuing without it:', err);
+  }
   win.on('minimize', (event) => {
     event.preventDefault();
     win.hide();
@@ -249,6 +261,14 @@ ipcMain.handle('creds:clear', () => {
     /* nothing saved */
   }
   return { ok: true };
+});
+
+// Last-resort safety net: log anything that slips past the try/catch above
+// instead of the process just vanishing with the till showing nothing and
+// no clue why. Does not attempt to recover — an uncaught exception this
+// late means something is genuinely wrong — but at least leaves a trail.
+process.on('uncaughtException', (err) => {
+  console.error('[s3vyaPOS] Uncaught exception in main process:', err);
 });
 
 app.whenReady().then(() => {

@@ -1,6 +1,14 @@
 // App version + human changelog (shown under Settings → About & Changelog).
 export const APP_VERSION = '2.2.0';
 
+// The desktop till shell (apps/desktop) versions independently of the web
+// platform above — bump this whenever apps/desktop/package.json's version
+// changes, so the Settings → Desktop Application download links (which
+// build their filename from this constant) always point at the build that
+// was actually uploaded, instead of a stale hardcoded filename drifting out
+// of sync with what's really on the server.
+export const DESKTOP_APP_VERSION = '0.2.1';
+
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
   {
     version: '2.2.0', date: '2026-08-10',
