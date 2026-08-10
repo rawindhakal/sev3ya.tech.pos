@@ -165,7 +165,7 @@ export default function SelfOrderPage() {
       setCartOpen(false);
       setAskContact(false);
       if (name || phone) setContact({ name: name ?? '', phone: phone ?? '' });
-      notify('Sent to the kitchen! 🍳', 'success');
+      notify('Order sent! 🍳', 'success');
     } catch (e) {
       notify((e as Error).message, 'error');
     } finally {
@@ -352,7 +352,7 @@ export default function SelfOrderPage() {
             <span>Total</span><span>{formatMoney(cartTotal)}</span>
           </div>
           <button className="btn-primary w-full" disabled={cart.length === 0 || sending} onClick={startSend}>
-            {sending ? 'Sending…' : 'Send to kitchen'}
+            {sending ? 'Sending…' : 'Send Order'}
           </button>
         </div>
       </Modal>

@@ -460,6 +460,27 @@ export class OrdersService {
     });
   }
 
+  // Resolves each item's target printer: its own MenuItem.printerName, else
+  // its Category.printerName, else null (till's per-station KOT/BOT default,
+  // Settings → Printing). Shared by sendKot (manual/incremental fire) and
+  // kotQueue (silent auto-print poll) so the two paths can never disagree on
+  // where something should print.
+  private async resolvePrinterNames<T extends { menuItemId: string | null }>(
+    items: T[],
+  ): Promise<(T & { printerName: string | null })[]> {
+    const menuItemIds = [...new Set(items.map((i) => i.menuItemId).filter((x): x is string => !!x))];
+    if (!menuItemIds.length) return items.map((i) => ({ ...i, printerName: null }));
+    const menuItems = await this.prisma.menuItem.findMany({
+      where: { id: { in: menuItemIds } },
+      select: { id: true, printerName: true, category: { select: { printerName: true } } },
+    });
+    const byId = new Map(menuItems.map((m) => [m.id, m]));
+    return items.map((i) => {
+      const m = i.menuItemId ? byId.get(i.menuItemId) : undefined;
+      return { ...i, printerName: m?.printerName ?? m?.category.printerName ?? null };
+    });
+  }
+
   // Incremental KOT: fire only the not-yet-fired (PENDING) items and return
   // exactly those so the client prints KOT/BOT for the new items only.
   async sendKot(id: string) {
@@ -476,8 +497,11 @@ export class OrdersService {
       data: { status: 'SENT_TO_KITCHEN', kotFiredAt: order.kotFiredAt ?? new Date() },
       include: orderInclude,
     });
-    // fired items carry station so the POS can split KOT (kitchen) vs BOT (bar).
-    return { order: updated, fired: pending };
+    // fired items carry station + resolved printerName so the client can
+    // split KOT (kitchen) vs BOT (bar), and further split by physical
+    // printer within a station.
+    const fired = await this.resolvePrinterNames(pending);
+    return { order: updated, fired };
   }
 
   // ── KOT print queue ────────────────────────────────
@@ -491,6 +515,11 @@ export class OrdersService {
         kotPrintedAt: null,
         cancelledAt: null,
         station: { in: ['KITCHEN', 'BAR'] },
+        // Guest self-order items wait for a staff acknowledge (see
+        // pendingGuestAcks/acknowledgeGuestItems below) before they're
+        // eligible for silent auto-print — staff-fired items never set
+        // this flag, so their behavior is unchanged.
+        needsGuestAck: false,
         order: { status: { in: ['SENT_TO_KITCHEN', 'BILLED', 'OPEN'] } },
       },
       include: {
@@ -505,7 +534,8 @@ export class OrdersService {
       orderBy: { createdAt: 'asc' },
       take: 100,
     });
-    return items.map((i) => ({
+    const withPrinters = await this.resolvePrinterNames(items);
+    return withPrinters.map((i) => ({
       id: i.id,
       orderId: i.orderId,
       orderNumber: i.order.number,
@@ -519,7 +549,49 @@ export class OrdersService {
       notes: i.notes,
       modifiers: i.modifiers,
       firedAt: i.order.kotFiredAt,
+      printerName: i.printerName,
     }));
+  }
+
+  // ── Guest self-order acknowledgement ──────────────────
+  // Orders a guest fires themselves via the QR page (Order.source =
+  // SELF_ORDER) aren't reviewed by anyone before hitting the kitchen —
+  // unlike a POS/Waiter-Panel send, where a staff member is standing right
+  // there. These items sit here, invisible to the silent auto-print queue,
+  // until a waiter/cashier taps Acknowledge.
+  async pendingGuestAcks() {
+    const items = await this.prisma.orderItem.findMany({
+      where: { needsGuestAck: true, cancelledAt: null },
+      include: {
+        order: {
+          select: {
+            id: true, number: true, kotFiredAt: true,
+            table: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
+    // Grouped by order — one card per pending guest order, not per item.
+    const byOrder = new Map<string, { orderId: string; orderNumber: number; table: string | null; firedAt: Date | null; items: { id: string; name: string; quantity: number }[] }>();
+    for (const i of items) {
+      const g = byOrder.get(i.orderId) ?? { orderId: i.orderId, orderNumber: i.order.number, table: i.order.table?.name ?? null, firedAt: i.order.kotFiredAt, items: [] };
+      g.items.push({ id: i.id, name: i.nameSnapshot, quantity: i.quantity });
+      byOrder.set(i.orderId, g);
+    }
+    return [...byOrder.values()];
+  }
+
+  // Clears the ack flag on the given items (or every pending item on the
+  // order, if none specified) and returns them print-ready (station +
+  // resolved printer), so the caller can immediately drive a print prompt.
+  async acknowledgeGuestItems(orderId: string, itemIds?: string[]) {
+    const where = { orderId, needsGuestAck: true, cancelledAt: null, ...(itemIds?.length ? { id: { in: itemIds } } : {}) };
+    const items = await this.prisma.orderItem.findMany({ where });
+    if (!items.length) throw new BadRequestException('No pending guest items to acknowledge on this order');
+    await this.prisma.orderItem.updateMany({ where, data: { needsGuestAck: false } });
+    return this.resolvePrinterNames(items.map((i) => ({ ...i, needsGuestAck: false })));
   }
 
   // Acknowledge that tickets for these items came out of the printer.

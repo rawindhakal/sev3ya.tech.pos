@@ -9,6 +9,7 @@ import {
   isDesktopShell,
   kotTemplateOf,
   kotTicketHtml,
+  resolveTargetPrinter,
   type KotQueueItem,
 } from '@/lib/printing';
 
@@ -58,10 +59,13 @@ export default function AutoPrintAgent() {
         if (!printable.length) return;
 
         const template = kotTemplateOf(settingsRef.current);
-        // One ticket per order + station (a KOT and a BOT can both fire).
+        // One ticket per order + station + resolved printer — items on the
+        // same station but routed to different physical printers (e.g. two
+        // kitchen printers, K1/K2) must fire as separate tickets, not get
+        // merged onto whichever printer happened to be first.
         const groups = new Map<string, KotQueueItem[]>();
         for (const item of printable) {
-          const key = `${item.orderId}:${item.station}`;
+          const key = `${item.orderId}:${item.station}:${item.printerName ?? 'default'}`;
           groups.set(key, [...(groups.get(key) ?? []), item]);
         }
 
@@ -69,7 +73,7 @@ export default function AutoPrintAgent() {
         for (const items of groups.values()) {
           const first = items[0];
           const station = first.station as 'KITCHEN' | 'BAR';
-          const printer = station === 'BAR' ? prefs.bot || prefs.kot : prefs.kot;
+          const printer = resolveTargetPrinter(station, first.printerName, prefs);
           const html = kotTicketHtml({
             template,
             station,

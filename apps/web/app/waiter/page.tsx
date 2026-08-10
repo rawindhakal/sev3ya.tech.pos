@@ -5,7 +5,7 @@
 // settled at the main POS counter.
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
-import type { Category, Employee, MenuItem, MenuItemVariant, Order, Settings, TableArea } from '@/lib/types';
+import type { Category, Employee, MenuItem, MenuItemVariant, Order, Settings, TableArea, Waiter } from '@/lib/types';
 import { priceForType } from '@/lib/types';
 import Modal from '@/components/Modal';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
@@ -31,6 +31,7 @@ export default function WaiterPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [pinErr, setPinErr] = useState('');
+  const [waiterId, setWaiterId] = useState<string | undefined>(undefined);
 
   const [step, setStep] = useState<'home' | 'table' | 'order'>('home');
   const [mode, setMode] = useState<Mode>('DINE_IN');
@@ -57,10 +58,30 @@ export default function WaiterPage() {
     api.get<Category[]>('/categories').then(setCategories).catch(() => {});
     api.get<MenuItem[]>('/menu-items').then(setItems).catch(() => {});
     api.get<Settings>('/settings').then(setSettings).catch(() => {});
-    try { const s = localStorage.getItem('cakezake-emp'); if (s) setEmp(JSON.parse(s)); } catch {}
+    try {
+      const s = localStorage.getItem('cakezake-emp');
+      if (s) { const e = JSON.parse(s) as Employee; setEmp(e); resolveWaiterId(e.name).then(setWaiterId); }
+    } catch {}
   }, []);
 
   function flash(m: string) { setToast(m); setTimeout(() => setToast(null), 2000); }
+
+  // Attributes orders taken on this panel to a real waiter name — matches
+  // (or creates, on first use) a Waiter tag record for the logged-in
+  // employee. The Waiter model is separate from Employee/login (it's also
+  // used by the POS cashier to manually tag "who's serving this table"),
+  // so a waiter logging in here doesn't automatically have one; without
+  // this, every order placed from this panel left waiterId unset and
+  // "Order Taken By" printed blank on every ticket.
+  async function resolveWaiterId(name: string): Promise<string | undefined> {
+    try {
+      const list = await api.get<Waiter[]>('/waiters');
+      const match = list.find((w) => w.name.trim().toLowerCase() === name.trim().toLowerCase());
+      if (match) return match.id;
+      const created = await api.post<Waiter>('/waiters', { name });
+      return created.id;
+    } catch { return undefined; }
+  }
 
   async function login() {
     if (!username.trim() || !password) return setPinErr('Enter your username and password');
@@ -68,6 +89,7 @@ export default function WaiterPage() {
       const e = await api.post<Employee & { token?: string }>('/employees/login', { username: username.trim(), password });
       setEmp(e); localStorage.setItem('cakezake-emp', JSON.stringify(e));
       if (e.token) localStorage.setItem('cakezake-token', e.token);
+      resolveWaiterId(e.name).then(setWaiterId);
       setUsername(''); setPassword(''); setPinErr('');
     } catch { setPinErr('Invalid username or password'); setPassword(''); }
   }
@@ -114,7 +136,7 @@ export default function WaiterPage() {
     setBusy(true);
     try {
       let o = resumeOrder;
-      if (!o) o = await api.post<Order>('/orders', { type: mode, tableId: tableId ?? undefined, customerName: cust.name || undefined, customerPhone: cust.phone || undefined });
+      if (!o) o = await api.post<Order>('/orders', { type: mode, tableId: tableId ?? undefined, customerName: cust.name || undefined, customerPhone: cust.phone || undefined, waiterId });
       setOrder(o); setTableName(o.table?.name ?? null); setCart(toCart(o)); setStep('order'); setCustOpen(false);
     } catch (e) { notify((e as Error).message, 'error'); } finally { setBusy(false); }
   }
@@ -151,7 +173,7 @@ export default function WaiterPage() {
     if (!order) return null;
     const saved = await api.put<Order>(`/orders/${order.id}/cart`, {
       items: cart.map((l) => ({ id: l.id, ...(l.menuItemId ? { menuItemId: l.menuItemId, ...(l.variantId ? { variantId: l.variantId } : {}) } : {}), quantity: l.quantity, modifiers: l.modifiers, notes: l.notes })),
-      waiterId: undefined,
+      waiterId,
     });
     setOrder(saved); setCart(toCart(saved)); return saved;
   }

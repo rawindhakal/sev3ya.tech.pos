@@ -5,6 +5,7 @@ export interface Category {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  printerName?: string | null;
   _count?: { items: number };
 }
 
@@ -46,6 +47,7 @@ export interface MenuItem {
   station?: PrepStation;
   isAvailable: boolean;
   imageUrl?: string | null;
+  printerName?: string | null;
   categoryId: string;
   category?: { id: string; name: string };
   modifierGroups?: ModifierGroupRef[];
@@ -200,6 +202,8 @@ export interface OrderItem {
   cancelledAt?: string | null;
   cancelReason?: string | null;
   cancelledBy?: string | null;
+  printerName?: string | null;
+  needsGuestAck?: boolean;
 }
 
 export interface Payment {

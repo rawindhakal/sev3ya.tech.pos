@@ -27,11 +27,12 @@ import PaymentPanel from '@/components/PaymentPanel';
 import ConnBadge from '@/components/ConnBadge';
 import ThemeToggleMini from '@/components/ThemeToggleMini';
 import AutoPrintAgent from '@/components/AutoPrintAgent';
+import TableQrCard from '@/components/TableQrCard';
 import ManagerAuth, { type ManagerCred } from '@/components/ManagerAuth';
 import Spinner from '@/components/Spinner';
 import { SearchIcon, PlusIcon, UtensilsIcon, BagIcon, BikeIcon, BoltIcon, SettingsIcon, XIcon, LockIcon, BellIcon, MoonIcon, MenuIcon, ChevronUpIcon, CartIcon } from '@/components/icons';
 import { formatBsLong } from '@/lib/bs-date';
-import { billTemplateOf, kotTemplateOf, getPrinterPrefs, printReceiptNow, isDesktopShell } from '@/lib/printing';
+import { billTemplateOf, kotTemplateOf, getPrinterPrefs, printReceiptNow, isDesktopShell, resolveTargetPrinter } from '@/lib/printing';
 import { getStatus, genLocalId } from '@/lib/offline';
 import { playDing } from '@/lib/sound';
 import { notify, promptDialog } from '@/lib/dialog';
@@ -192,6 +193,9 @@ export default function PosPage() {
   const [qrTable, setQrTable] = useState<{ table: RestaurantTable; url: string } | null>(null);
   const [waiterCalls, setWaiterCalls] = useState<{ id: string; table?: { name: string; area?: string | null }; createdAt: string }[]>([]);
   const [callsOpen, setCallsOpen] = useState(false);
+  const [pendingGuestOrders, setPendingGuestOrders] = useState<{ orderId: string; orderNumber: number; table: string | null; firedAt: string | null; items: { id: string; name: string; quantity: number }[] }[]>([]);
+  const [guestOrdersOpen, setGuestOrdersOpen] = useState(false);
+  const [ackBusy, setAckBusy] = useState<string | null>(null);
   const [gatewayQr, setGatewayQr] = useState<{ provider: string; label: string } | null>(null);
   const [tableForm, setTableForm] = useState({ name: '', seats: 4, area: '', isVip: false });
   const [transferOpen, setTransferOpen] = useState(false);
@@ -761,6 +765,46 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emp]);
 
+  // Guest self-orders (QR page) waiting for a staff acknowledge before
+  // they're eligible to print — same polling pattern as waiter calls above.
+  useEffect(() => {
+    if (!emp) return;
+    const prevCount = { current: null as number | null };
+    async function poll() {
+      try {
+        const rows = await api.get<typeof pendingGuestOrders>('/orders/pending-guest-acks', { silent: true });
+        if (prevCount.current !== null && rows.length > prevCount.current) playDing();
+        prevCount.current = rows.length;
+        setPendingGuestOrders(rows);
+      } catch { /* offline */ }
+    }
+    poll();
+    const iv = setInterval(poll, 8000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emp]);
+
+  // Acknowledges every pending item on a guest order, marks them as already
+  // printed for the silent auto-printer (so it never races the prompt
+  // below), then opens the same manual print flow POS uses for staff-fired
+  // KOTs — split by station and resolved printer.
+  async function acknowledgeGuestOrder(orderId: string) {
+    setAckBusy(orderId);
+    try {
+      const ackedItems = await api.post<OrderItem[]>(`/orders/${orderId}/acknowledge-guest-items`, {});
+      const ids = ackedItems.filter((i) => i.station === 'KITCHEN' || i.station === 'BAR').map((i) => i.id);
+      if (ids.length) api.post('/orders/kot-queue/printed', { itemIds: ids }).catch(() => {});
+      const fullOrder = await api.get<Order>(`/orders/${orderId}`);
+      await printByStationAndPrinter(fullOrder, ackedItems);
+      setPendingGuestOrders((prev) => prev.filter((o) => o.orderId !== orderId));
+      flash('Order acknowledged');
+    } catch (e) {
+      notify((e as Error).message, 'error');
+    } finally {
+      setAckBusy(null);
+    }
+  }
+
   async function resumeActive(id: string) {
     setBusy(true);
     try {
@@ -1078,15 +1122,36 @@ export default function PosPage() {
   // Print one ticket. In the desktop app this prints silently to the printer
   // chosen under Settings → Printing (bill printer for bills, KOT/BOT printers
   // for kitchen tickets) — no dialog. In the browser it falls back to the
-  // normal print dialog.
-  async function printTicket(o: Order, m: ReceiptMode, tItems?: OrderItem[], docTitle?: string) {
+  // normal print dialog. printerOverride (item/category-level routing) beats
+  // the till's station default when set.
+  async function printTicket(o: Order, m: ReceiptMode, tItems?: OrderItem[], docTitle?: string, printerOverride?: string) {
     setReceipt({ order: o, mode: m, items: tItems, docTitle });
     await new Promise((r) => setTimeout(r, 150)); // let the ticket render
     const prefs = getPrinterPrefs();
     const tpl = m === 'BILL' ? billTemplateOf(settings) : kotTemplateOf(settings);
-    const printer = m === 'BILL' ? prefs.bill : m === 'BOT' ? prefs.bot || prefs.kot : prefs.kot;
+    const printer = printerOverride ?? (m === 'BILL' ? prefs.bill : m === 'BOT' ? prefs.bot || prefs.kot : prefs.kot);
     await printReceiptNow({ printer, widthMm: tpl.paperWidthMm, marginMm: tpl.marginMm, fontSize: tpl.fontSize });
     await new Promise((r) => setTimeout(r, 200));
+  }
+
+  // Groups kitchen/bar items by resolved printer (item/category override,
+  // else the till's station default) and fires one ticket per group — two
+  // items on the same station but different physical printers (e.g. two
+  // kitchen printers, K1/K2) must print as separate tickets, not get merged
+  // onto whichever printer happened to be first.
+  async function printByStationAndPrinter(o: Order, fired: OrderItem[]) {
+    const prefs = getPrinterPrefs();
+    const groups = new Map<string, { mode: ReceiptMode; items: OrderItem[]; printer?: string }>();
+    for (const item of fired) {
+      if (item.station !== 'KITCHEN' && item.station !== 'BAR') continue;
+      const mode: ReceiptMode = item.station === 'BAR' ? 'BOT' : 'KOT';
+      const printer = resolveTargetPrinter(item.station, item.printerName, prefs);
+      const key = `${mode}:${printer ?? 'default'}`;
+      const g = groups.get(key) ?? { mode, items: [], printer };
+      g.items.push(item);
+      groups.set(key, g);
+    }
+    for (const g of groups.values()) await printTicket(o, g.mode, g.items, undefined, g.printer);
   }
 
   // Fire incremental KOT — the API returns only the just-fired items; print a
@@ -1096,37 +1161,36 @@ export default function PosPage() {
     setOrder(res.order);
     setCart(orderToCart(res.order));
     if (print) {
-      const kitchen = res.fired.filter((i) => i.station === 'KITCHEN');
-      const bar = res.fired.filter((i) => i.station === 'BAR');
+      const ids = res.fired.filter((i) => i.station === 'KITCHEN' || i.station === 'BAR').map((i) => i.id);
       // Acknowledge before the dialog so the desktop auto-printer never doubles.
-      const ids = [...kitchen, ...bar].map((i) => i.id);
       if (ids.length) api.post('/orders/kot-queue/printed', { itemIds: ids }).catch(() => {});
-      if (kitchen.length) await printTicket(res.order, 'KOT', kitchen);
-      if (bar.length) await printTicket(res.order, 'BOT', bar);
+      await printByStationAndPrinter(res.order, res.fired);
     }
     return res.order;
   }
 
   // Offline KOT — fire the kitchen/bar ticket without the server. Prints the
-  // pending lines locally (station looked up from the cached menu for new lines),
-  // marks them fired, and queues the cart-save + KOT-fire to replay on reconnect.
+  // pending lines locally (station + printer looked up from the cached menu
+  // for new lines), marks them fired, and queues the cart-save + KOT-fire to
+  // replay on reconnect.
   async function offlineKot(print: boolean) {
     if (!order) return flash('No active order');
     const toFire = cart.filter((l) => !isFired(l));
     if (!toFire.length) return flash('Nothing new to fire');
     const stationFor = (l: CartLine) => l.station || items.find((m) => m.id === l.menuItemId)?.station || 'BILLING';
+    const printerFor = (l: CartLine): string | null => {
+      const mi = items.find((m) => m.id === l.menuItemId);
+      return mi?.printerName ?? categories.find((c) => c.id === mi?.categoryId)?.printerName ?? null;
+    };
 
     // Queue the persist + fire (FIFO: cart save first, then KOT), idempotent.
     await queuePersistCart();
     await fireAndForgetQueued(api.postQueued(`/orders/${order.id}/kot`, {}));
 
-    // Print locally, split by station.
+    // Print locally, split by station and resolved printer.
     if (print) {
-      const mk = (l: CartLine): OrderItem => ({ id: l.id ?? l.key, nameSnapshot: l.name, quantity: l.quantity, station: stationFor(l), modifiers: l.modifiers, notes: l.notes } as unknown as OrderItem);
-      const kitchen = toFire.filter((l) => stationFor(l) === 'KITCHEN').map(mk);
-      const bar = toFire.filter((l) => stationFor(l) === 'BAR').map(mk);
-      if (kitchen.length) await printTicket(order, 'KOT', kitchen);
-      if (bar.length) await printTicket(order, 'BOT', bar);
+      const mk = (l: CartLine): OrderItem => ({ id: l.id ?? l.key, nameSnapshot: l.name, quantity: l.quantity, station: stationFor(l), modifiers: l.modifiers, notes: l.notes, printerName: printerFor(l) } as unknown as OrderItem);
+      await printByStationAndPrinter(order, toFire.map(mk));
     }
     // Optimistically lock the fired lines.
     setCart((prev) => prev.map((l) => (isFired(l) ? l : { ...l, kotStatus: 'FIRED', station: stationFor(l) })));
@@ -1585,6 +1649,11 @@ export default function PosPage() {
               <BellIcon className="h-4 w-4" /> {waiterCalls.length}
             </button>
           )}
+          {pendingGuestOrders.length > 0 && (
+            <button onClick={() => setGuestOrdersOpen(true)} className="relative flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[#2ECC71]/20 px-2.5 text-[#2ECC71] transition-transform hover:bg-[#2ECC71]/30 active:scale-95" title="Guest orders awaiting acknowledgement">
+              <BellIcon className="h-4 w-4" /> {pendingGuestOrders.length}
+            </button>
+          )}
           <span className="hidden text-[var(--pos-text-60)] tabular-nums lg:inline" title={now.toLocaleDateString()}>
             {formatBsLong(now)} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
@@ -1623,6 +1692,11 @@ export default function PosPage() {
             {waiterCalls.length > 0 && (
               <button onClick={() => { setMobileMenuOpen(false); setCallsOpen(true); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[#F39C12] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
                 <BellIcon className="h-4 w-4" /> Waiter calls ({waiterCalls.length})
+              </button>
+            )}
+            {pendingGuestOrders.length > 0 && (
+              <button onClick={() => { setMobileMenuOpen(false); setGuestOrdersOpen(true); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[#2ECC71] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
+                <BellIcon className="h-4 w-4" /> Guest orders ({pendingGuestOrders.length})
               </button>
             )}
             <button onClick={() => { setMobileMenuOpen(false); checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[#E74C3C] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
@@ -2163,20 +2237,7 @@ export default function PosPage() {
           straight to this table, no waiter needed. */}
       <Modal open={!!qrTable} title={`QR — ${qrTable?.table.name ?? ''}`} onClose={() => setQrTable(null)}>
         {qrTable && (
-          <div className="space-y-3 text-center">
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrTable.url)}`}
-              alt={`QR code for ${qrTable.table.name}`}
-              className="mx-auto rounded-lg border border-slate-200"
-              width={280}
-              height={280}
-            />
-            <p className="break-all font-mono text-xs text-slate-400">{qrTable.url}</p>
-            <div className="flex justify-center gap-2">
-              <button className="btn-ghost" onClick={() => { navigator.clipboard?.writeText(qrTable.url); flash('Link copied'); }}>Copy link</button>
-              <button className="btn-primary" onClick={() => window.print()}>Print</button>
-            </div>
-          </div>
+          <TableQrCard url={qrTable.url} tableName={qrTable.table.name} tableArea={qrTable.table.area} restaurantName={settings?.restaurantName} />
         )}
       </Modal>
 
@@ -2196,6 +2257,39 @@ export default function PosPage() {
             </div>
           ))}
           {waiterCalls.length === 0 && <p className="py-4 text-center text-sm text-slate-400">No pending calls.</p>}
+        </div>
+      </Modal>
+
+      {/* Guest self-orders (QR page) — no staff reviewed these yet, so they
+          don't auto-print; Acknowledge here opens the normal manual print
+          flow instead. */}
+      <Modal open={guestOrdersOpen} title="Guest orders — awaiting acknowledgement" onClose={() => setGuestOrdersOpen(false)}>
+        <div className="space-y-2">
+          {pendingGuestOrders.map((o) => (
+            <div key={o.orderId} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-slate-800 dark:text-slate-100">
+                    {o.table ?? 'Table'} · Order #{o.orderNumber}
+                  </div>
+                  <div className="text-xs text-slate-400">{o.firedAt ? new Date(o.firedAt).toLocaleTimeString() : ''}</div>
+                </div>
+                <button
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  disabled={ackBusy === o.orderId}
+                  onClick={() => acknowledgeGuestOrder(o.orderId)}
+                >
+                  {ackBusy === o.orderId ? 'Acknowledging…' : 'Acknowledge & Print'}
+                </button>
+              </div>
+              <ul className="mt-2 space-y-0.5 text-sm text-slate-600 dark:text-slate-300">
+                {o.items.map((it) => (
+                  <li key={it.id}>{it.quantity}× {it.name}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {pendingGuestOrders.length === 0 && <p className="py-4 text-center text-sm text-slate-400">No guest orders waiting.</p>}
         </div>
       </Modal>
 

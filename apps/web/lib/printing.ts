@@ -150,6 +150,20 @@ export interface KotQueueItem {
   station: 'KITCHEN' | 'BAR' | 'BILLING';
   notes?: string | null;
   modifiers?: { name: string }[] | null;
+  printerName?: string | null;
+}
+
+// Which physical printer an item's ticket should go to: its own resolved
+// printerName (item override, else category default — computed server-side
+// so the auto-print and manual-print paths can never disagree), else this
+// till's per-station KOT/BOT default (Settings → Printing).
+export function resolveTargetPrinter(
+  station: 'KITCHEN' | 'BAR',
+  printerName: string | null | undefined,
+  prefs: PrinterPrefs,
+): string | undefined {
+  if (printerName) return printerName;
+  return station === 'BAR' ? prefs.bot || prefs.kot : prefs.kot;
 }
 
 const esc = (s: unknown) =>

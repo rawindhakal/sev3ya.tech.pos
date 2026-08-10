@@ -64,6 +64,13 @@ export class CreateMenuItemDto {
   @IsString()
   imageUrl?: string;
 
+  // Overrides both the till's station printer and Category.printerName —
+  // e.g. two kitchen printers (K1/K2), route this one dish to K1
+  // specifically. Null/omitted falls back to the category default.
+  @IsOptional()
+  @IsString()
+  printerName?: string | null;
+
   // Optional list of ModifierGroup ids to attach.
   @IsOptional()
   @IsArray()
@@ -130,6 +137,10 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  printerName?: string | null;
 
   @IsOptional()
   @IsArray()

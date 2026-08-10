@@ -55,6 +55,13 @@ export class OrdersController {
     return this.orders.markKotPrinted(itemIds ?? []);
   }
 
+  // Guest self-orders (QR page) awaiting a waiter/cashier's acknowledgement
+  // before they're eligible to print — must stay before @Get(':id').
+  @Get('pending-guest-acks')
+  pendingGuestAcks() {
+    return this.orders.pendingGuestAcks();
+  }
+
   // Must stay before @Get(':id') — otherwise "feedback" would match :id.
   @Get('feedback/summary')
   feedbackSummary(@Query('days') days?: string) {
@@ -94,6 +101,14 @@ export class OrdersController {
   @Post(':id/kot')
   kot(@Param('id') id: string) {
     return this.orders.sendKot(id);
+  }
+
+  // Waiter/cashier confirms they've seen this guest-submitted order — clears
+  // it for printing (see pendingGuestAcks above). Body itemIds is optional;
+  // omitted = acknowledge every pending item on the order.
+  @Post(':id/acknowledge-guest-items')
+  acknowledgeGuestItems(@Param('id') id: string, @Body('itemIds') itemIds?: string[]) {
+    return this.orders.acknowledgeGuestItems(id, itemIds);
   }
 
   @Post(':id/customer')

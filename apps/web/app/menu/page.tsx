@@ -6,6 +6,7 @@ import type { Category, MenuItem } from '@/lib/types';
 import { toCsv, downloadCsv, parseCsv } from '@/lib/csv';
 import Modal from '@/components/Modal';
 import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
+import { isDesktopShell, type DesktopPrinter } from '@/lib/printing';
 
 type ItemForm = {
   name: string;
@@ -15,6 +16,7 @@ type ItemForm = {
   deliveryDollars: string;
   station: string;
   categoryId: string;
+  printerName: string;
   isAvailable: boolean;
   variants: { name: string; price: string }[];
   isCombo: boolean;
@@ -29,6 +31,7 @@ const emptyForm: ItemForm = {
   deliveryDollars: '',
   station: 'BILLING',
   categoryId: '',
+  printerName: '',
   isAvailable: true,
   variants: [],
   isCombo: false,
@@ -48,6 +51,14 @@ export default function MenuPage() {
   const [catModal, setCatModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [printers, setPrinters] = useState<DesktopPrinter[]>([]);
+  const desktop = isDesktopShell();
+
+  useEffect(() => {
+    if (desktop && window.cakezakeDesktop?.listPrinters) {
+      window.cakezakeDesktop.listPrinters().then(setPrinters).catch(() => {});
+    }
+  }, [desktop]);
 
   async function load() {
     setLoading(true);
@@ -97,6 +108,7 @@ export default function MenuPage() {
       deliveryDollars: item.deliveryPriceCents != null ? (item.deliveryPriceCents / 100).toFixed(2) : '',
       station: item.station ?? 'BILLING',
       categoryId: item.categoryId,
+      printerName: item.printerName ?? '',
       isAvailable: item.isAvailable,
       variants: (item.variants ?? []).map((v) => ({ name: v.name, price: (v.priceCents / 100).toString() })),
       isCombo: !!item.isCombo,
@@ -119,6 +131,7 @@ export default function MenuPage() {
         deliveryPriceCents: optCents(form.deliveryDollars),
         station: form.station,
         categoryId: form.categoryId,
+        printerName: form.printerName.trim() || null,
         isAvailable: form.isAvailable,
         variants: form.variants.filter((v) => v.name.trim()).map((v, i) => ({ name: v.name.trim(), priceCents: dollarsToCents(parseFloat(v.price || '0')), sortOrder: i })),
         isCombo: form.isCombo,
@@ -162,12 +175,28 @@ export default function MenuPage() {
     }
   }
 
-  // ── Category rename / delete ─────────────────────
+  // ── Category rename / delete / printer default ────
   async function renameCategory(c: Category) {
     const name = await promptDialog('Rename category:', c.name, { title: 'Rename category' });
     if (!name?.trim() || name.trim() === c.name) return;
     try {
       await api.patch(`/categories/${c.id}`, { name: name.trim() });
+      load();
+    } catch (e) { notify((e as Error).message, 'error'); }
+  }
+  // Default printer for every kitchen/bar item in this category (an item's
+  // own "Printer override" beats this). Free-text so it stays simple/quick
+  // like rename above, matching the printer name set up under Settings →
+  // Printing on whichever till prints.
+  async function setCategoryPrinter(c: Category) {
+    const name = await promptDialog(
+      'Printer for this category\'s KOT/BOT tickets (leave blank to use each item\'s station default):',
+      c.printerName ?? '',
+      { title: `Printer — ${c.name}` },
+    );
+    if (name === null) return;
+    try {
+      await api.patch(`/categories/${c.id}`, { printerName: name.trim() || null });
       load();
     } catch (e) { notify((e as Error).message, 'error'); }
   }
@@ -340,6 +369,7 @@ export default function MenuPage() {
             {activeCat === c.id && (
               <span className="ml-1 flex gap-0.5">
                 <button title="Rename category" onClick={() => renameCategory(c)} className="rounded px-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-600">✏️</button>
+                <button title={c.printerName ? `Printer: ${c.printerName}` : 'Set default printer'} onClick={() => setCategoryPrinter(c)} className={`rounded px-1 text-xs hover:bg-slate-100 ${c.printerName ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'}`}>🖨</button>
                 <button title="Delete category" onClick={() => deleteCategory(c)} className="rounded px-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600">🗑</button>
               </span>
             )}
@@ -484,7 +514,7 @@ export default function MenuPage() {
             Leave takeaway/delivery blank to use the dine-in price.
           </p>
           <div>
-            <label className="label">Prep station (printer)</label>
+            <label className="label">Prep station</label>
             <select className="input" value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })}>
               <option value="BILLING">Billing only (no ticket)</option>
               <option value="KITCHEN">Kitchen — KOT</option>
@@ -492,6 +522,31 @@ export default function MenuPage() {
             </select>
             <p className="mt-1 text-xs text-slate-400">Routes this item to the kitchen (KOT) or bar (BOT) printer when fired. Default is billing-only.</p>
           </div>
+          {form.station !== 'BILLING' && (
+            <div>
+              <label className="label">Printer override (optional)</label>
+              {desktop ? (
+                <select className="input" value={form.printerName} onChange={(e) => setForm({ ...form, printerName: e.target.value })}>
+                  <option value="">Use category / till default</option>
+                  {printers.map((p) => (
+                    <option key={p.name} value={p.name}>{p.displayName || p.name}{p.isDefault ? ' (default)' : ''}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="input"
+                  value={form.printerName}
+                  onChange={(e) => setForm({ ...form, printerName: e.target.value })}
+                  placeholder="e.g. K1 — leave blank for category / till default"
+                />
+              )}
+              <p className="mt-1 text-xs text-slate-400">
+                Send this item's tickets to a specific printer (e.g. a second kitchen printer, K2) instead of the category
+                default or this till's normal KOT/BOT printer. Must match the printer name exactly as set up on the
+                till that prints — type the same name shown under Settings → Printing.
+              </p>
+            </div>
+          )}
           <div>
             <label className="label">Portions / variants (optional)</label>
             <p className="mb-2 text-xs text-slate-400">e.g. Whiskey → 30ml, 60ml. A variant&apos;s price replaces the base price when ordered.</p>

@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.2.0';
+export const APP_VERSION = '2.3.0';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,16 @@ export const APP_VERSION = '2.2.0';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.3.0', date: '2026-08-11',
+    changes: [
+      'Fixed: orders taken on the Waiter Panel now correctly attribute the actual waiter — "Order Taken By" on printed KOTs/BOTs/bills was silently blank for every order a waiter placed themselves',
+      'Table QR ordering redesigned: a proper printable, downloadable branded card (generated on-device, no third-party service) instead of a bare QR image with a broken whole-page print',
+      'Guest self-orders (scan-to-order) no longer silently auto-print to the kitchen — they wait in a new "pending guest orders" queue on the POS screen until a waiter or cashier acknowledges them, which then prompts to print the KOT/BOT',
+      'New per-item and per-category printer routing — e.g. route one dish to a second kitchen printer, or a specific drink to a particular bar printer, instead of every kitchen/bar ticket going to the same one printer',
+      'Renamed "Send to kitchen" to "Send Order" on the guest ordering page',
+    ],
+  },
   {
     version: '2.2.0', date: '2026-08-10',
     changes: [

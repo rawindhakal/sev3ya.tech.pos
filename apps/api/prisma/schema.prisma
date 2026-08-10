@@ -27,6 +27,11 @@ model Category {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
+  // Default OS printer name for every item in this category's tickets —
+  // null means "use this till's per-station KOT/BOT printer" (Settings →
+  // Printing), same as today. A MenuItem.printerName override beats this.
+  printerName String?
+
   @@map("categories")
 }
 
@@ -44,6 +49,11 @@ model MenuItem {
   station            PrepStation @default(BILLING)
   isAvailable        Boolean     @default(true)
   imageUrl           String?
+
+  // Overrides both the station default AND Category.printerName — e.g. two
+  // kitchen printers (K1/K2), route this one dish to K1 specifically. Null
+  // falls back to Category.printerName, then the till's station default.
+  printerName String?
 
   // Combo/meal-deal: this item is sold as a single line (one price, one KOT
   // entry) but bundles other menu items — see ComboComponent. Inventory
@@ -660,6 +670,13 @@ model OrderItem {
   kotPrintedAt  DateTime? // set once a physical KOT/BOT ticket has been printed
   discountCents Int         @default(0) // item-wise discount (needs manager perm)
   notes         String?
+
+  // Set true only when fired by a guest via the QR self-order page (never by
+  // staff at POS/Waiter Panel) — keeps it out of the silent auto-print queue
+  // until a waiter/cashier has reviewed and acknowledged it. Cleared back to
+  // false on acknowledge, at which point it prints exactly like any other
+  // fired item.
+  needsGuestAck Boolean @default(false)
 
   // Item-level cancellation (prints a cancellation KOT + audited).
   cancelledAt  DateTime?
