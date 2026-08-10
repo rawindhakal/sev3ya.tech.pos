@@ -112,7 +112,7 @@ export class AttendanceService {
     const rows = await this.prisma.attendanceLog.findMany({
       where: { at: { gte: start, lte: end }, ...(employeeId ? { employeeId } : {}) },
       orderBy: { at: 'desc' },
-      include: { employee: { select: { name: true, role: true } } },
+      include: { employee: { select: { name: true, role: { select: { name: true } } } } },
       take: 500,
     });
     return rows.map((r) => ({
@@ -122,7 +122,7 @@ export class AttendanceService {
       time: r.at.toISOString(),
       deviceUserId: r.deviceUserId,
       employee: r.employee?.name ?? `(unmapped #${r.deviceUserId})`,
-      role: r.employee?.role ?? null,
+      role: r.employee?.role?.name ?? null,
       source: r.source,
       status: r.status,
       verifyMethod: r.verifyMethod,
@@ -167,13 +167,14 @@ export class AttendanceService {
     const logs = await this.prisma.attendanceLog.findMany({
       where: { at: { gte: start, lte: end }, employeeId: { not: null } },
       orderBy: { at: 'asc' },
-      include: { employee: { select: { id: true, name: true, role: true, monthlySalaryCents: true } } },
+      include: { employee: { select: { id: true, name: true, role: { select: { name: true } }, monthlySalaryCents: true } } },
     });
     // employeeId → date → cell
     const grid = new Map<string, { emp: { id: string; name: string; role: string; monthlySalaryCents: number }; days: Map<string, DayCell> }>();
     for (const l of logs) {
-      const e = l.employee!;
-      const g = grid.get(e.id) ?? { emp: e as any, days: new Map() };
+      const raw = l.employee!;
+      const e = { id: raw.id, name: raw.name, role: raw.role?.name ?? '', monthlySalaryCents: raw.monthlySalaryCents };
+      const g = grid.get(e.id) ?? { emp: e, days: new Map() };
       const day = nepalDateKey(l.at);
       const cell = g.days.get(day);
       if (!cell) g.days.set(day, { firstIn: l.at, lastOut: l.at, punches: 1, times: [l.at] });
