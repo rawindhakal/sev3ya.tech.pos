@@ -99,8 +99,25 @@ function createWindow() {
   // If the terminal server isn't reachable (internet/LAN blip), show a waiting
   // screen and keep auto-retrying so the till reconnects on its own the moment
   // the server is back — no manual relaunch needed.
+  //
+  // Deliberately NOT using 'did-finish-load' to detect success and cancel the
+  // retry loop (an earlier version of this code did, and it was broken):
+  // Chromium fires 'did-finish-load' for a failed top-level navigation too —
+  // once for its own error-page commit, which still reports the ORIGINAL
+  // target URL via webContents.getURL() despite the load having failed, and
+  // again when we load the "waiting for server" placeholder. Both satisfy
+  // almost any "a page finished loading" check (including one that requires
+  // the URL to exactly equal POS_URL, since the error-page commit reports
+  // exactly that URL) — so the retry timer got cancelled within
+  // milliseconds of being armed, and the till just sat on "Waiting for the
+  // terminal server…" forever without ever actually retrying.
+  //
+  // The fix: don't try to detect success at all. Each failure schedules
+  // exactly one retry; if that retry succeeds, 'did-fail-load' simply never
+  // fires again, so no further retry gets scheduled — the loop terminates
+  // itself. No separate "cancel on success" listener needed.
   let retryTimer = null;
-  win.webContents.on('did-fail-load', (_e, code, _desc, url, isMainFrame) => {
+  win.webContents.on('did-fail-load', (_e, code, _desc, _url, isMainFrame) => {
     if (!isMainFrame || code === -3 /* ERR_ABORTED */) return;
     win.loadURL(
       'data:text/html,' +
@@ -113,11 +130,6 @@ function createWindow() {
     );
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = setTimeout(() => win.loadURL(POS_URL), 4000);
-  });
-
-  // Clear the retry loop once a real page loads.
-  win.webContents.on('did-finish-load', () => {
-    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   });
 }
 
