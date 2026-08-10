@@ -446,6 +446,25 @@ model Employee {
   attendance         AttendanceLog[]
   outlets            EmployeeOutlet[]
 
+  // ── HRM profile (Phase 4) — all optional, filled in over time by HR ──
+  dateOfBirth           DateTime?
+  joinDate              DateTime?
+  phone                 String?
+  address               String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  bankName              String?
+  bankAccountNumber     String?
+  panNumber             String?
+  employmentType        String? // FULL_TIME | PART_TIME | CONTRACT | INTERN
+  designation           String? // free-text job title — distinct from Role (a permission set)
+
+  documents          EmployeeDocument[]
+  performanceNotes   PerformanceNote[]
+  leaveRequests      LeaveRequest[]
+  rosterEntries      RosterEntry[]
+  payrollAdjustments PayrollAdjustment[]
+
   shifts    Shift[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -882,6 +901,8 @@ model Outlet {
   orders            Order[]
   employees         EmployeeOutlet[]
   attendanceDevices AttendanceDevice[]
+  shiftTemplates    ShiftTemplate[]
+  rosterEntries     RosterEntry[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
@@ -1318,6 +1339,12 @@ model AttendanceLog {
   deviceUserId String
   at           DateTime
   source       String    @default("DEVICE") // DEVICE | MANUAL
+  // Punch direction + how it was verified — parsed from the ATTLOG wire
+  // format (Phase 4; nullable since rows pushed before this shipped never
+  // had it, and a manual punch has no device verify-method).
+  status       String? // IN | OUT | BREAK_OUT | BREAK_IN | OVERTIME_IN | OVERTIME_OUT
+  verifyMethod String? // FINGERPRINT | CARD | PASSWORD | FACE | OTHER
+  workCode     String?
   createdAt    DateTime  @default(now())
 
   @@unique([deviceUserId, at])
@@ -1348,7 +1375,168 @@ model AttendanceDevice {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
+  enrolledUsers DeviceEnrolledUser[]
+
   @@map("attendance_devices")
+}
+
+// The device's own user-enrollment table, synced from OPERLOG pushes (the
+// device already sends this — TransFlag position 2 was enabled from day
+// one — nothing previously parsed it). Read-only reference only, never
+// authoritative over Employee: lets an admin see "device PIN 7 = Ram
+// Bahadur" while wiring up Employee.deviceUserId, nothing more.
+model DeviceEnrolledUser {
+  id           String           @id @default(cuid())
+  deviceId     String
+  device       AttendanceDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  pin          String
+  name         String?
+  card         String?
+  privilege    String?
+  lastSyncedAt DateTime         @default(now())
+
+  @@unique([deviceId, pin])
+  @@map("device_enrolled_users")
+}
+
+// ─────────────────────────────────────────────────────────────
+// HRM (Phase 4) — employee documents, performance notes, leave, shift
+// scheduling, payroll adjustments. Employee.dateOfBirth..designation above
+// covers the personal-info half of the HR profile; these models cover the
+// rest.
+// ─────────────────────────────────────────────────────────────
+
+model EmployeeDocument {
+  id             String    @id @default(cuid())
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type           String // CITIZENSHIP | PASSPORT | PAN | CONTRACT | CERTIFICATE | OTHER
+  title          String
+  documentNumber String?
+  issueDate      DateTime?
+  expiryDate     DateTime?
+  // Link to an externally-hosted scan — same convention as MenuItem.imageUrl;
+  // no file-upload/storage infrastructure exists in this app or is being
+  // added for this.
+  url            String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@map("employee_documents")
+}
+
+model PerformanceNote {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type        String // NOTE | WARNING | COMMENDATION
+  title       String
+  description String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  @@index([employeeId])
+  @@map("performance_notes")
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveType {
+  id                 String         @id @default(cuid())
+  name               String
+  isPaid             Boolean        @default(true)
+  defaultDaysPerYear Int            @default(0)
+  color              String?
+  isActive           Boolean        @default(true)
+  requests           LeaveRequest[]
+
+  @@map("leave_types")
+}
+
+// Leave *balance* is deliberately not stored here — it's computed on read
+// (sum of this employee's APPROVED days for the year, vs
+// LeaveType.defaultDaysPerYear) — same "derive, don't duplicate" pattern
+// used throughout this codebase (ingredient stock, the pre-real-ledger
+// accounting books).
+model LeaveRequest {
+  id           String      @id @default(cuid())
+  employeeId   String
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId  String
+  leaveType    LeaveType   @relation(fields: [leaveTypeId], references: [id])
+  fromDate     DateTime
+  toDate       DateTime
+  days         Float // supports half-days
+  reason       String?
+  status       LeaveStatus @default(PENDING)
+  approvedBy   String?
+  approvedAt   DateTime?
+  rejectReason String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([employeeId])
+  @@map("leave_requests")
+}
+
+model ShiftTemplate {
+  id        String        @id @default(cuid())
+  name      String // "Morning", "Evening"
+  startTime String // "08:00" — 24h wall-clock, no date
+  endTime   String // "16:00"
+  outletId  String?
+  outlet    Outlet?       @relation(fields: [outletId], references: [id])
+  color     String?
+  isActive  Boolean       @default(true)
+  entries   RosterEntry[]
+
+  @@map("shift_templates")
+}
+
+// The actual weekly work schedule — distinct from Shift above, which stays
+// exactly as the "clocked in right now" toggle it always was.
+model RosterEntry {
+  id              String         @id @default(cuid())
+  employeeId      String
+  employee        Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  outletId        String
+  outlet          Outlet         @relation(fields: [outletId], references: [id])
+  shiftTemplateId String?
+  shiftTemplate   ShiftTemplate? @relation(fields: [shiftTemplateId], references: [id])
+  date            DateTime // the scheduled calendar day (Nepal-day-keyed)
+  startTime       String
+  endTime         String
+  notes           String?
+  createdAt       DateTime       @default(now())
+
+  @@unique([employeeId, date, startTime])
+  @@index([date])
+  @@index([outletId, date])
+  @@map("roster_entries")
+}
+
+// Bonuses/deductions/advances layered onto the existing ÷26-days payroll
+// base calc in AttendanceService.payroll() — not a replacement for it.
+model PayrollAdjustment {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month       String // "2026-08" — same month-key convention as payroll(month)
+  type        String // BONUS | DEDUCTION | ADVANCE
+  amountCents Int
+  note        String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  @@index([employeeId, month])
+  @@map("payroll_adjustments")
 }
 
 // ─────────────────────────────────────────────────────────────

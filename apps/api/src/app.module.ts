@@ -35,6 +35,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { IclockModule } from './iclock/iclock.module';
 import { SyncFailuresModule } from './sync-failures/sync-failures.module';
 import { RolesModule } from './roles/roles.module';
+import { HrModule } from './hr/hr.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { RolesModule } from './roles/roles.module';
     SyncFailuresModule,
     RolesModule,
     OutletsModule,
+    HrModule,
   ],
   controllers: [HealthController],
   providers: [

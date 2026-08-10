@@ -1,7 +1,17 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.1.0';
+export const APP_VERSION = '2.2.0';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.2.0', date: '2026-08-10',
+    changes: [
+      'Fixed the attendance fingerprint sync — punch direction (in/out/break/overtime) and verify method (fingerprint/card/password/face) are now captured and shown per punch instead of being discarded; the Attendance page shows how many times each employee punched and at what time, with a per-employee drill-down',
+      'The device\'s own user-enrollment table (OPERLOG) now syncs too, so you can see what PIN/name/card the fingerprint device itself has on file for cross-checking against staff records',
+      'New HRM section: Overview, Leave & Time-off (types, requests, approve/reject with computed balances), Shift Scheduling (templates + a weekly roster grid with scheduled-vs-actual comparison), Employee Documents (personal info + expiry-tracked documents like ID/contracts), and Performance & Discipline (notes, warnings, commendations)',
+      'Payroll gains Bonus/Deduction/Advance adjustments that net into a real take-home pay figure, plus a printable payslip per employee',
+      'New AI Sales Analysis page: predicts tomorrow\'s revenue, order count and top items from your own sales history (a transparent statistical model, not a black box) with a plain-language explanation of the estimate',
+    ],
+  },
   {
     version: '2.1.0', date: '2026-08-10',
     changes: [

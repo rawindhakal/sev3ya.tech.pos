@@ -18,7 +18,7 @@ import { nepalDateKey, nepalStartOfDate, nepalEndOfDate } from '../common/nepal-
 const STD_WORKING_DAYS = 26;
 const STD_DAY_HOURS = 8;
 
-interface DayCell { firstIn: Date; lastOut: Date; punches: number }
+interface DayCell { firstIn: Date; lastOut: Date; punches: number; times: Date[] }
 
 @Injectable()
 export class AttendanceService {
@@ -28,7 +28,7 @@ export class AttendanceService {
   // Bulk-ingest punches (idempotent — the unique (deviceUserId, at)
   // constraint silently drops already-seen punches). Called by IclockService
   // for every cloud-pushed ATTLOG batch.
-  async ingest(punches: { deviceUserId: string; at: string }[]) {
+  async ingest(punches: { deviceUserId: string; at: string; status?: string; verifyMethod?: string; workCode?: string }[]) {
     const employees = await this.prisma.employee.findMany({ where: { deviceUserId: { not: null } } });
     const empByDevice = new Map(employees.map((e) => [String(e.deviceUserId), e.id]));
     let inserted = 0;
@@ -43,6 +43,9 @@ export class AttendanceService {
             at,
             employeeId: empByDevice.get(String(p.deviceUserId)) ?? null,
             source: 'DEVICE',
+            status: p.status ?? null,
+            verifyMethod: p.verifyMethod ?? null,
+            workCode: p.workCode ?? null,
           },
         });
         inserted++;
@@ -121,7 +124,42 @@ export class AttendanceService {
       employee: r.employee?.name ?? `(unmapped #${r.deviceUserId})`,
       role: r.employee?.role ?? null,
       source: r.source,
+      status: r.status,
+      verifyMethod: r.verifyMethod,
     }));
+  }
+
+  // ── Full ordered punch list for one employee — the actual "how many
+  // times punched, at what time" view (logs()/summary() both collapse this
+  // down to a raw list or first/last-only respectively). ──
+  async punchDetail(employeeId: string, from?: string, to?: string) {
+    const emp = await this.prisma.employee.findUnique({ where: { id: employeeId } });
+    if (!emp) throw new BadRequestException('Employee not found');
+    const start = from ? nepalStartOfDate(from) : nepalStartOfDate(`${nepalDateKey(new Date()).slice(0, 7)}-01`);
+    const end = to ? nepalEndOfDate(to) : new Date();
+    const rows = await this.prisma.attendanceLog.findMany({
+      where: { employeeId, at: { gte: start, lte: end } },
+      orderBy: { at: 'asc' },
+    });
+    return {
+      employee: { id: emp.id, name: emp.name },
+      count: rows.length,
+      punches: rows.map((r) => ({
+        id: r.id,
+        at: r.at,
+        dateBs: formatBs(r.at),
+        status: r.status,
+        verifyMethod: r.verifyMethod,
+        source: r.source,
+      })),
+    };
+  }
+
+  // Device-enrolled user records synced from OPERLOG (IclockService) — a
+  // read-only hint for pairing a device PIN to the right employee, never
+  // authoritative over Employee itself.
+  deviceUsers(deviceId: string) {
+    return this.prisma.deviceEnrolledUser.findMany({ where: { deviceId }, orderBy: { pin: 'asc' } });
   }
 
   // ── Per-employee day grid (first-in / last-out / hours) ──
@@ -138,11 +176,12 @@ export class AttendanceService {
       const g = grid.get(e.id) ?? { emp: e as any, days: new Map() };
       const day = nepalDateKey(l.at);
       const cell = g.days.get(day);
-      if (!cell) g.days.set(day, { firstIn: l.at, lastOut: l.at, punches: 1 });
+      if (!cell) g.days.set(day, { firstIn: l.at, lastOut: l.at, punches: 1, times: [l.at] });
       else {
         if (l.at < cell.firstIn) cell.firstIn = l.at;
         if (l.at > cell.lastOut) cell.lastOut = l.at;
         cell.punches++;
+        cell.times.push(l.at);
       }
       grid.set(e.id, g);
     }
@@ -170,6 +209,7 @@ export class AttendanceService {
           lastOut: c.lastOut,
           hours: Math.round(((c.lastOut.getTime() - c.firstIn.getTime()) / 36e5) * 10) / 10,
           punches: c.punches,
+          punchTimes: c.times.map((t) => t.toISOString()),
         })),
       };
     }).sort((a, b) => a.name.localeCompare(b.name));
@@ -184,6 +224,15 @@ export class AttendanceService {
     const end = new Date(nepalStartOfDate(`${nextMonth}-01`).getTime() - 1);
     const grid = await this.dayGrid(start, end);
     const allEmps = await this.prisma.employee.findMany({ where: { isActive: true }, include: { role: { select: { name: true } } } });
+    const adjustments = await this.prisma.payrollAdjustment.findMany({ where: { month: m } });
+    const adjByEmp = new Map<string, { bonusCents: number; deductionCents: number; advanceCents: number }>();
+    for (const a of adjustments) {
+      const cur = adjByEmp.get(a.employeeId) ?? { bonusCents: 0, deductionCents: 0, advanceCents: 0 };
+      if (a.type === 'BONUS') cur.bonusCents += a.amountCents;
+      else if (a.type === 'DEDUCTION') cur.deductionCents += a.amountCents;
+      else if (a.type === 'ADVANCE') cur.advanceCents += a.amountCents;
+      adjByEmp.set(a.employeeId, cur);
+    }
 
     const rows = allEmps.map((e) => {
       const g = grid.get(e.id);
@@ -194,6 +243,8 @@ export class AttendanceService {
       const otHours = Math.max(0, hours - expectedHours);
       const perDay = e.monthlySalaryCents / STD_WORKING_DAYS;
       const grossCents = Math.round(perDay * Math.min(presentDays, STD_WORKING_DAYS));
+      const adj = adjByEmp.get(e.id) ?? { bonusCents: 0, deductionCents: 0, advanceCents: 0 };
+      const netPayCents = grossCents + adj.bonusCents - adj.deductionCents - adj.advanceCents;
       return {
         employeeId: e.id,
         name: e.name,
@@ -204,14 +255,21 @@ export class AttendanceService {
         otHours: Math.round(otHours * 10) / 10,
         perDayCents: Math.round(perDay),
         grossCents,
+        bonusCents: adj.bonusCents,
+        deductionCents: adj.deductionCents,
+        advanceCents: adj.advanceCents,
+        netPayCents,
       };
     });
     return {
       month: m,
       monthBs: formatBs(start).slice(0, 7),
-      basis: `Monthly salary ÷ ${STD_WORKING_DAYS} working days × present days · standard day ${STD_DAY_HOURS}h (OT informational)`,
+      basis: `Monthly salary ÷ ${STD_WORKING_DAYS} working days × present days · standard day ${STD_DAY_HOURS}h (OT informational) · net pay = gross + bonus − deduction − advance`,
       rows,
-      totals: { grossCents: rows.reduce((s, r) => s + r.grossCents, 0) },
+      totals: {
+        grossCents: rows.reduce((s, r) => s + r.grossCents, 0),
+        netPayCents: rows.reduce((s, r) => s + r.netPayCents, 0),
+      },
     };
   }
 }

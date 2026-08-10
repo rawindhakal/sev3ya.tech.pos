@@ -140,6 +140,18 @@ export interface Employee {
   isActive: boolean;
   clockedIn?: boolean;
   outlets?: { id: string; name: string; isDefault?: boolean }[]; // multi-outlet (Phase 3), resolved at login
+  // HRM profile (Phase 4) — all optional
+  dateOfBirth?: string | null;
+  joinDate?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  bankName?: string | null;
+  bankAccountNumber?: string | null;
+  panNumber?: string | null;
+  employmentType?: string | null;
+  designation?: string | null;
 }
 
 export interface RestaurantTable {
@@ -484,4 +496,114 @@ export interface DiscountPreset {
   value: number; // whole percentage, or Rs cents, per `type`
   isActive: boolean;
   sortOrder: number;
+}
+
+// ── HRM (Phase 4) ──────────────────────────────────────
+export interface EmployeeDocument {
+  id: string;
+  employeeId: string;
+  employee?: { name: string };
+  type: string; // CITIZENSHIP | PASSPORT | PAN | CONTRACT | CERTIFICATE | OTHER
+  title: string;
+  documentNumber?: string | null;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  url?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface PerformanceNote {
+  id: string;
+  employeeId: string;
+  employee?: { name: string };
+  type: string; // NOTE | WARNING | COMMENDATION
+  title: string;
+  description?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+}
+
+export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface LeaveType {
+  id: string;
+  name: string;
+  isPaid: boolean;
+  defaultDaysPerYear: number;
+  color?: string | null;
+  isActive: boolean;
+}
+
+export interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  employee?: { name: string };
+  leaveTypeId: string;
+  leaveType?: LeaveType;
+  fromDate: string;
+  toDate: string;
+  days: number;
+  reason?: string | null;
+  status: LeaveStatus;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectReason?: string | null;
+  createdAt: string;
+}
+
+export interface ShiftTemplate {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  outletId?: string | null;
+  color?: string | null;
+  isActive: boolean;
+}
+
+export interface RosterEntry {
+  id: string;
+  employeeId: string;
+  employee?: { name: string };
+  outletId: string;
+  shiftTemplateId?: string | null;
+  shiftTemplate?: ShiftTemplate;
+  date: string;
+  startTime: string;
+  endTime: string;
+  notes?: string | null;
+}
+
+export interface PayrollAdjustment {
+  id: string;
+  employeeId: string;
+  month: string;
+  type: string; // BONUS | DEDUCTION | ADVANCE
+  amountCents: number;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+}
+
+export interface SalesForecastItem {
+  name: string;
+  predictedQty: number;
+  recentAvgQty: number;
+  trend: 'up' | 'down' | 'steady';
+}
+
+export interface SalesForecast {
+  date: string;
+  weekday: string;
+  predictedRevenueCents: number;
+  predictedOrders: number;
+  confidenceLowCents: number;
+  confidenceHighCents: number;
+  trendFactor: number;
+  trendPct: number;
+  basis: string;
+  sampleSize: number;
+  history: { date: string; cents: number; orders: number }[];
+  items: SalesForecastItem[];
 }

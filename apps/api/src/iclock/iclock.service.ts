@@ -22,6 +22,18 @@ import { AttendanceService } from '../attendance/attendance.service';
 // Nepal Standard Time is a fixed UTC+5:45 offset, no DST — safe to hardcode.
 const NPT_OFFSET_MIN = 5 * 60 + 45;
 
+// ATTLOG's Status/Verify columns are numeric codes per the ZKTeco PUSH SDK
+// spec. Devices/firmware vary on which of these they actually populate — an
+// unrecognized code is kept as its raw string rather than dropped, so
+// nothing is silently lost even if a specific model uses a code outside
+// this common set.
+const PUNCH_STATUS: Record<string, string> = {
+  '0': 'IN', '1': 'OUT', '2': 'BREAK_OUT', '3': 'BREAK_IN', '4': 'OVERTIME_IN', '5': 'OVERTIME_OUT',
+};
+const VERIFY_METHOD: Record<string, string> = {
+  '0': 'PASSWORD', '1': 'FINGERPRINT', '2': 'CARD', '15': 'FACE',
+};
+
 // The device's on-screen clock is set correctly to local (Nepal) time, but
 // the ATTLOG wire format has no timezone tag — it's a bare
 // "YYYY-MM-DD HH:MM:SS" string. Handing that straight to `new Date(...)` on
@@ -119,6 +131,10 @@ export class IclockService {
     }
 
     if (table === 'ATTLOG') {
+      // Full line: PIN \t Time \t Status \t Verify \t Workcode \t ... — only
+      // the first two columns used to be read; Status (in/out/break/OT) and
+      // Verify (fingerprint/card/password/face) are real data the device
+      // already sends on every line, just discarded until now.
       const punches = lines
         .map((line) => {
           const cols = line.split('\t');
@@ -130,9 +146,18 @@ export class IclockService {
             this.log.warn(`SN=${sn}: unparseable punch timestamp "${atRaw}" for user ${deviceUserId} — skipped`);
             return null;
           }
-          return { deviceUserId, at: at.toISOString() };
+          const statusRaw = cols[2]?.trim();
+          const verifyRaw = cols[3]?.trim();
+          const workCode = cols[4]?.trim();
+          return {
+            deviceUserId,
+            at: at.toISOString(),
+            status: statusRaw ? (PUNCH_STATUS[statusRaw] ?? statusRaw) : undefined,
+            verifyMethod: verifyRaw ? (VERIFY_METHOD[verifyRaw] ?? verifyRaw) : undefined,
+            workCode: workCode || undefined,
+          };
         })
-        .filter((p): p is { deviceUserId: string; at: string } => !!p);
+        .filter((p): p is { deviceUserId: string; at: string; status: string | undefined; verifyMethod: string | undefined; workCode: string | undefined } => !!p);
       try {
         const result = await this.attendance.ingest(punches);
         await this.touchDevice(sn, {
@@ -150,8 +175,43 @@ export class IclockService {
       }
     }
 
-    // OPERLOG (enrollment/user-table changes) and anything else — just
-    // acknowledge; we don't sync device-side user/fingerprint records.
+    if (table === 'OPERLOG') {
+      // The device's own user-enrollment table, one changed/added user per
+      // line — real format is space/tab-separated `KEY=VALUE` pairs prefixed
+      // by the literal token "USER", e.g.
+      // "USER PIN=7\tName=Ram Bahadur\tPri=0\tCard=1234\tGrp=1\t...". Every
+      // other OPERLOG line type (device config changes, admin actions) is
+      // acknowledged but not parsed — only user records are useful here.
+      let synced = 0;
+      for (const line of lines) {
+        if (!line.startsWith('USER')) continue;
+        const fields = new Map<string, string>();
+        for (const m of line.matchAll(/(\w+)=([^\t]*)/g)) fields.set(m[1], m[2].trim());
+        const pin = fields.get('PIN');
+        if (!pin) continue;
+        await this.prisma.deviceEnrolledUser.upsert({
+          where: { deviceId_pin: { deviceId: device.id, pin } },
+          create: {
+            deviceId: device.id, pin,
+            name: fields.get('Name') || null,
+            card: fields.get('Card') || null,
+            privilege: fields.get('Pri') || null,
+          },
+          update: {
+            name: fields.get('Name') || null,
+            card: fields.get('Card') || null,
+            privilege: fields.get('Pri') || null,
+            lastSyncedAt: new Date(),
+          },
+        });
+        synced++;
+      }
+      if (synced) this.log.log(`SN=${sn}: synced ${synced} device-enrolled user record(s) from OPERLOG`);
+      await this.touchDevice(sn);
+      return `OK: ${lines.length}`;
+    }
+
+    // Anything else — just acknowledge.
     await this.touchDevice(sn);
     return `OK: ${lines.length}`;
   }

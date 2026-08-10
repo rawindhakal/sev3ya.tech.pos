@@ -46,6 +46,13 @@ export class AttendanceController {
     return this.att.logs(from, to, employeeId);
   }
 
+  // Every individual punch for one employee, ordered — the detailed
+  // "how many times punched, at what time" drill-down.
+  @Get('punches/:employeeId')
+  punchDetail(@Param('employeeId') employeeId: string, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.att.punchDetail(employeeId, from, to);
+  }
+
   @Get('summary')
   summary(@Query('from') from?: string, @Query('to') to?: string) {
     return this.att.summary(from, to);
@@ -54,5 +61,13 @@ export class AttendanceController {
   @Get('payroll')
   payroll(@Query('month') month?: string) {
     return this.att.payroll(month);
+  }
+
+  // Device-enrolled user records synced from OPERLOG — a read-only hint for
+  // pairing a device PIN to the right employee.
+  @Get('devices/:id/users')
+  @UseGuards(new PermissionGuard(PERMISSIONS.ATTENDANCE_MANAGE))
+  deviceUsers(@Param('id') id: string) {
+    return this.att.deviceUsers(id);
   }
 }

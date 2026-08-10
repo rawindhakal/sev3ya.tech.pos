@@ -32,6 +32,19 @@ const publicSelect = {
   // Multi-outlet (Phase 3) — empty array shown to the frontend the same way
   // it's interpreted at login: unrestricted, can select any outlet.
   outlets: { select: { outlet: { select: { id: true, name: true } } } },
+  // HRM profile (Phase 4) — none of this is sensitive like passwordHash, so
+  // it rides along on the same general employee list every page already uses.
+  dateOfBirth: true,
+  joinDate: true,
+  phone: true,
+  address: true,
+  emergencyContactName: true,
+  emergencyContactPhone: true,
+  bankName: true,
+  bankAccountNumber: true,
+  panNumber: true,
+  employmentType: true,
+  designation: true,
 };
 
 // Flattens the nested `role` relation select above into the shape the
