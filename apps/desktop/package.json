@@ -28,6 +28,7 @@
     "directories": {
       "output": "release"
     },
+    "afterSign": "scripts/afterSign.js",
     "mac": {
       "target": "dmg",
       "category": "public.app-category.business"
