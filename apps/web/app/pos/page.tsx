@@ -1802,10 +1802,14 @@ export default function PosPage() {
                   </button>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                <button onClick={() => setActiveCat('all')} className={`min-h-[40px] touch-manipulation rounded-lg px-3.5 text-xs font-medium transition-transform active:scale-95 ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>All</button>
+              {/* Single-row horizontal scroller, not flex-wrap — on phones a
+                  wrapping category list could grow to 3-4 lines and push the
+                  item grid almost entirely off screen. Scrolling sideways
+                  keeps this row a fixed height at every viewport size. */}
+              <div className="flex gap-1.5 overflow-x-auto [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <button onClick={() => setActiveCat('all')} className={`min-h-[40px] shrink-0 touch-manipulation rounded-lg px-3.5 text-xs font-medium transition-transform active:scale-95 ${activeCat === 'all' ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>All</button>
                 {categories.map((c) => (
-                  <button key={c.id} onClick={() => setActiveCat(c.id)} className={`min-h-[40px] touch-manipulation rounded-lg px-3.5 text-xs font-medium transition-transform active:scale-95 ${activeCat === c.id ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>{c.name}</button>
+                  <button key={c.id} onClick={() => setActiveCat(c.id)} className={`min-h-[40px] shrink-0 touch-manipulation rounded-lg px-3.5 text-xs font-medium transition-transform active:scale-95 ${activeCat === c.id ? 'bg-[#2ECC71] text-black' : 'bg-[var(--pos-surface)] text-[var(--pos-text-60)]'}`}>{c.name}</button>
                 ))}
               </div>
             </div>

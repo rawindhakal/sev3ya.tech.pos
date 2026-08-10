@@ -5,7 +5,7 @@
 // SAME app as the web /pos route, so it has the exact same features; the
 // cashier's login scopes what they can do (no admin/back-office chrome).
 
-const { app, BrowserWindow, Menu, shell, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -14,6 +14,53 @@ const fs = require('fs');
 const BASE_URL = (process.env.POS_URL || 'https://s3vya.tech').replace(/\/$/, '');
 const POS_URL = `${BASE_URL}/pos`;
 const KIOSK = process.env.KIOSK === '1';
+
+let tray = null; // module-level so it isn't garbage-collected (Electron requires this)
+
+// Small brand-colored dot, built as a raw bitmap so the tray works without a
+// bundled icon asset (none exists in this repo — electron-builder falls back
+// to its own default for the app/installer icon, but Tray needs one handed
+// to it directly). BGRA byte order, per nativeImage.createFromBitmap.
+function buildTrayIcon() {
+  const size = 16;
+  const buf = Buffer.alloc(size * size * 4);
+  const c = (size - 1) / 2;
+  const r = size / 2 - 1;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - c;
+      const dy = y - c;
+      const i = (y * size + x) * 4;
+      if (dx * dx + dy * dy <= r * r) {
+        buf[i] = 0x68; buf[i + 1] = 0x33; buf[i + 2] = 0xe2; buf[i + 3] = 0xff; // B G R A — brand pink #e23368
+      }
+    }
+  }
+  return nativeImage.createFromBitmap(buf, { width: size, height: size });
+}
+
+// Minimize-to-tray: clicking the native minimize button hides the window and
+// removes it from the taskbar/dock entirely instead of just minimizing it,
+// keeping the till running quietly with only a tray icon. The tray menu (or
+// clicking the icon) brings it back.
+function createTray(win) {
+  if (tray) return;
+  tray = new Tray(buildTrayIcon());
+  tray.setToolTip('s3vyaPOS — Billing');
+  const showWindow = () => {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  };
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open s3vyaPOS', click: showWindow },
+      { type: 'separator' },
+      { label: 'Quit', click: () => { app.isQuitting = true; app.quit(); } },
+    ]),
+  );
+  tray.on('click', () => (win.isVisible() && !win.isMinimized() ? win.hide() : showWindow()));
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -34,6 +81,12 @@ function createWindow() {
 
   // Cashier terminal: no application/dev menu chrome.
   Menu.setApplicationMenu(null);
+
+  createTray(win);
+  win.on('minimize', (event) => {
+    event.preventDefault();
+    win.hide();
+  });
 
   win.loadURL(POS_URL);
 
