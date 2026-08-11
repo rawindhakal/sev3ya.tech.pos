@@ -37,8 +37,13 @@ class UpdateTableDto {
   @IsOptional() @IsString() area?: string;
   @IsOptional() @IsEnum(TableStatus) status?: TableStatus;
   @IsOptional() @IsBoolean() isVip?: boolean;
+  @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsInt() @Min(0) posX?: number;
   @IsOptional() @IsInt() @Min(0) posY?: number;
+}
+
+class RenameAreaDto {
+  @IsString() @IsNotEmpty() name: string;
 }
 
 class PositionDto {
@@ -58,8 +63,29 @@ export class TablesController {
   constructor(private readonly tables: TablesService) {}
 
   @Get()
-  findAll(@Query('groupBy') groupBy?: string, @Query('outletId') outletId?: string) {
-    return groupBy === 'area' ? this.tables.findByArea(outletId) : this.tables.findAll(outletId);
+  findAll(
+    @Query('groupBy') groupBy?: string,
+    @Query('outletId') outletId?: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    const withInactive = includeInactive === '1' || includeInactive === 'true';
+    return groupBy === 'area' ? this.tables.findByArea(outletId, withInactive) : this.tables.findAll(outletId, withInactive);
+  }
+
+  // Area names + table counts — for the Tables & Areas management page.
+  // Must stay before nothing in particular (no :id GET exists on this
+  // controller), but kept near the other area routes for readability.
+  @Get('areas')
+  listAreas(@Query('outletId') outletId?: string) {
+    return this.tables.listAreas(outletId);
+  }
+  @Patch('areas/:name')
+  renameArea(@Param('name') name: string, @Body() dto: RenameAreaDto, @CurrentOutlet() outletId?: string) {
+    return this.tables.renameArea(name, dto.name, outletId);
+  }
+  @Delete('areas/:name')
+  dissolveArea(@Param('name') name: string, @CurrentOutlet() outletId?: string) {
+    return this.tables.dissolveArea(name, outletId);
   }
 
   @Post()

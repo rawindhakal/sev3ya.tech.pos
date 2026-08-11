@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { TableStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,9 +15,9 @@ export class TablesService {
   // view can show live occupancy in one call. outletId (multi-outlet, Phase
   // 3) scopes the floor plan to one location; omitted = every table
   // (single-outlet tenants, unchanged).
-  async findAll(outletId?: string) {
+  async findAll(outletId?: string, includeInactive?: boolean) {
     const tables = await this.prisma.restaurantTable.findMany({
-      where: outletId ? { outletId } : undefined,
+      where: { ...(outletId ? { outletId } : {}), ...(includeInactive ? {} : { isActive: true }) },
       orderBy: [{ area: 'asc' }, { name: 'asc' }],
       include: {
         orders: {
@@ -48,8 +48,8 @@ export class TablesService {
   }
 
   // Group tables by area for the floor plan.
-  async findByArea(outletId?: string) {
-    const tables = await this.findAll(outletId);
+  async findByArea(outletId?: string, includeInactive?: boolean) {
+    const tables = await this.findAll(outletId, includeInactive);
     const areas: Record<string, typeof tables> = {};
     for (const t of tables) {
       const key = t.area ?? 'Unassigned';
@@ -85,6 +85,7 @@ export class TablesService {
       area?: string;
       status?: TableStatus;
       isVip?: boolean;
+      isActive?: boolean;
       posX?: number;
       posY?: number;
     },
@@ -94,10 +95,60 @@ export class TablesService {
     return this.prisma.restaurantTable.update({ where: { id }, data });
   }
 
+  // A table with any order/reservation history can't be hard-deleted
+  // (those foreign keys aren't cascading, by design — old orders must keep
+  // pointing at a real row for reporting) and shouldn't be while genuinely
+  // in use right now either. So: block outright if there's a live order;
+  // soft-delete (hide from normal lists, keep the row) if it has history;
+  // hard-delete only a table that was never actually used.
   async remove(id: string) {
     const table = await this.prisma.restaurantTable.findUnique({ where: { id } });
     if (!table) throw new NotFoundException(`Table ${id} not found`);
+    const activeOrder = await this.prisma.order.findFirst({
+      where: { tableId: id, status: { notIn: ['PAID', 'CANCELLED'] } },
+    });
+    if (activeOrder) throw new BadRequestException('This table has an open order — close or cancel it before deleting the table');
+    const [orderCount, reservationCount] = await Promise.all([
+      this.prisma.order.count({ where: { tableId: id } }),
+      this.prisma.reservation.count({ where: { tableId: id } }),
+    ]);
+    if (orderCount > 0 || reservationCount > 0) {
+      return this.prisma.restaurantTable.update({ where: { id }, data: { isActive: false } });
+    }
     return this.prisma.restaurantTable.delete({ where: { id } });
+  }
+
+  // ── Area management — "area" is just a free-text field on each table
+  // (no separate Area entity), so renaming/dissolving one is a bulk update
+  // across every table currently tagged with that name. ──
+  async listAreas(outletId?: string) {
+    const tables = await this.prisma.restaurantTable.findMany({
+      where: { ...(outletId ? { outletId } : {}), isActive: true },
+      select: { area: true },
+    });
+    const counts = new Map<string, number>();
+    for (const t of tables) {
+      const key = t.area?.trim() || 'Unassigned';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([area, tableCount]) => ({ area, tableCount })).sort((a, b) => a.area.localeCompare(b.area));
+  }
+
+  async renameArea(name: string, newName: string, outletId?: string) {
+    if (!newName?.trim()) throw new BadRequestException('New area name is required');
+    const where = { area: name, ...(outletId ? { outletId } : {}) };
+    const { count } = await this.prisma.restaurantTable.updateMany({ where, data: { area: newName.trim() } });
+    if (count === 0) throw new NotFoundException(`No tables found in area "${name}"`);
+    return { renamed: count };
+  }
+
+  // "Deleting" an area just un-tags its tables (moves them to Unassigned) —
+  // the tables themselves aren't touched otherwise.
+  async dissolveArea(name: string, outletId?: string) {
+    const where = { area: name, ...(outletId ? { outletId } : {}) };
+    const { count } = await this.prisma.restaurantTable.updateMany({ where, data: { area: null } });
+    if (count === 0) throw new NotFoundException(`No tables found in area "${name}"`);
+    return { unassigned: count };
   }
 
   // ── QR self-ordering ────────────────────────────────

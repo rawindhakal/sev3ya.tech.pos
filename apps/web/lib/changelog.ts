@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.3.0';
+export const APP_VERSION = '2.4.0';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,14 @@ export const APP_VERSION = '2.3.0';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.4.0', date: '2026-08-11',
+    changes: [
+      'New Settings → Tables & Areas page — add, edit, and actually delete tables (the old POS "Manage" mode could only toggle status/VIP, not rename or remove a table)',
+      'Areas can now be renamed (relabels every table in it at once) or removed (its tables become "Unassigned", never deleted) — with a live table count per area',
+      'Deleting a table is now safe: a table with order/reservation history is hidden instead of destroyed (restorable), a table mid-order is blocked with a clear message, and only a genuinely unused table is actually removed',
+    ],
+  },
   {
     version: '2.3.0', date: '2026-08-11',
     changes: [

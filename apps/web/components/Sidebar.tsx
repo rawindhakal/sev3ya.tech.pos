@@ -115,6 +115,7 @@ const NAV: NavNode[] = [
     label: 'Settings', icon: '⚙️',
     children: [
       { href: '/settings', label: 'General' },
+      { href: '/settings/tables', label: 'Tables & Areas' },
       { href: '/printing', label: 'Printing' },
     ],
   },

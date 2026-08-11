@@ -33,6 +33,7 @@ export const ROUTE_PERM: Record<string, string> = {
   '/hr/performance': 'hr.manage',
   '/sales-forecast': 'reports.view',
   '/settings': 'settings.manage',
+  '/settings/tables': 'settings.manage',
   '/menu': 'settings.manage',
   '/printing': 'settings.manage',
   '/coupons': 'promotions.manage',

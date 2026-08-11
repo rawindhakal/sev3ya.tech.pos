@@ -157,6 +157,10 @@ model RestaurantTable {
   outlet       Outlet        @relation(fields: [outletId], references: [id])
   status       TableStatus   @default(AVAILABLE)
   isVip        Boolean       @default(false) // VIP / regulars highlighting (#39)
+  // Soft-delete — a table with order/reservation history can't be hard-deleted
+  // (Order.tableId/Reservation.tableId aren't cascading), so "delete" on a
+  // used table just hides it from normal lists instead.
+  isActive     Boolean       @default(true)
   // Floor-plan canvas position within its area (matrix #26).
   posX         Int?
   posY         Int?
