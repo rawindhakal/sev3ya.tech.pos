@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api, formatMoney } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { exportPdf } from '@/lib/pdf';
@@ -67,6 +67,7 @@ export default function SalesReportPage() {
   const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  const [openInvoice, setOpenInvoice] = useState<string | null>(null);
   const [billOrder, setBillOrder] = useState<Order | null>(null);
   const [billLoading, setBillLoading] = useState<string | null>(null);
   const [discountReport, setDiscountReport] = useState<DiscountReport | null>(null);
@@ -189,9 +190,31 @@ export default function SalesReportPage() {
     }
     return rows;
   })();
-  // "detail"/"kot"/"bot"/"cancelled" rows carry an orderId (not shown as a
-  // column) — aggregated views (by item/category/etc.) don't map to one bill.
-  const hasBillLink = report?.rows.some((r) => r.orderId) ?? false;
+  // The Detailed report is the only one that groups into one row per bill
+  // (with items expandable underneath) and shows a bill-view action — KOT/
+  // BOT/Cancelled Items are operational item lists, not a bill-by-bill view,
+  // and the aggregated presets (by item/category/etc.) don't map to one bill.
+  interface DetailGroup {
+    invoice: string; orderId: string; dateBs: string; type: string; tenders: string;
+    qty: number; discountCents: number; grossCents: number; items: Record<string, any>[];
+  }
+  const detailGroups: DetailGroup[] = (() => {
+    if (preset.id !== 'detail') return [];
+    const map = new Map<string, DetailGroup>();
+    for (const r of visibleRows) {
+      const key = String(r.invoice);
+      let g = map.get(key);
+      if (!g) {
+        g = { invoice: r.invoice, orderId: r.orderId, dateBs: r.dateBs, type: r.type, tenders: r.tenders, qty: 0, discountCents: 0, grossCents: 0, items: [] };
+        map.set(key, g);
+      }
+      g.qty += Number(r.qty) || 0;
+      g.discountCents += Number(r.discountCents) || 0;
+      g.grossCents += Number(r.grossCents) || 0;
+      g.items.push(r);
+    }
+    return [...map.values()];
+  })();
 
   const activeFilters = [
     categoryId && `Category: ${categories.find((c) => c.id === categoryId)?.name}`,
@@ -364,67 +387,135 @@ export default function SalesReportPage() {
               <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
                 <span className="text-sm font-semibold text-slate-700">{title}</span>
                 <span className="text-xs text-slate-400">
-                  {visibleRows.length === report.rows.length ? `${report.rows.length} row${report.rows.length === 1 ? '' : 's'}` : `${visibleRows.length} of ${report.rows.length} rows`}
+                  {preset.id === 'detail'
+                    ? `${detailGroups.length} bill${detailGroups.length === 1 ? '' : 's'}`
+                    : visibleRows.length === report.rows.length ? `${report.rows.length} row${report.rows.length === 1 ? '' : 's'}` : `${visibleRows.length} of ${report.rows.length} rows`}
                 </span>
               </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    {report.columns.map((c) => (
-                      <th key={c.key} className={`${th} sticky top-0 z-[1] cursor-pointer bg-white hover:text-slate-600 dark:bg-slate-800 ${c.type === 'text' ? 'text-left' : 'text-right'}`}
-                        onClick={() => toggleSort(c.key)}>
-                        <span className="inline-flex items-center gap-1">
-                          {c.label}
-                          {sort?.key === c.key && <span className="text-brand-600">{sort.dir === 1 ? '▲' : '▼'}</span>}
-                        </span>
-                      </th>
-                    ))}
-                    {hasBillLink && <th className={`${th} sticky top-0 z-[1] w-10 bg-white text-center dark:bg-slate-800`}>Bill</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {visibleRows.map((r, i) => (
-                    <tr key={i}>
-                      {report.columns.map((c) => (
-                        <td key={c.key} className={`p-2 text-slate-600 ${c.type === 'text' ? 'text-left' : 'text-right tabular-nums'}`}>
-                          {c.type === 'money' ? (r[c.key] ? formatMoney(Number(r[c.key])) : '—') : String(r[c.key] ?? '')}
-                        </td>
-                      ))}
-                      {hasBillLink && (
-                        <td className="p-2 text-center">
-                          {r.orderId && (
-                            <button
-                              onClick={() => viewBill(r.orderId)}
-                              disabled={billLoading === r.orderId}
-                              className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600 disabled:opacity-40 dark:hover:bg-slate-700"
-                              title="View bill"
-                              aria-label="View bill"
-                            >
-                              {billLoading === r.orderId ? '…' : '👁'}
-                            </button>
-                          )}
-                        </td>
-                      )}
+              {preset.id === 'detail' ? (
+                // One row per bill (not one per item) — click a row to expand
+                // the items behind it. The bill-view action is deliberately
+                // exclusive to this report; KOT/BOT/Cancelled Items are
+                // operational item lists, not a bill-by-bill view.
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className={`${th} sticky top-0 z-[1] w-6 bg-white dark:bg-slate-800`} />
+                      <th className={`${th} sticky top-0 z-[1] bg-white text-left dark:bg-slate-800`}>Date (BS)</th>
+                      <th className={`${th} sticky top-0 z-[1] bg-white text-left dark:bg-slate-800`}>Invoice</th>
+                      <th className={`${th} sticky top-0 z-[1] bg-white text-left dark:bg-slate-800`}>Type</th>
+                      <th className={`${th} sticky top-0 z-[1] bg-white text-left dark:bg-slate-800`}>Tender</th>
+                      <th className={`${th} sticky top-0 z-[1] bg-white text-right dark:bg-slate-800`}>Items</th>
+                      <th className={`${th} sticky top-0 z-[1] bg-white text-right dark:bg-slate-800`}>Qty</th>
+                      <th className={`${th} sticky top-0 z-[1] bg-white text-right dark:bg-slate-800`}>Disc</th>
+                      <th className={`${th} sticky top-0 z-[1] bg-white text-right dark:bg-slate-800`}>Amount</th>
+                      <th className={`${th} sticky top-0 z-[1] w-10 bg-white text-center dark:bg-slate-800`}>Bill</th>
                     </tr>
-                  ))}
-                  {visibleRows.length === 0 && !loading && (
-                    <tr><td colSpan={report.columns.length + (hasBillLink ? 1 : 0)} className="p-10 text-center text-slate-400">{search ? 'No rows match your search.' : 'No sales match these filters.'}</td></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {detailGroups.map((g) => {
+                      const open = openInvoice === g.invoice;
+                      return (
+                        <Fragment key={g.invoice}>
+                          <tr className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30" onClick={() => setOpenInvoice(open ? null : g.invoice)}>
+                            <td className="p-2 text-center text-slate-400">{open ? '▼' : '▶'}</td>
+                            <td className="p-2 text-left text-slate-600">{g.dateBs}</td>
+                            <td className="p-2 text-left text-slate-600">{g.invoice}</td>
+                            <td className="p-2 text-left text-slate-600">{g.type}</td>
+                            <td className="p-2 text-left text-slate-600">{g.tenders}</td>
+                            <td className="p-2 text-right tabular-nums text-slate-600">{g.items.length}</td>
+                            <td className="p-2 text-right tabular-nums text-slate-600">{g.qty}</td>
+                            <td className="p-2 text-right tabular-nums text-slate-600">{g.discountCents ? formatMoney(g.discountCents) : '—'}</td>
+                            <td className="p-2 text-right tabular-nums font-semibold text-slate-800">{formatMoney(g.grossCents)}</td>
+                            <td className="p-2 text-center" onClick={(e) => e.stopPropagation()}>
+                              {g.orderId && (
+                                <button
+                                  onClick={() => viewBill(g.orderId)}
+                                  disabled={billLoading === g.orderId}
+                                  className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600 disabled:opacity-40 dark:hover:bg-slate-700"
+                                  title="View bill"
+                                  aria-label="View bill"
+                                >
+                                  {billLoading === g.orderId ? '…' : '👁'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                          {open && g.items.map((it, i) => (
+                            <tr key={i} className="bg-slate-50/60 text-xs dark:bg-slate-700/20">
+                              <td className="p-1.5" />
+                              <td className="p-1.5" colSpan={2} />
+                              <td className="p-1.5 text-left text-slate-500" colSpan={2}>{it.item} <span className="text-slate-400">· {it.category} · {it.station}</span></td>
+                              <td className="p-1.5 text-right tabular-nums text-slate-500">{it.qty}</td>
+                              <td className="p-1.5 text-right tabular-nums text-slate-500">{formatMoney(Number(it.unitCents))}</td>
+                              <td className="p-1.5 text-right tabular-nums text-slate-500">{it.discountCents ? formatMoney(Number(it.discountCents)) : '—'}</td>
+                              <td className="p-1.5 text-right tabular-nums text-slate-500">{formatMoney(Number(it.grossCents))}</td>
+                              <td className="p-1.5" />
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
+                    {detailGroups.length === 0 && !loading && (
+                      <tr><td colSpan={10} className="p-10 text-center text-slate-400">{search ? 'No rows match your search.' : 'No sales match these filters.'}</td></tr>
+                    )}
+                  </tbody>
+                  {detailGroups.length > 1 && (
+                    <tfoot>
+                      <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                        <td colSpan={5} className="p-2">Totals</td>
+                        <td className="p-2 text-right tabular-nums">{detailGroups.reduce((s, g) => s + g.items.length, 0)}</td>
+                        <td className="p-2 text-right tabular-nums">{detailGroups.reduce((s, g) => s + g.qty, 0)}</td>
+                        <td className="p-2 text-right tabular-nums">{formatMoney(detailGroups.reduce((s, g) => s + g.discountCents, 0))}</td>
+                        <td className="p-2 text-right tabular-nums">{formatMoney(detailGroups.reduce((s, g) => s + g.grossCents, 0))}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   )}
-                </tbody>
-                {visibleRows.length > 1 && (
-                  <tfoot>
-                    <tr className="border-t border-slate-200 font-semibold text-slate-800">
-                      {report.columns.map((c, i) => (
-                        <td key={c.key} className={`p-2 ${c.type === 'text' ? 'text-left' : 'text-right tabular-nums'}`}>
-                          {i === 0 ? 'Totals' : c.type === 'money' ? formatMoney(visibleRows.reduce((s, r) => s + (Number(r[c.key]) || 0), 0))
-                            : c.key === 'qty' ? visibleRows.reduce((s, r) => s + (Number(r.qty) || 0), 0) : ''}
-                        </td>
+                </table>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      {report.columns.map((c) => (
+                        <th key={c.key} className={`${th} sticky top-0 z-[1] cursor-pointer bg-white hover:text-slate-600 dark:bg-slate-800 ${c.type === 'text' ? 'text-left' : 'text-right'}`}
+                          onClick={() => toggleSort(c.key)}>
+                          <span className="inline-flex items-center gap-1">
+                            {c.label}
+                            {sort?.key === c.key && <span className="text-brand-600">{sort.dir === 1 ? '▲' : '▼'}</span>}
+                          </span>
+                        </th>
                       ))}
-                      {hasBillLink && <td />}
                     </tr>
-                  </tfoot>
-                )}
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {visibleRows.map((r, i) => (
+                      <tr key={i}>
+                        {report.columns.map((c) => (
+                          <td key={c.key} className={`p-2 text-slate-600 ${c.type === 'text' ? 'text-left' : 'text-right tabular-nums'}`}>
+                            {c.type === 'money' ? (r[c.key] ? formatMoney(Number(r[c.key])) : '—') : String(r[c.key] ?? '')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                    {visibleRows.length === 0 && !loading && (
+                      <tr><td colSpan={report.columns.length} className="p-10 text-center text-slate-400">{search ? 'No rows match your search.' : 'No sales match these filters.'}</td></tr>
+                    )}
+                  </tbody>
+                  {visibleRows.length > 1 && (
+                    <tfoot>
+                      <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                        {report.columns.map((c, i) => (
+                          <td key={c.key} className={`p-2 ${c.type === 'text' ? 'text-left' : 'text-right tabular-nums'}`}>
+                            {i === 0 ? 'Totals' : c.type === 'money' ? formatMoney(visibleRows.reduce((s, r) => s + (Number(r[c.key]) || 0), 0))
+                              : c.key === 'qty' ? visibleRows.reduce((s, r) => s + (Number(r.qty) || 0), 0) : ''}
+                          </td>
+                        ))}
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              )}
             </div>
           </>
         )}

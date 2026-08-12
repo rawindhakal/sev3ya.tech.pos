@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.4.0';
+export const APP_VERSION = '2.4.1';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,14 @@ export const APP_VERSION = '2.4.0';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.4.1', date: '2026-08-12',
+    changes: [
+      'Dashboard "Recent Orders" no longer shows cancelled orders that never had any value (an empty table opened and voided by mistake) — a cancelled order that did have items rung up before being voided still shows',
+      'The 👁 "view bill" action is now exclusive to the Detailed Sales Report — it no longer appears on KOT/BOT/Cancelled Items or other report presets',
+      'Detailed Sales Report now shows one row per bill instead of one row per item — click a row to expand and see its itemized line items',
+    ],
+  },
   {
     version: '2.4.0', date: '2026-08-11',
     changes: [

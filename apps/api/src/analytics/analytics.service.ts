@@ -148,9 +148,17 @@ export class AnalyticsService {
           GROUP BY w.name
           ORDER BY revenue DESC`,
       ),
-      // Recent orders in the selected range.
+      // Recent orders in the selected range — excludes cancelled orders that
+      // never had any value (an empty cart opened and immediately voided,
+      // e.g. a table tapped by mistake). A cancelled order that DID have
+      // items rung up before being voided still shows, since that's real
+      // activity worth seeing, not noise.
       this.prisma.order.findMany({
-        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, ...outletWhere },
+        where: {
+          createdAt: { gte: rangeStart, lte: rangeEnd },
+          NOT: { status: 'CANCELLED', totalCents: 0 },
+          ...outletWhere,
+        },
         orderBy: { createdAt: 'desc' },
         take: 10,
         include: {
