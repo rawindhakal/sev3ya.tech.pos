@@ -244,6 +244,8 @@ export interface Order {
   refundedAt?: string | null;
   fiscalYear?: string | null;
   fiscalInvoiceNo?: number | null;
+  kotNo?: number | null;
+  botNo?: number | null;
   items: OrderItem[];
   payments: Payment[];
   table?: { id: string; name: string; area?: string | null } | null;
@@ -300,6 +302,7 @@ export interface Settings {
   pricesIncludeVat?: boolean;
   currencySymbol?: string;
   defaultGuestCount?: number;
+  targetTicketMinutes?: number;
   currency: string;
   restaurantName: string;
   features?: Features;
@@ -439,6 +442,18 @@ export interface DashboardData {
     waiter?: string | null;
     createdAt: string;
   }[];
+  salesByHour: { hour: number; revenueCents: number; orders: number }[];
+  ordersByType: { type: OrderType; totalCents: number; count: number }[];
+  laborVsSales: { hour: number; laborCents: number; revenueCents: number }[];
+  menuPerformance: { name: string; qty: number; revenueCents: number; costCents: number; profitCents: number; marginPct: number }[];
+  discountsAndVoidsByDay: { date: string; discountCents: number; complimentaryCount: number; voidCount: number; voidedCents: number }[];
+  avgTicketByDay: { date: string; avgMinutes: number | null; tickets: number }[];
+  avgTicketTargetMinutes: number;
+  salesByCategory: { name: string; revenueCents: number; qty: number }[];
+  dowHourHeatmap: { dow: number; hour: number; revenueCents: number; orders: number }[];
+  newVsReturningByDay: { date: string; newOrders: number; returningOrders: number }[];
+  customerLinkCoverage: { noCustomer: number; total: number };
+  paymentMethodsByDay: Record<string, string | number>[];
 }
 
 export type JournalStatus = 'POSTED' | 'PENDING_APPROVAL' | 'REJECTED';

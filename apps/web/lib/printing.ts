@@ -141,6 +141,9 @@ export interface KotQueueItem {
   id: string;
   orderId: string;
   orderNumber: number;
+  // Dedicated daily KOT/BOT ticket number for this item's own station —
+  // resolved server-side (Order.kotNo/botNo), not the order number.
+  ticketNo: number;
   orderType: string;
   table: string | null;
   waiter: string | null;
@@ -251,14 +254,17 @@ export async function printReceiptNow(opts: { printer?: string; widthMm: number;
 // ── Shared KOT/BOT ticket fields — single source of truth for the manual
 // print path (Receipt.tsx) and the silent auto-print path (kotTicketHtml
 // below), so the two can never drift into different field sets/order/labels.
-export function kotDocNo(station: 'KITCHEN' | 'BAR', orderNumber: number, unsynced?: boolean): string {
+// ticketNo is the dedicated daily kitchen/bar ticket number (Order.kotNo/
+// botNo — resets every Nepal calendar day), independent of the order number
+// and the fiscal invoice number. Not the same value as the order's own #.
+export function kotDocNo(station: 'KITCHEN' | 'BAR', ticketNo: number, unsynced?: boolean): string {
   const prefix = station === 'BAR' ? 'BOT' : 'KOT';
-  return unsynced ? `${prefix}-PENDING` : `${prefix}-${String(orderNumber).padStart(5, '0')}`;
+  return unsynced ? `${prefix}-PENDING` : `${prefix}-${String(ticketNo).padStart(5, '0')}`;
 }
 export function kotMetaPairs(opts: {
   template: KotTemplate;
   station: 'KITCHEN' | 'BAR';
-  orderNumber: number;
+  ticketNo: number;
   orderType: string;
   table?: string | null;
   guestCount?: number | null;
@@ -267,7 +273,7 @@ export function kotMetaPairs(opts: {
   const t = opts.template;
   const now = new Date();
   const pairs: [string, string][] = [
-    [`${opts.station === 'BAR' ? 'BOT' : 'KOT'} No`, kotDocNo(opts.station, opts.orderNumber, opts.unsynced)],
+    [`${opts.station === 'BAR' ? 'BOT' : 'KOT'} No`, kotDocNo(opts.station, opts.ticketNo, opts.unsynced)],
     ['Date', ticketDate(now)],
   ];
   if (t.showTime) pairs.push(['Time', ticketTime(now)]);
@@ -288,6 +294,7 @@ export function kotTicketHtml(opts: {
   template: KotTemplate;
   station: 'KITCHEN' | 'BAR';
   orderNumber: number;
+  ticketNo: number;
   orderType: string;
   table?: string | null;
   waiter?: string | null;

@@ -63,7 +63,10 @@ export default function Receipt({
     : kotMetaPairs({
         template: kt,
         station: mode === 'BOT' ? 'BAR' : 'KITCHEN',
-        orderNumber: order.number,
+        // Dedicated daily KOT/BOT ticket number — falls back to the order
+        // number only if this order predates the ticket-numbering feature
+        // or hasn't synced yet (never has one assigned).
+        ticketNo: (mode === 'BOT' ? order.botNo : order.kotNo) ?? order.number,
         orderType: order.type,
         table: order.table?.name,
         guestCount: order.guestCount,

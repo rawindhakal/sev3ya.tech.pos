@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.4.1';
+export const APP_VERSION = '2.5.0';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,16 @@ export const APP_VERSION = '2.4.1';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.5.0', date: '2026-08-12',
+    changes: [
+      'Kitchen (KOT) and bar (BOT) tickets now get their own dedicated numbering — a daily-resetting KOT # and BOT #, separate from both the order number and the real invoice number',
+      'Real invoice numbers (INV-#) are shown on the Sales Report\'s Detailed/KOT/BOT presets, linked to each ticket — invoice numbers are only ever assigned once a bill is actually paid',
+      'Cancelled items no longer show an invoice number in the Cancelled Items report, since a cancelled order was never invoiced',
+      'Dashboard rebuilt with 14 new charts: hourly sales, top 5 items, payment breakdown, order source, sales by server, labor vs. sales, menu engineering, discounts & voids, average ticket time, sales by category, a day-by-hour heatmap, table turnaround, new vs. returning guests, and payment methods over time',
+      'New Settings → Preferences field for the kitchen\'s target ticket time, shown as a reference line on the new Average Ticket Time chart',
+    ],
+  },
   {
     version: '2.4.1', date: '2026-08-12',
     changes: [

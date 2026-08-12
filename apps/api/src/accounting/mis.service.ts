@@ -354,6 +354,7 @@ export class MisService {
         order: {
           select: {
             id: true, number: true, paidAt: true, type: true, customerName: true,
+            fiscalInvoiceNo: true, kotNo: true, botNo: true,
             payments: { select: { method: true, amountCents: true } },
           },
         },
@@ -365,9 +366,13 @@ export class MisService {
       const mods = Array.isArray(l.modifiers) ? (l.modifiers as any[]) : [];
       const modCents = mods.reduce((s, m) => s + (m?.priceCents ?? 0), 0);
       const gross = (l.unitPriceCents + modCents) * l.quantity - (l.discountCents ?? 0);
+      // This query only ever returns lines from PAID orders (see `where`
+      // below), so fiscalInvoiceNo is always set here — no fallback needed.
+      const ticketNo = l.station === 'BAR' ? l.order.botNo : l.station === 'KITCHEN' ? l.order.kotNo : null;
       return {
         orderId: l.order.id,
-        invoice: l.order.number,
+        invoice: l.order.fiscalInvoiceNo!,
+        ticket: ticketNo != null ? `${l.station === 'BAR' ? 'BOT' : 'KOT'}-${String(ticketNo).padStart(5, '0')}` : '—',
         at: l.order.paidAt!,
         item: l.nameSnapshot,
         category: l.menuItem?.category?.name ?? 'Open item',
@@ -387,7 +392,11 @@ export class MisService {
       qty: flat.reduce((s, r) => s + r.qty, 0),
       grossCents: flat.reduce((s, r) => s + r.grossCents, 0),
       discountCents: flat.reduce((s, r) => s + r.discountCents, 0),
-      invoices: new Set(flat.map((r) => r.invoice)).size,
+      // Deduped by orderId, not the invoice value — fiscalInvoiceNo only
+      // resets per Nepali fiscal year, so a range spanning a fiscal-year
+      // boundary could otherwise have two different orders share the same
+      // number and be miscounted as one invoice.
+      invoices: new Set(flat.map((r) => r.orderId)).size,
     };
 
     const money = (k: string, l: string) => ({ key: k, label: l, type: 'money' as const });
@@ -399,12 +408,12 @@ export class MisService {
       return {
         title: 'Detailed Sales Report',
         columns: [
-          text('dateBs', 'Date (BS)'), text('invoice', 'Invoice'), text('item', 'Item'),
+          text('dateBs', 'Date (BS)'), text('invoice', 'Invoice'), text('ticket', 'KOT/BOT No'), text('item', 'Item'),
           text('category', 'Category'), text('station', 'Station'), num('qty', 'Qty'),
           money('unitCents', 'Rate'), money('discountCents', 'Disc'), money('grossCents', 'Amount'),
           text('type', 'Type'), text('tenders', 'Tender'),
         ],
-        rows: flat.map((r) => ({ ...r, dateBs: formatBs(r.at), invoice: `#${r.invoice}`, at: undefined } as any)),
+        rows: flat.map((r) => ({ ...r, dateBs: formatBs(r.at), invoice: `INV-${r.invoice}`, at: undefined } as any)),
         kpis,
       };
     }
@@ -415,11 +424,11 @@ export class MisService {
       : groupBy === 'category' ? r.category
       : groupBy === 'method' ? r.tenders
       : formatBs(r.at); // day
-    const agg = new Map<string, { qty: number; grossCents: number; invoices: Set<number> }>();
+    const agg = new Map<string, { qty: number; grossCents: number; invoices: Set<string> }>();
     for (const r of flat) {
       const k = keyOf(r);
-      const a = agg.get(k) ?? { qty: 0, grossCents: 0, invoices: new Set<number>() };
-      a.qty += r.qty; a.grossCents += r.grossCents; a.invoices.add(r.invoice);
+      const a = agg.get(k) ?? { qty: 0, grossCents: 0, invoices: new Set<string>() };
+      a.qty += r.qty; a.grossCents += r.grossCents; a.invoices.add(r.orderId);
       agg.set(k, a);
     }
     const label = groupBy === 'item' ? 'Item' : groupBy === 'category' ? 'Category' : groupBy === 'method' ? 'Payment method' : 'Date (BS)';
@@ -449,7 +458,7 @@ export class MisService {
       },
       include: {
         menuItem: { select: { category: { select: { name: true } } } },
-        order: { select: { id: true, number: true, type: true, status: true } },
+        order: { select: { id: true, number: true, type: true, status: true, fiscalInvoiceNo: true } },
       },
       orderBy: { cancelledAt: 'desc' },
     });
@@ -462,7 +471,10 @@ export class MisService {
       return {
         orderId: l.order.id,
         dateBs: formatBs(l.cancelledAt!),
-        invoice: `#${l.order.number}`,
+        // Only a PAID order ever has a real invoice — an item cancelled on
+        // an order that itself gets cancelled (or hasn't been paid yet)
+        // never had one and never will.
+        invoice: l.order.status === 'PAID' && l.order.fiscalInvoiceNo != null ? `INV-${l.order.fiscalInvoiceNo}` : '—',
         item: l.nameSnapshot,
         category: l.menuItem?.category?.name ?? 'Open item',
         station: l.station,

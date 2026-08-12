@@ -78,6 +78,7 @@ export default function AutoPrintAgent() {
             template,
             station,
             orderNumber: first.orderNumber,
+            ticketNo: first.ticketNo,
             orderType: first.orderType,
             table: first.table,
             waiter: first.waiter,

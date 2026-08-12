@@ -1,10 +1,36 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { nepalStartOfToday, nepalStartOfDate, nepalEndOfDate } from '../common/nepal-time';
+import { nepalStartOfToday, nepalStartOfDate, nepalEndOfDate, NPT_OFFSET_MIN } from '../common/nepal-time';
 
 // Coerce Postgres BigInt aggregates to plain numbers for JSON.
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
+
+// Nepal-local hour-of-day (0-23) for a real UTC instant — used to bucket
+// attendance punches by wall-clock hour regardless of the server's own
+// timezone, same reasoning as every other Nepal-time helper in this file.
+function nepalHourOf(d: Date): number {
+  return Math.floor((((d.getTime() + NPT_OFFSET_MIN * 60_000) / 3_600_000) % 24 + 24) % 24);
+}
+
+// Distributes an attendance session's labor cost across the Nepal-local
+// hour buckets it actually overlaps, prorated by minutes worked in each —
+// a session spanning 8:40-9:20 puts 1/3 of an hour's wage in bucket 8 and
+// 1/3 in bucket 9, not the whole hour's wage in whichever bucket it started.
+function addSessionCost(start: Date, end: Date, hourlyRateCents: number, bucket: number[]): void {
+  if (end <= start || hourlyRateCents <= 0) return;
+  let cursor = start.getTime();
+  const endMs = end.getTime();
+  while (cursor < endMs) {
+    const hour = nepalHourOf(new Date(cursor));
+    const msIntoHour = (cursor + NPT_OFFSET_MIN * 60_000) % 3_600_000;
+    const nextBoundary = cursor + (3_600_000 - msIntoHour);
+    const segmentEnd = Math.min(nextBoundary, endMs);
+    const minutes = (segmentEnd - cursor) / 60_000;
+    bucket[hour] += hourlyRateCents * (minutes / 60);
+    cursor = segmentEnd;
+  }
+}
 
 @Injectable()
 export class AnalyticsService {
@@ -53,6 +79,20 @@ export class AnalyticsService {
       turnaround,
       waiterOverview,
       recentOrders,
+      byHour,
+      byType,
+      menuRows,
+      recipeCosts,
+      discountsByDay,
+      voidsByDay,
+      avgTicketByDay,
+      cafeSetting,
+      byCategory,
+      dowHourHeatmap,
+      newReturningByDay,
+      customerLinkStats,
+      paymentMethodsByDay,
+      attendanceLogs,
     ] = await Promise.all([
       // Order count in the selected range (excluding cancelled).
       this.prisma.order.count({
@@ -166,10 +206,233 @@ export class AnalyticsService {
           waiter: { select: { name: true } },
         },
       }),
+      // Revenue by hour-of-day across the whole range (line chart #1, and
+      // the revenue side of Labor vs Sales #6).
+      this.prisma.$queryRaw<{ hour: number; revenue: bigint; orders: bigint }[]>(
+        Prisma.sql`
+          SELECT EXTRACT(HOUR FROM "paidAt")::int AS hour, SUM("totalCents") AS revenue, COUNT(*) AS orders
+          FROM orders WHERE status = 'PAID' AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}
+          GROUP BY 1 ORDER BY 1`,
+      ),
+      // Order source split (#4) — DINE_IN / TAKEAWAY / DELIVERY.
+      this.prisma.order.groupBy({
+        by: ['type'],
+        _sum: { totalCents: true },
+        _count: true,
+        where: { status: 'PAID', paidAt: { gte: rangeStart, lte: rangeEnd }, ...outletWhere },
+      }),
+      // Menu engineering (#7) — volume per item, for margin-costing below.
+      this.prisma.$queryRaw<{ id: string; name: string; qty: bigint; revenue: bigint }[]>(
+        Prisma.sql`
+          SELECT oi."menuItemId" AS id, oi."nameSnapshot" AS name,
+                 SUM(oi.quantity) AS qty, SUM(oi."unitPriceCents" * oi.quantity) AS revenue
+          FROM order_items oi
+          JOIN orders o ON o.id = oi."orderId"
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd}
+            AND oi."menuItemId" IS NOT NULL ${outletSql}
+          GROUP BY oi."menuItemId", oi."nameSnapshot" ORDER BY qty DESC`,
+      ),
+      // Recipe cost per menu item, for the same margin-costing (range-independent).
+      this.prisma.$queryRaw<{ menuitemid: string; costperitem: number }[]>(
+        Prisma.sql`
+          SELECT ri."menuItemId" AS menuitemid, SUM(ri.quantity * ing."costPerUnitCents") AS costperitem
+          FROM recipe_items ri JOIN ingredients ing ON ing.id = ri."ingredientId"
+          GROUP BY ri."menuItemId"`,
+      ),
+      // Discounts by day (#8, left half).
+      this.prisma.$queryRaw<{ day: Date; discount: bigint; comps: bigint }[]>(
+        Prisma.sql`
+          SELECT date_trunc('day', "paidAt") AS day, SUM("discountCents") AS discount,
+                 COUNT(*) FILTER (WHERE "isComplimentary") AS comps
+          FROM orders
+          WHERE status = 'PAID' AND "discountCents" > 0
+            AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}
+          GROUP BY 1 ORDER BY 1`,
+      ),
+      // Voids by day (#8, right half) — cancelled orders, bucketed by when
+      // they were cancelled (paidAt is never set for these).
+      this.prisma.$queryRaw<{ day: Date; voids: bigint; voidedcents: bigint }[]>(
+        Prisma.sql`
+          SELECT date_trunc('day', "updatedAt") AS day, COUNT(*) AS voids, SUM("totalCents") AS voidedcents
+          FROM orders
+          WHERE status = 'CANCELLED'
+            AND "updatedAt" >= ${rangeStart} AND "updatedAt" <= ${rangeEnd} ${outletSqlUnqualified}
+          GROUP BY 1 ORDER BY 1`,
+      ),
+      // Average ticket time by day (#9) — fired → ready, only items that
+      // actually passed through the KDS "ready" step.
+      this.prisma.$queryRaw<{ day: Date; avg_seconds: number | null; tickets: bigint }[]>(
+        Prisma.sql`
+          SELECT date_trunc('day', oi."readyAt") AS day,
+                 AVG(EXTRACT(EPOCH FROM (oi."readyAt" - o."kotFiredAt"))) AS avg_seconds,
+                 COUNT(*) AS tickets
+          FROM order_items oi
+          JOIN orders o ON o.id = oi."orderId"
+          WHERE oi."readyAt" IS NOT NULL AND o."kotFiredAt" IS NOT NULL
+            AND oi."readyAt" >= ${rangeStart} AND oi."readyAt" <= ${rangeEnd} ${outletSql}
+          GROUP BY 1 ORDER BY 1`,
+      ),
+      // Target ticket time (reference line for #9), editable in Settings.
+      this.prisma.cafeSetting.findUnique({ where: { id: 'singleton' }, select: { targetTicketMinutes: true } }),
+      // Revenue by category (#10 treemap).
+      this.prisma.$queryRaw<{ name: string; revenue: bigint; qty: bigint }[]>(
+        Prisma.sql`
+          SELECT c.name AS name, SUM(oi."unitPriceCents" * oi.quantity) AS revenue, SUM(oi.quantity) AS qty
+          FROM order_items oi
+          JOIN orders o ON o.id = oi."orderId"
+          JOIN menu_items mi ON mi.id = oi."menuItemId"
+          JOIN categories c ON c.id = mi."categoryId"
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd} ${outletSql}
+          GROUP BY c.name ORDER BY revenue DESC`,
+      ),
+      // Day-of-week × hour transaction heatmap (#11). dow: 0=Sunday.
+      this.prisma.$queryRaw<{ dow: number; hour: number; revenue: bigint; orders: bigint }[]>(
+        Prisma.sql`
+          SELECT EXTRACT(DOW FROM "paidAt")::int AS dow, EXTRACT(HOUR FROM "paidAt")::int AS hour,
+                 SUM("totalCents") AS revenue, COUNT(*) AS orders
+          FROM orders WHERE status = 'PAID' AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}
+          GROUP BY 1, 2`,
+      ),
+      // New vs returning guests by day (#13) — "new" means this order is
+      // that customer's true first-ever paid order (unbounded lookback, not
+      // just first-in-range), so a regular whose only visit in this
+      // particular range happens to be their first-ever visit still counts
+      // as new, and everyone else counts as returning.
+      this.prisma.$queryRaw<{ day: Date; bucket: string; orders: bigint }[]>(
+        Prisma.sql`
+          WITH first_visit AS (
+            SELECT "customerId", MIN("paidAt") AS first_paid_at
+            FROM orders WHERE status = 'PAID' AND "customerId" IS NOT NULL
+            GROUP BY "customerId"
+          )
+          SELECT date_trunc('day', o."paidAt") AS day,
+                 CASE WHEN o."paidAt" = fv.first_paid_at THEN 'new' ELSE 'returning' END AS bucket,
+                 COUNT(*) AS orders
+          FROM orders o JOIN first_visit fv ON fv."customerId" = o."customerId"
+          WHERE o.status = 'PAID' AND o."paidAt" >= ${rangeStart} AND o."paidAt" <= ${rangeEnd} ${outletSql}
+          GROUP BY 1, 2 ORDER BY 1`,
+      ),
+      // Coverage footnote for #13 — how many paid orders in range had no
+      // linked Customer at all (walk-ins with no phone captured), since
+      // those are invisible to the new/returning classification above.
+      this.prisma.$queryRaw<{ no_customer: bigint; total: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(*) FILTER (WHERE "customerId" IS NULL) AS no_customer, COUNT(*) AS total
+          FROM orders WHERE status = 'PAID' AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}`,
+      ),
+      // Payment methods over time (#14) — day × method.
+      this.prisma.$queryRaw<{ day: Date; method: string; amount: bigint }[]>(
+        Prisma.sql`
+          SELECT date_trunc('day', p."createdAt") AS day, p.method AS method, SUM(p."amountCents") AS amount
+          FROM payments p JOIN orders o ON o.id = p."orderId"
+          WHERE p."createdAt" >= ${rangeStart} AND p."createdAt" <= ${rangeEnd} ${outletSql}
+          GROUP BY 1, 2 ORDER BY 1`,
+      ),
+      // Raw IN/OUT punches in range, for the labor-cost side of #6 —
+      // bucketed into hourly wage cost after this Promise.all resolves.
+      this.prisma.attendanceLog.findMany({
+        where: { at: { gte: rangeStart, lte: rangeEnd }, employeeId: { not: null }, status: { in: ['IN', 'OUT'] } },
+        select: { employeeId: true, at: true, status: true },
+        orderBy: [{ employeeId: 'asc' }, { at: 'asc' }],
+      }),
     ]);
 
     const revenue30 = num(earnings30._sum.totalCents);
     const turn = turnaround[0];
+
+    // Menu engineering (#7) — real recipe-cost margin per item, same
+    // calculation reports.service.ts's Z-Report already does.
+    const costMap = new Map(recipeCosts.map((r) => [r.menuitemid, num(r.costperitem)]));
+    const menuPerformance = menuRows.map((m) => {
+      const qty = num(m.qty);
+      const revenue = num(m.revenue);
+      const cost = Math.round(costMap.get(m.id) ?? 0) * qty;
+      const profit = revenue - cost;
+      const marginPct = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+      return { name: m.name, qty, revenueCents: revenue, costCents: cost, profitCents: profit, marginPct };
+    });
+
+    // Labor vs sales (#6) — bucket each employee's clocked-in sessions into
+    // Nepal-local hourly wage cost, derived from monthlySalaryCents (no
+    // per-employee hourly-rate field exists — this is a flagged estimate,
+    // not a precise timeclock cost).
+    const laborEmployeeIds = [...new Set(attendanceLogs.map((l) => l.employeeId!).filter(Boolean))];
+    const laborEmployees = laborEmployeeIds.length
+      ? await this.prisma.employee.findMany({
+          where: { id: { in: laborEmployeeIds } },
+          select: { id: true, monthlySalaryCents: true },
+        })
+      : [];
+    const hourlyRateByEmp = new Map(laborEmployees.map((e) => [e.id, e.monthlySalaryCents / 26 / 8]));
+    const laborCentsByHour = new Array(24).fill(0) as number[];
+    const punchesByEmp = new Map<string, { at: Date; status: string }[]>();
+    for (const l of attendanceLogs) {
+      if (!l.employeeId) continue;
+      const arr = punchesByEmp.get(l.employeeId) ?? [];
+      arr.push({ at: l.at, status: l.status! });
+      punchesByEmp.set(l.employeeId, arr);
+    }
+    for (const [empId, punches] of punchesByEmp) {
+      const rate = hourlyRateByEmp.get(empId) ?? 0;
+      let sessionStart: Date | null = null;
+      for (const p of punches) {
+        if (p.status === 'IN' && !sessionStart) sessionStart = p.at;
+        else if (p.status === 'OUT' && sessionStart) {
+          addSessionCost(sessionStart, p.at, rate, laborCentsByHour);
+          sessionStart = null;
+        }
+      }
+      // Still clocked in at the end of the range — count up to rangeEnd
+      // (or now, if the range extends into the future) so an open shift
+      // isn't silently dropped from the total.
+      if (sessionStart) addSessionCost(sessionStart, new Date(Math.min(rangeEnd.getTime(), Date.now())), rate, laborCentsByHour);
+    }
+    const revenueByHourMap = new Map(byHour.map((h) => [num(h.hour), num(h.revenue)]));
+    const laborVsSales = laborCentsByHour.map((cents, hour) => ({
+      hour,
+      laborCents: Math.round(cents),
+      revenueCents: revenueByHourMap.get(hour) ?? 0,
+    }));
+
+    // New vs returning guests (#13) — pivot the day×bucket rows into one
+    // row per day with both counts, so the frontend doesn't need to.
+    const newReturningMap = new Map<string, { date: Date; newOrders: number; returningOrders: number }>();
+    for (const r of newReturningByDay) {
+      const key = r.day.toISOString();
+      const row = newReturningMap.get(key) ?? { date: r.day, newOrders: 0, returningOrders: 0 };
+      if (r.bucket === 'new') row.newOrders += num(r.orders);
+      else row.returningOrders += num(r.orders);
+      newReturningMap.set(key, row);
+    }
+    const customerLink = customerLinkStats[0];
+
+    // Payment methods over time (#14) — pivot day×method rows into one row
+    // per day with a field per method.
+    const paymentMethodsMap = new Map<string, { date: Date; [method: string]: number | Date }>();
+    for (const r of paymentMethodsByDay) {
+      const key = r.day.toISOString();
+      const row = paymentMethodsMap.get(key) ?? { date: r.day };
+      row[r.method] = (Number(row[r.method]) || 0) + num(r.amount);
+      paymentMethodsMap.set(key, row);
+    }
+
+    // Discounts & voids (#8) — merge the two day-bucketed series into one
+    // row per day.
+    const discountsVoidsMap = new Map<string, { date: Date; discountCents: number; complimentaryCount: number; voidCount: number; voidedCents: number }>();
+    for (const r of discountsByDay) {
+      const key = r.day.toISOString();
+      const row = discountsVoidsMap.get(key) ?? { date: r.day, discountCents: 0, complimentaryCount: 0, voidCount: 0, voidedCents: 0 };
+      row.discountCents += num(r.discount);
+      row.complimentaryCount += num(r.comps);
+      discountsVoidsMap.set(key, row);
+    }
+    for (const r of voidsByDay) {
+      const key = r.day.toISOString();
+      const row = discountsVoidsMap.get(key) ?? { date: r.day, discountCents: 0, complimentaryCount: 0, voidCount: 0, voidedCents: 0 };
+      row.voidCount += num(r.voids);
+      row.voidedCents += num(r.voidedcents);
+      discountsVoidsMap.set(key, row);
+    }
 
     return {
       today: {
@@ -225,6 +488,35 @@ export class AnalyticsService {
         waiter: o.waiter?.name ?? null,
         createdAt: o.createdAt,
       })),
+      // #1 Hourly Sales.
+      salesByHour: byHour.map((h) => ({ hour: num(h.hour), revenueCents: num(h.revenue), orders: num(h.orders) })),
+      // #4 Order Source.
+      ordersByType: byType.map((t) => ({ type: t.type, totalCents: num(t._sum.totalCents), count: num(t._count) })),
+      // #6 Labor vs Sales — flagged as a derived estimate (see comment above).
+      laborVsSales,
+      // #7 Menu Engineering.
+      menuPerformance,
+      // #8 Discounts & Voids, one row per day.
+      discountsAndVoidsByDay: [...discountsVoidsMap.values()].sort((a, b) => a.date.getTime() - b.date.getTime()),
+      // #9 Average Ticket Time.
+      avgTicketByDay: avgTicketByDay.map((r) => ({
+        date: r.day,
+        avgMinutes: r.avg_seconds != null ? Math.round((Number(r.avg_seconds) / 60) * 10) / 10 : null,
+        tickets: num(r.tickets),
+      })),
+      avgTicketTargetMinutes: cafeSetting?.targetTicketMinutes ?? 15,
+      // #10 Sales by Category.
+      salesByCategory: byCategory.map((c) => ({ name: c.name, revenueCents: num(c.revenue), qty: num(c.qty) })),
+      // #11 Day×Hour Heatmap.
+      dowHourHeatmap: dowHourHeatmap.map((r) => ({ dow: num(r.dow), hour: num(r.hour), revenueCents: num(r.revenue), orders: num(r.orders) })),
+      // #13 New vs Returning Guests.
+      newVsReturningByDay: [...newReturningMap.values()].sort((a, b) => a.date.getTime() - b.date.getTime()),
+      customerLinkCoverage: {
+        noCustomer: num(customerLink?.no_customer),
+        total: num(customerLink?.total),
+      },
+      // #14 Payment Methods Over Time, one row per day with a field per method.
+      paymentMethodsByDay: [...paymentMethodsMap.values()].sort((a, b) => (a.date as Date).getTime() - (b.date as Date).getTime()),
     };
   }
 }

@@ -175,9 +175,9 @@ export class IrdService {
      <VOUCHER VCHTYPE="Sales" ACTION="Create">
       <DATE>${yyyymmdd}</DATE>
       <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
-      <VOUCHERNUMBER>${o.number}</VOUCHERNUMBER>
+      <VOUCHERNUMBER>${o.fiscalInvoiceNo ?? o.number}</VOUCHERNUMBER>
       <PARTYLEDGERNAME>${esc(LEDGER[o.payments[0]?.method ?? 'CASH'] ?? 'Cash')}</PARTYLEDGERNAME>
-      <NARRATION>POS invoice #${o.number}${o.customerName ? ` — ${esc(o.customerName)}` : ''} (BS ${formatBs(paidAt)})</NARRATION>${debits}
+      <NARRATION>POS invoice INV-${o.fiscalInvoiceNo ?? o.number}${o.customerName ? ` — ${esc(o.customerName)}` : ''} (BS ${formatBs(paidAt)})</NARRATION>${debits}
       <ALLLEDGERENTRIES.LIST>
         <LEDGERNAME>Sales Account</LEDGERNAME>
         <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>

@@ -371,6 +371,12 @@ export default function SettingsPage() {
               onChange={(e) => setForm({ ...form, defaultGuestCount: Math.max(1, parseInt(e.target.value) || 1) })} />
             <p className="mt-1 text-xs text-slate-400">Pre-filled cover count when opening a table.</p>
           </div>
+          <div>
+            <label className="label">Target ticket time (minutes)</label>
+            <input className="input" type="number" min={1} max={180} value={form.targetTicketMinutes ?? 15}
+              onChange={(e) => setForm({ ...form, targetTicketMinutes: Math.max(1, parseInt(e.target.value) || 15) })} />
+            <p className="mt-1 text-xs text-slate-400">Reference line on the Dashboard's Average Ticket Time chart (fired → ready).</p>
+          </div>
         </div>
         <button
           className="btn-primary"
@@ -379,6 +385,7 @@ export default function SettingsPage() {
               const updated = await api.patch<Settings>('/settings', {
                 currencySymbol: form.currencySymbol || 'Rs',
                 defaultGuestCount: form.defaultGuestCount ?? 1,
+                targetTicketMinutes: form.targetTicketMinutes ?? 15,
               });
               setForm(updated);
               setSaved(true); setTimeout(() => setSaved(false), 2500);

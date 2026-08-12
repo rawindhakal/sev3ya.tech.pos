@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeTotals } from '../common/settings';
 import { adToBs } from '../common/bs-date';
-import { nepalStartOfToday } from '../common/nepal-time';
+import { nepalStartOfToday, nepalEndOfDate, nepalDateKey } from '../common/nepal-time';
 import { SettingsService } from '../settings/settings.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
@@ -492,11 +492,40 @@ export class OrdersService {
       where: { orderId: id, kotStatus: 'PENDING', cancelledAt: null },
       data: { kotStatus: 'PREPARING' },
     });
-    const updated = await this.prisma.order.update({
-      where: { id },
-      data: { status: 'SENT_TO_KITCHEN', kotFiredAt: order.kotFiredAt ?? new Date() },
-      include: orderInclude,
-    });
+
+    const firedAt = order.kotFiredAt ?? new Date();
+    // Assign the kitchen/bar ticket number the first time this order fires
+    // to that station — independent of `number` (internal order id) and
+    // `fiscalInvoiceNo` (only exists once paid). Resets daily, scoped by
+    // this order's own kotFiredAt (the "first fire ever" timestamp) rather
+    // than the current moment, so a kitchen ticket and a bar ticket fired
+    // for the same order on the same calendar day always land in the same
+    // day's count even if one call assigns kotNo and a later call assigns
+    // botNo (an order left open across midnight before its first bar fire
+    // is the one edge case this doesn't perfectly cover — rare enough not
+    // to warrant a second timestamp field just for it).
+    const needsKotNo = order.kotNo == null && pending.some((i) => i.station === 'KITCHEN');
+    const needsBotNo = order.botNo == null && pending.some((i) => i.station === 'BAR');
+    const updated = needsKotNo || needsBotNo
+      ? await this.prisma.$transaction(async (tx) => {
+          const data: Prisma.OrderUpdateInput = { status: 'SENT_TO_KITCHEN', kotFiredAt: firedAt };
+          const dayStart = nepalStartOfToday(firedAt);
+          const dayEnd = nepalEndOfDate(nepalDateKey(firedAt));
+          if (needsKotNo) {
+            const seq = await tx.order.count({ where: { kotNo: { not: null }, kotFiredAt: { gte: dayStart, lte: dayEnd } } });
+            data.kotNo = seq + 1;
+          }
+          if (needsBotNo) {
+            const seq = await tx.order.count({ where: { botNo: { not: null }, kotFiredAt: { gte: dayStart, lte: dayEnd } } });
+            data.botNo = seq + 1;
+          }
+          return tx.order.update({ where: { id }, data, include: orderInclude });
+        })
+      : await this.prisma.order.update({
+          where: { id },
+          data: { status: 'SENT_TO_KITCHEN', kotFiredAt: firedAt },
+          include: orderInclude,
+        });
     // fired items carry station + resolved printerName so the client can
     // split KOT (kitchen) vs BOT (bar), and further split by physical
     // printer within a station.
@@ -526,6 +555,7 @@ export class OrdersService {
         order: {
           select: {
             id: true, number: true, type: true, notes: true, kotFiredAt: true, guestCount: true,
+            kotNo: true, botNo: true,
             table: { select: { name: true } },
             waiter: { select: { name: true } },
           },
@@ -539,6 +569,12 @@ export class OrdersService {
       id: i.id,
       orderId: i.orderId,
       orderNumber: i.order.number,
+      // The dedicated daily kitchen/bar ticket number, resolved by this
+      // item's own station — falls back to orderNumber only for the brief
+      // window before sendKot()'s transaction has assigned one (shouldn't
+      // normally be observable, since assignment happens synchronously in
+      // the same call that flips these items out of PENDING).
+      ticketNo: (i.station === 'BAR' ? i.order.botNo : i.order.kotNo) ?? i.order.number,
       orderType: i.order.type,
       table: i.order.table?.name ?? null,
       waiter: i.order.waiter?.name ?? null,

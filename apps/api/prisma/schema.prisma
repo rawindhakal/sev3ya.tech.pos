@@ -338,6 +338,14 @@ model Order {
   fiscalYear      String?
   fiscalInvoiceNo Int?
 
+  // Kitchen/bar ticket numbers — independent of both `number` (internal
+  // order id) and `fiscalInvoiceNo` (only exists once paid). Each is
+  // assigned once, the first time this order fires an item to that
+  // station, scoped to the Nepal calendar day (resets every morning) —
+  // see sendKot() in orders.service.ts.
+  kotNo Int?
+  botNo Int?
+
   // IRD (CBMS) e-billing sync state for this invoice.
   irdSyncedAt    DateTime?
   irdSyncStatus  String? // SYNCED | FAILED
@@ -672,6 +680,7 @@ model OrderItem {
   kotStatus     KotStatus   @default(PENDING)
   station       PrepStation @default(BILLING) // snapshot of the item's prep station
   kotPrintedAt  DateTime? // set once a physical KOT/BOT ticket has been printed
+  readyAt       DateTime? // set when KDS flips this item to READY — powers avg ticket time
   discountCents Int         @default(0) // item-wise discount (needs manager perm)
   notes         String?
 
@@ -854,6 +863,10 @@ model CafeSetting {
   // confirmations. Blank = SMS sending is a silent no-op.
   smsGatewayApiKey   String?
   smsGatewaySenderId String?
+
+  // Target minutes from KOT fired to ready, shown as a reference line on
+  // the Dashboard's Average Ticket Time chart.
+  targetTicketMinutes Int @default(15)
 
   // Module feature toggles — admin enables/disables sections app-wide.
   featReservations Boolean @default(true)

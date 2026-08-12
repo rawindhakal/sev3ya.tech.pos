@@ -31,6 +31,7 @@ export class SettingsService {
       pricesIncludeVat: s.pricesIncludeVat,
       currencySymbol: s.currencySymbol,
       defaultGuestCount: s.defaultGuestCount,
+      targetTicketMinutes: s.targetTicketMinutes,
       restaurantName: s.restaurantName,
       address: s.address,
       phone: s.phone,
@@ -233,6 +234,7 @@ export class SettingsService {
     pricesIncludeVat?: boolean;
     currencySymbol?: string;
     defaultGuestCount?: number;
+    targetTicketMinutes?: number;
     receiptHeader?: string;
     receiptFooter?: string;
     wifiPassword?: string;

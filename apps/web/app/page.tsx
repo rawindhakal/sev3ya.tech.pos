@@ -4,13 +4,25 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, formatMoney } from '@/lib/api';
 import type { DashboardData, Outlet } from '@/lib/types';
-import LineChart from '@/components/LineChart';
 import Spinner from '@/components/Spinner';
-import { PAYMENT_METHOD_COLOR, PAYMENT_METHOD_LABEL } from '@/lib/constants';
 import {
   ReceiptIcon, BanknoteIcon, UsersIcon, CalendarIcon, ClockIcon, TurnaroundIcon,
-  CheckCircleIcon, ChartBarIcon, TableIcon, ChefHatIcon, PlusIcon, InboxIcon,
+  CheckCircleIcon, TableIcon, PlusIcon, InboxIcon,
 } from '@/components/icons';
+import HourlyLineChart from '@/components/charts/HourlyLineChart';
+import TopItemsBar from '@/components/charts/TopItemsBar';
+import PaymentDonut from '@/components/charts/PaymentDonut';
+import OrderSourcePie from '@/components/charts/OrderSourcePie';
+import ServerBar from '@/components/charts/ServerBar';
+import LaborVsSalesChart from '@/components/charts/LaborVsSalesChart';
+import MenuScatter from '@/components/charts/MenuScatter';
+import DiscountsVoidsBar from '@/components/charts/DiscountsVoidsBar';
+import AvgTicketLine from '@/components/charts/AvgTicketLine';
+import CategoryTreemap from '@/components/charts/CategoryTreemap';
+import DowHourHeatmap from '@/components/charts/DowHourHeatmap';
+import TurnaroundGauge from '@/components/charts/TurnaroundGauge';
+import NewReturningStackedBar from '@/components/charts/NewReturningStackedBar';
+import PaymentMethodsArea from '@/components/charts/PaymentMethodsArea';
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const today = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -104,16 +116,7 @@ export default function DashboardPage() {
     { label: `Paid Orders · ${periodName}`, value: data.today.paidOrders, icon: CheckCircleIcon },
   ];
 
-  const paymentsTotal = data.paymentsByMethod.reduce((s, p) => s + p.amountCents, 0);
-
-  const chartData = data.salesSeries.map((s) => ({
-    label: new Date(s.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    value: s.cents,
-  }));
-
-  const maxItemQty = Math.max(...data.topItems.map((i) => i.qty), 1);
   const maxTableRev = Math.max(...data.topTables.map((t) => t.revenueCents), 1);
-  const maxWaiterRev = Math.max(...data.waiters.map((w) => w.revenueCents), 1);
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-8">
@@ -190,73 +193,28 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-4 grid gap-4 sm:mt-6 sm:gap-6 lg:grid-cols-3">
-        {/* Sales line chart */}
-        <div className="card p-4 sm:p-6 lg:col-span-2">
-          <h2 className="mb-1 font-semibold text-slate-800">Sales — {periodName}</h2>
-          <p className="mb-4 text-xs text-slate-400">Daily paid revenue</p>
-          <LineChart data={chartData} formatValue={(v) => formatMoney(v)} />
-        </div>
+        <HourlyLineChart data={data.salesByHour} />
+        <PaymentDonut data={data.paymentsByMethod} />
 
-        {/* Payments by method */}
-        <div className="card p-4 sm:p-6">
-          <h2 className="mb-4 font-semibold text-slate-800">Received — {periodName.toLowerCase()} — by method</h2>
-          {data.paymentsByMethod.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-8 text-center">
-              <InboxIcon className="h-7 w-7 text-slate-300" />
-              <p className="text-sm text-slate-400">No payments in this period.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {data.paymentsByMethod.map((p) => (
-                <div key={p.method}>
-                  <div className="mb-1 flex justify-between text-sm">
-                    <span className="font-medium text-slate-600">{PAYMENT_METHOD_LABEL[p.method] ?? p.method}</span>
-                    <span className="font-semibold tabular-nums text-slate-900">{formatMoney(p.amountCents)}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/5">
-                    <div
-                      className={`h-full rounded-full transition-[width] duration-300 ${PAYMENT_METHOD_COLOR[p.method] ?? 'bg-slate-400'}`}
-                      style={{ width: `${paymentsTotal ? (p.amountCents / paymentsTotal) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-              <div className="border-t border-slate-100 pt-3 text-sm">
-                <span className="text-slate-500">Total received: </span>
-                <span className="font-bold tabular-nums text-slate-900">{formatMoney(paymentsTotal)}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+        <TopItemsBar data={data.topItems} />
+        <OrderSourcePie data={data.ordersByType} />
+        <ServerBar data={data.waiters} />
 
-      <div className="mt-4 grid gap-4 sm:mt-6 sm:gap-6 lg:grid-cols-3">
-        {/* Top selling items */}
-        <div className="card p-4 sm:p-6">
-          <h2 className="mb-4 flex items-center gap-2 font-semibold text-slate-800"><ChartBarIcon className="h-4 w-4 text-slate-400" /> Top selling items</h2>
-          {data.topItems.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-400">No items sold yet.</p>
-          ) : (
-            <div className="space-y-2.5">
-              {data.topItems.map((it, i) => (
-                <div key={it.name} className="flex items-center gap-3">
-                  <span className="w-4 text-xs font-bold text-slate-400">{i + 1}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex justify-between gap-2 text-sm">
-                      <span className="truncate font-medium text-slate-700">{it.name}</span>
-                      <span className="shrink-0 text-slate-500">{it.qty} sold</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/5">
-                      <div className="h-full rounded-full bg-brand-500 transition-[width] duration-300" style={{ width: `${(it.qty / maxItemQty) * 100}%` }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <LaborVsSalesChart data={data.laborVsSales} />
+        <TurnaroundGauge minutes={data.averages.guestTimeMinutes} />
 
-        {/* Top tables */}
+        <MenuScatter data={data.menuPerformance} />
+        <DiscountsVoidsBar data={data.discountsAndVoidsByDay} />
+        <AvgTicketLine data={data.avgTicketByDay} targetMinutes={data.avgTicketTargetMinutes} />
+
+        <CategoryTreemap data={data.salesByCategory} />
+        <DowHourHeatmap data={data.dowHourHeatmap} />
+
+        <NewReturningStackedBar data={data.newVsReturningByDay} coverage={data.customerLinkCoverage} />
+        <PaymentMethodsArea data={data.paymentMethodsByDay} />
+
+        {/* Top tables — not one of the standard chart set above, kept as a
+            simple ranked list since it's useful and was already here. */}
         <div className="card p-4 sm:p-6">
           <h2 className="mb-4 flex items-center gap-2 font-semibold text-slate-800"><TableIcon className="h-4 w-4 text-slate-400" /> Top tables (revenue)</h2>
           {data.topTables.length === 0 ? (
@@ -273,33 +231,6 @@ export default function DashboardPage() {
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/5">
                       <div className="h-full rounded-full bg-indigo-500 transition-[width] duration-300" style={{ width: `${(t.revenueCents / maxTableRev) * 100}%` }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Waiter overview */}
-        <div className="card p-4 sm:p-6">
-          <h2 className="mb-4 flex items-center gap-2 font-semibold text-slate-800"><ChefHatIcon className="h-4 w-4 text-slate-400" /> Waiter overview</h2>
-          {data.waiters.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-400">No waiter activity yet.</p>
-          ) : (
-            <div className="space-y-2.5">
-              {data.waiters.map((w) => (
-                <div key={w.name} className="flex items-center gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600 dark:bg-white/5 dark:text-slate-300">
-                    {w.name[0]}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex justify-between gap-2 text-sm">
-                      <span className="truncate font-medium text-slate-700">{w.name}</span>
-                      <span className="shrink-0 font-semibold tabular-nums text-slate-800">{formatMoney(w.revenueCents)}</span>
-                    </div>
-                    <div className="text-xs text-slate-400">
-                      {w.orders} orders · {w.guests} guests
                     </div>
                   </div>
                 </div>

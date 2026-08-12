@@ -101,7 +101,7 @@ export class AccountingService {
     const [cashPayments, movements, expenses] = await Promise.all([
       this.prisma.payment.findMany({
         where: { method: 'CASH', createdAt: window },
-        include: { order: { select: { number: true, customerName: true } } },
+        include: { order: { select: { number: true, customerName: true, fiscalInvoiceNo: true } } },
         orderBy: { createdAt: 'asc' },
       }),
       this.prisma.cashMovement.findMany({
@@ -113,7 +113,7 @@ export class AccountingService {
     const entries = [
       ...cashPayments.map((p) => ({
         at: p.createdAt,
-        particulars: `Cash sale — invoice #${p.order.number}${p.order.customerName ? ` (${p.order.customerName})` : ''}`,
+        particulars: `Cash sale — invoice INV-${p.order.fiscalInvoiceNo ?? p.order.number}${p.order.customerName ? ` (${p.order.customerName})` : ''}`,
         receiptCents: p.amountCents,
         paymentCents: 0,
       })),
@@ -154,7 +154,7 @@ export class AccountingService {
     const [payments, settlements] = await Promise.all([
       this.prisma.payment.findMany({
         where: { method: { in: BANK_METHODS as any }, createdAt: window },
-        include: { order: { select: { number: true, customerName: true } } },
+        include: { order: { select: { number: true, customerName: true, fiscalInvoiceNo: true } } },
         orderBy: { createdAt: 'asc' },
       }),
       this.prisma.creditLedgerEntry.findMany({
@@ -167,7 +167,7 @@ export class AccountingService {
       ...payments.map((p) => ({
         at: p.createdAt,
         method: p.method,
-        particulars: `Sale — invoice #${p.order.number}${p.order.customerName ? ` (${p.order.customerName})` : ''}`,
+        particulars: `Sale — invoice INV-${p.order.fiscalInvoiceNo ?? p.order.number}${p.order.customerName ? ` (${p.order.customerName})` : ''}`,
         amountCents: p.amountCents,
       })),
       ...settlements.map((s) => ({

@@ -67,7 +67,7 @@ export default function SalesReportPage() {
   const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
-  const [openInvoice, setOpenInvoice] = useState<string | null>(null);
+  const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [billOrder, setBillOrder] = useState<Order | null>(null);
   const [billLoading, setBillLoading] = useState<string | null>(null);
   const [discountReport, setDiscountReport] = useState<DiscountReport | null>(null);
@@ -202,7 +202,10 @@ export default function SalesReportPage() {
     if (preset.id !== 'detail') return [];
     const map = new Map<string, DetailGroup>();
     for (const r of visibleRows) {
-      const key = String(r.invoice);
+      // Keyed by orderId, not the displayed invoice string — fiscalInvoiceNo
+      // resets every Nepali fiscal year, so a range spanning that boundary
+      // could otherwise have two different bills collide on the same label.
+      const key = r.orderId;
       let g = map.get(key);
       if (!g) {
         g = { invoice: r.invoice, orderId: r.orderId, dateBs: r.dateBs, type: r.type, tenders: r.tenders, qty: 0, discountCents: 0, grossCents: 0, items: [] };
@@ -414,10 +417,10 @@ export default function SalesReportPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {detailGroups.map((g) => {
-                      const open = openInvoice === g.invoice;
+                      const open = openOrderId === g.orderId;
                       return (
-                        <Fragment key={g.invoice}>
-                          <tr className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30" onClick={() => setOpenInvoice(open ? null : g.invoice)}>
+                        <Fragment key={g.orderId}>
+                          <tr className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30" onClick={() => setOpenOrderId(open ? null : g.orderId)}>
                             <td className="p-2 text-center text-slate-400">{open ? '▼' : '▶'}</td>
                             <td className="p-2 text-left text-slate-600">{g.dateBs}</td>
                             <td className="p-2 text-left text-slate-600">{g.invoice}</td>
@@ -445,7 +448,7 @@ export default function SalesReportPage() {
                             <tr key={i} className="bg-slate-50/60 text-xs dark:bg-slate-700/20">
                               <td className="p-1.5" />
                               <td className="p-1.5" colSpan={2} />
-                              <td className="p-1.5 text-left text-slate-500" colSpan={2}>{it.item} <span className="text-slate-400">· {it.category} · {it.station}</span></td>
+                              <td className="p-1.5 text-left text-slate-500" colSpan={2}>{it.item} <span className="text-slate-400">· {it.category} · {it.station} · {it.ticket}</span></td>
                               <td className="p-1.5 text-right tabular-nums text-slate-500">{it.qty}</td>
                               <td className="p-1.5 text-right tabular-nums text-slate-500">{formatMoney(Number(it.unitCents))}</td>
                               <td className="p-1.5 text-right tabular-nums text-slate-500">{it.discountCents ? formatMoney(Number(it.discountCents)) : '—'}</td>

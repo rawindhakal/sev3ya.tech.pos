@@ -57,7 +57,12 @@ export class KdsService {
   async markItem(itemId: string, status: 'PREPARING' | 'READY' | 'SERVED', outletId?: string) {
     const item = await this.prisma.orderItem.findUnique({ where: { id: itemId } });
     if (!item) throw new BadRequestException('Order item not found');
-    await this.prisma.orderItem.update({ where: { id: itemId }, data: { kotStatus: status } });
+    // readyAt powers the Dashboard's Average Ticket Time chart (fired →
+    // ready). Only stamped the moment it first flips to READY here.
+    await this.prisma.orderItem.update({
+      where: { id: itemId },
+      data: { kotStatus: status, ...(status === 'READY' ? { readyAt: new Date() } : {}) },
+    });
     // If every (non-cancelled) item on the order is READY, advance the order.
     const remaining = await this.prisma.orderItem.count({
       where: { orderId: item.orderId, cancelledAt: null, kotStatus: { in: ['PENDING', 'PREPARING'] } },
@@ -84,7 +89,7 @@ export class KdsService {
   async unmarkItem(itemId: string, outletId?: string) {
     const item = await this.prisma.orderItem.findUnique({ where: { id: itemId } });
     if (!item) throw new BadRequestException('Order item not found');
-    await this.prisma.orderItem.update({ where: { id: itemId }, data: { kotStatus: 'PREPARING' } });
+    await this.prisma.orderItem.update({ where: { id: itemId }, data: { kotStatus: 'PREPARING', readyAt: null } });
     const order = await this.prisma.order.findUnique({ where: { id: item.orderId } });
     if (order?.status === 'READY') {
       await this.prisma.order.update({ where: { id: item.orderId }, data: { status: 'SENT_TO_KITCHEN' } });
