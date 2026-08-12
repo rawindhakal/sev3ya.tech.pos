@@ -79,7 +79,13 @@ function PlatformLogin({ onLogin }: { onLogin: (e: Employee) => void }) {
 
   async function submit() {
     if (!username.trim() || !password) return setErr('Enter your username and password');
-    setTenantSlug(''); // platform admins always authenticate against the control DB
+    // Cleared only for the duration of this request (the login POST itself
+    // must go out with no tenant to hit the control DB) — restored on
+    // failure so a mistaken/accidental attempt here (e.g. a tenant admin who
+    // wandered onto this screen and tried their normal credentials) doesn't
+    // permanently wipe their saved restaurant context.
+    const previousTenant = tenantSlug();
+    setTenantSlug('');
     setBusy(true);
     setErr('');
     try {
@@ -88,6 +94,7 @@ function PlatformLogin({ onLogin }: { onLogin: (e: Employee) => void }) {
       if (e.token) localStorage.setItem('cakezake-token', e.token);
       onLogin(e);
     } catch {
+      setTenantSlug(previousTenant);
       setErr('Invalid platform credentials');
       setPassword('');
     } finally {

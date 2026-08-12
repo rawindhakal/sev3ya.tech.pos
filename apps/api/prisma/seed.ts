@@ -209,11 +209,15 @@ async function main() {
 
   const [adminRole, managerRole, cashierRole, baristaRole, waiterRole] = await Promise.all([
     makeRole('Admin', 'BACK_OFFICE', [
+      // Deliberately no PLATFORM_MANAGE — that gates the cross-tenant
+      // Platform Console, not a per-restaurant permission. Granting it here
+      // used to trip AppShell's "redirect to /platform" logic for a tenant
+      // admin whenever tenantSlug() was momentarily empty. See the matching
+      // comment in system-roles.seed.ts.
       PERMISSIONS.ORDERS_VOID, PERMISSIONS.ORDERS_DISCOUNT, PERMISSIONS.STAFF_MANAGE, PERMISSIONS.ROLES_MANAGE,
       PERMISSIONS.ATTENDANCE_MANAGE, PERMISSIONS.SETTINGS_MANAGE, PERMISSIONS.INVENTORY_MANAGE, PERMISSIONS.REPORTS_VIEW,
       PERMISSIONS.ACCOUNTING_MANAGE, PERMISSIONS.GIFTCARDS_MANAGE, PERMISSIONS.PROMOTIONS_MANAGE, PERMISSIONS.SYNC_FAILURES_MANAGE,
       PERMISSIONS.CRM_SETTLE_CREDIT, PERMISSIONS.CRM_DELETE, PERMISSIONS.CASH_DRAWER_ADJUST_FLOAT, PERMISSIONS.IRD_SYNC,
-      PERMISSIONS.PLATFORM_MANAGE,
     ]),
     makeRole('Manager', 'BACK_OFFICE', [
       PERMISSIONS.ORDERS_VOID, PERMISSIONS.ORDERS_DISCOUNT, PERMISSIONS.INVENTORY_MANAGE, PERMISSIONS.REPORTS_VIEW,

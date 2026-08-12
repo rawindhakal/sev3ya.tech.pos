@@ -45,7 +45,6 @@ const ROLE_NAME_GRANTS: Record<string, PermissionKey[]> = {
     PERMISSIONS.IRD_SYNC,
     PERMISSIONS.CRM_SETTLE_CREDIT,
     PERMISSIONS.CRM_DELETE,
-    PERMISSIONS.PLATFORM_MANAGE,
     PERMISSIONS.CASH_DRAWER_ADJUST_FLOAT,
   ],
   MANAGER: [
@@ -107,8 +106,22 @@ export interface BackfillReport {
 export async function seedSystemRolesAndBackfill(client: PrismaClient, opts: { dryRun?: boolean } = {}): Promise<BackfillReport> {
   const dryRun = !!opts.dryRun;
 
-  // 1) Ensure the protected "Owner" role exists with EVERY current
+  // 1) Ensure the protected "Owner" role exists with EVERY current *tenant*
   //    permission — auto-syncs to new keys added by future phases.
+  //    Deliberately excludes platform.manage: that key gates the cross-tenant
+  //    Platform Console, a genuinely different thing from "every permission
+  //    a restaurant owner could want" — it must only ever be set on true
+  //    control-plane admin accounts, never auto-granted inside a tenant.
+  //    Getting this wrong doesn't expose tenant data (platform.controller.ts
+  //    independently rejects any request carrying a tenant context, see
+  //    assertControlContext()), but it does trip up the frontend: AppShell
+  //    auto-redirects any signed-in employee with platform.manage to
+  //    /platform whenever tenantSlug() is momentarily empty, which silently
+  //    strands a tenant Owner/Admin on an unfamiliar "platform access
+  //    denied" screen and wipes their saved tenant slug if they try signing
+  //    in there. Hit in production 2026-08-12 — a tenant Owner kept getting
+  //    "Staff sign-in required" every time they opened s3vya.tech.
+  const TENANT_OWNER_PERMISSIONS = ALL_PERMISSIONS.filter((k) => k !== PERMISSIONS.PLATFORM_MANAGE);
   let owner = await client.role.findFirst({ where: { isProtected: true } });
   if (!owner) {
     if (!dryRun) {
@@ -117,7 +130,7 @@ export async function seedSystemRolesAndBackfill(client: PrismaClient, opts: { d
           name: 'Owner',
           isProtected: true,
           portal: 'BACK_OFFICE',
-          permissions: { create: ALL_PERMISSIONS.map((key) => ({ key })) },
+          permissions: { create: TENANT_OWNER_PERMISSIONS.map((key) => ({ key })) },
         },
       });
     }
@@ -125,12 +138,12 @@ export async function seedSystemRolesAndBackfill(client: PrismaClient, opts: { d
     const existing = new Set(
       (await client.rolePermission.findMany({ where: { roleId: owner.id } })).map((p) => p.key),
     );
-    const missing = ALL_PERMISSIONS.filter((k) => !existing.has(k));
+    const missing = TENANT_OWNER_PERMISSIONS.filter((k) => !existing.has(k));
     if (missing.length) {
       await client.rolePermission.createMany({ data: missing.map((key) => ({ roleId: owner!.id, key })) });
     }
   }
-  const ownerPermsKey = ALL_PERMISSIONS.slice().sort().join('|');
+  const ownerPermsKey = TENANT_OWNER_PERMISSIONS.slice().sort().join('|');
 
   // 2) Read every employee that hasn't been assigned a Role yet. This
   // function is called both against databases still on the old schema
