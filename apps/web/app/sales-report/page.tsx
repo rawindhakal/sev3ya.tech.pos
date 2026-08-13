@@ -164,7 +164,7 @@ export default function SalesReportPage() {
     await new Promise((r) => setTimeout(r, 60)); // let the COPY watermark render before it's captured
     const prefs = getPrinterPrefs();
     const tpl = billTemplateOf(settings);
-    await printReceiptNow({ printer: prefs.bill, widthMm: tpl.paperWidthMm, marginMm: tpl.marginMm, fontSize: tpl.fontSize });
+    await printReceiptNow({ printer: prefs.bill, widthMm: tpl.paperWidthMm, marginMm: tpl.marginMm, fontSize: tpl.fontSize, fontFamily: tpl.fontFamily });
   }
   // Columns change per preset — a stale sort/search would silently no-op.
   useEffect(() => { setSearch(''); setSort(null); }, [preset]);

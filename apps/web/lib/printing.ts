@@ -27,25 +27,51 @@ export const isDesktopShell = () =>
   typeof window !== 'undefined' && !!window.cakezakeDesktop?.isDesktop;
 
 // ── Templates ────────────────────────────────────────
+// A single customizable row on the bill/KOT — its visibility, display
+// label, and position are all user-editable (Settings → Printing), instead
+// of being fixed by source order like every other field on the template.
+export interface TemplateLine {
+  id: string;      // stable key the renderer resolves to a live value
+  enabled: boolean;
+  label: string;   // user-editable display label
+  order: number;   // sort key within its section
+}
+
+// Curated, web-safe font stacks only — no external font loading, so every
+// option is guaranteed to render identically through Chromium's print
+// pipeline (both the desktop shell's silent print and the browser print
+// dialog), with no FOUT/unavailable-font risk on an unattended till.
+export const FONT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'ui-monospace, Menlo, monospace', label: 'Monospace (classic receipt)' },
+  { value: 'Arial, Helvetica, sans-serif', label: 'Arial (sans-serif)' },
+  { value: '"Segoe UI", Roboto, system-ui, sans-serif', label: 'System sans-serif' },
+  { value: 'Verdana, Geneva, sans-serif', label: 'Verdana (sans-serif)' },
+  { value: 'Tahoma, Geneva, sans-serif', label: 'Tahoma (sans-serif)' },
+  { value: 'Georgia, "Times New Roman", serif', label: 'Georgia (serif)' },
+  { value: '"Courier New", Courier, monospace', label: 'Courier New (monospace)' },
+];
+const DEFAULT_FONT_FAMILY = FONT_OPTIONS[0].value;
+
 export interface BillTemplate {
   title: string;            // e.g. "Tax Invoice"
   headerText: string;       // promo line under the header
   footerText: string;       // thank-you line
   fontSize: number;         // base px
+  fontFamily: string;
   paperWidthMm: 58 | 80;
   marginMm: number;         // blank space left/right of the printed content, on top of paperWidthMm
   boldTotals: boolean;      // bold + larger totals/header for legibility on thermal paper
   showAddress: boolean;
   showPhone: boolean;
   showTaxId: boolean;
-  showTable: boolean;
-  showWaiter: boolean;
-  showGuests: boolean;
-  showCustomer: boolean;
+  // Order-info block (Bill No/Date always print first, fixed) — every other
+  // row's visibility, label, and order is user-editable.
+  metaLines: TemplateLine[];
   showItemNotes: boolean;
-  showVatBreakdown: boolean;
+  // Money rows between the item table and Grand Total (which always prints
+  // fixed, last) — visibility, label, and order all user-editable.
+  totalsLines: TemplateLine[];
   showRate: boolean;        // per-unit rate column in the item table
-  showCashier: boolean;
   showPaymentMode: boolean; // payment method + gateway/txn ref, once paid
   showWifi: boolean;
 }
@@ -54,36 +80,55 @@ export interface KotTemplate {
   kotTitle: string;
   botTitle: string;
   fontSize: number;
+  fontFamily: string;
   paperWidthMm: 58 | 80;
   marginMm: number;         // blank space left/right of the printed content, on top of paperWidthMm
   boldTotals: boolean;
-  showOrderType: boolean;
-  showTable: boolean;
-  showWaiter: boolean;
-  showGuests: boolean;
-  showTime: boolean;
+  // Order-info block (KOT/BOT No + Date always print first, fixed) — every
+  // other row's visibility, label, and order is user-editable.
+  metaLines: TemplateLine[];
   showItemNotes: boolean;
 }
+
+const DEFAULT_BILL_META_LINES: TemplateLine[] = [
+  { id: 'time', enabled: true, label: 'Time', order: 0 },
+  { id: 'table', enabled: true, label: 'Table No', order: 1 },
+  { id: 'guestCount', enabled: true, label: 'Guest Count', order: 2 },
+  { id: 'cashier', enabled: true, label: 'Cashier', order: 3 },
+  { id: 'waiter', enabled: true, label: 'Waiter', order: 4 },
+  { id: 'customer', enabled: true, label: 'Customer', order: 5 },
+];
+const DEFAULT_BILL_TOTALS_LINES: TemplateLine[] = [
+  { id: 'subtotal', enabled: true, label: 'Sub Total', order: 0 },
+  { id: 'discount', enabled: true, label: 'Discount', order: 1 },
+  { id: 'serviceCharge', enabled: true, label: 'Service charge', order: 2 },
+  { id: 'netBeforeTax', enabled: true, label: 'Net Amount Before Tax', order: 3 },
+  { id: 'vat', enabled: true, label: 'VAT', order: 4 },
+];
+const DEFAULT_KOT_META_LINES: TemplateLine[] = [
+  { id: 'time', enabled: true, label: 'Time', order: 0 },
+  { id: 'orderType', enabled: true, label: 'Order Type', order: 1 },
+  { id: 'table', enabled: true, label: 'Table No', order: 2 },
+  { id: 'guestCount', enabled: true, label: 'Guest Count', order: 3 },
+  { id: 'waiter', enabled: true, label: 'Order Taken By', order: 4 },
+];
 
 export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
   title: 'Tax Invoice',
   headerText: '',
   footerText: 'Thank you! Please visit again.',
   fontSize: 14,
+  fontFamily: DEFAULT_FONT_FAMILY,
   paperWidthMm: 80,
   marginMm: 3,
   boldTotals: true,
   showAddress: true,
   showPhone: true,
   showTaxId: true,
-  showTable: true,
-  showWaiter: true,
-  showGuests: true,
-  showCustomer: true,
+  metaLines: DEFAULT_BILL_META_LINES,
   showItemNotes: true,
-  showVatBreakdown: true,
+  totalsLines: DEFAULT_BILL_TOTALS_LINES,
   showRate: true,
-  showCashier: true,
   showPaymentMode: true,
   showWifi: true,
 };
@@ -92,25 +137,75 @@ export const DEFAULT_KOT_TEMPLATE: KotTemplate = {
   kotTitle: '*** KITCHEN ORDER — KOT ***',
   botTitle: '*** BAR ORDER — BOT ***',
   fontSize: 15,
+  fontFamily: DEFAULT_FONT_FAMILY,
   paperWidthMm: 80,
   marginMm: 3,
   boldTotals: true,
-  showOrderType: true,
-  showTable: true,
-  showWaiter: true,
-  showGuests: true,
-  showTime: true,
+  metaLines: DEFAULT_KOT_META_LINES,
   showItemNotes: true,
 };
 
-export const billTemplateOf = (s: Settings | null | undefined): BillTemplate => ({
-  ...DEFAULT_BILL_TEMPLATE,
-  ...((s?.billTemplate as Partial<BillTemplate>) ?? {}),
-});
-export const kotTemplateOf = (s: Settings | null | undefined): KotTemplate => ({
-  ...DEFAULT_KOT_TEMPLATE,
-  ...((s?.kotTemplate as Partial<KotTemplate>) ?? {}),
-});
+// Pre-this-feature saved shape — kept only so an existing tenant's current
+// on/off choices survive the one-time migration below instead of silently
+// resetting to "everything enabled."
+interface LegacyBillFields {
+  showTable?: boolean; showWaiter?: boolean; showGuests?: boolean;
+  showCustomer?: boolean; showCashier?: boolean; showVatBreakdown?: boolean;
+}
+interface LegacyKotFields {
+  showOrderType?: boolean; showTable?: boolean; showWaiter?: boolean;
+  showGuests?: boolean; showTime?: boolean;
+}
+
+export const billTemplateOf = (s: Settings | null | undefined): BillTemplate => {
+  const saved = ((s?.billTemplate as (Partial<BillTemplate> & LegacyBillFields)) ?? {});
+  const hasLegacyMetaFields = 'showTable' in saved || 'showWaiter' in saved || 'showGuests' in saved || 'showCustomer' in saved || 'showCashier' in saved;
+  const metaLines = saved.metaLines ?? (hasLegacyMetaFields
+    ? DEFAULT_BILL_META_LINES.map((l) => ({
+        ...l,
+        enabled:
+          l.id === 'table' ? saved.showTable ?? l.enabled
+          : l.id === 'waiter' ? saved.showWaiter ?? l.enabled
+          : l.id === 'guestCount' ? saved.showGuests ?? l.enabled
+          : l.id === 'cashier' ? saved.showCashier ?? l.enabled
+          : l.id === 'customer' ? saved.showCustomer ?? l.enabled
+          : l.enabled, // 'time' had no prior toggle — stays enabled
+      }))
+    : DEFAULT_BILL_META_LINES);
+  const totalsLines = saved.totalsLines ?? ('showVatBreakdown' in saved
+    ? DEFAULT_BILL_TOTALS_LINES.map((l) => ({ ...l, enabled: saved.showVatBreakdown ?? l.enabled }))
+    : DEFAULT_BILL_TOTALS_LINES);
+  return { ...DEFAULT_BILL_TEMPLATE, ...saved, metaLines, totalsLines };
+};
+
+export const kotTemplateOf = (s: Settings | null | undefined): KotTemplate => {
+  const saved = ((s?.kotTemplate as (Partial<KotTemplate> & LegacyKotFields)) ?? {});
+  const hasLegacyMetaFields = 'showOrderType' in saved || 'showTable' in saved || 'showWaiter' in saved || 'showGuests' in saved || 'showTime' in saved;
+  const metaLines = saved.metaLines ?? (hasLegacyMetaFields
+    ? DEFAULT_KOT_META_LINES.map((l) => ({
+        ...l,
+        enabled:
+          l.id === 'time' ? saved.showTime ?? l.enabled
+          : l.id === 'orderType' ? saved.showOrderType ?? l.enabled
+          : l.id === 'table' ? saved.showTable ?? l.enabled
+          : l.id === 'guestCount' ? saved.showGuests ?? l.enabled
+          : l.id === 'waiter' ? saved.showWaiter ?? l.enabled
+          : l.enabled,
+      }))
+    : DEFAULT_KOT_META_LINES);
+  return { ...DEFAULT_KOT_TEMPLATE, ...saved, metaLines };
+};
+
+// Restricts to characters that can legitimately appear in a CSS font-family
+// value (letters, spaces, commas, quotes, hyphens). fontFamily comes from a
+// curated dropdown in the UI, but is stored as opaque, unvalidated JSON
+// server-side — the silent-print HTML generators below build raw HTML/CSS
+// strings (not React, which escapes automatically), so this guards against
+// a hand-crafted API request breaking out of the <style> block.
+export function sanitizeFontFamily(f: string | undefined): string {
+  const safe = (f ?? '').replace(/[^a-zA-Z0-9 ,'"-]/g, '');
+  return safe.trim() || DEFAULT_FONT_FAMILY;
+}
 
 // ── Per-device printer preferences (this till's printers) ──
 export interface PrinterPrefs {
@@ -183,7 +278,7 @@ export const ticketTime = (d: Date) =>
 // DayReport) through the desktop shell — no printer dialog. The components use
 // inline styles, so the captured markup is self-contained. Returns false when
 // not in the desktop shell (caller falls back to window.print()).
-export async function silentPrintArea(opts: { printer?: string; widthMm?: number; marginMm?: number; fontSize?: number }): Promise<boolean> {
+export async function silentPrintArea(opts: { printer?: string; widthMm?: number; marginMm?: number; fontSize?: number; fontFamily?: string }): Promise<boolean> {
   if (typeof window === 'undefined' || !window.cakezakeDesktop?.printHtml) return false; // not the desktop shell — caller falls back to window.print()
   const el = document.getElementById('print-area');
   if (!el) return false;
@@ -191,7 +286,7 @@ export async function silentPrintArea(opts: { printer?: string; widthMm?: number
   const m = opts.marginMm ?? 3;
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
-    body { font-family: ui-monospace, Menlo, monospace; color: #000; background: #fff;
+    body { font-family: ${sanitizeFontFamily(opts.fontFamily)}; color: #000; background: #fff;
            width: ${Math.max(w - m * 2, 20)}mm; margin: 0 auto; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
     #print-area { display: block !important; }
     table { border-collapse: collapse; }
@@ -217,7 +312,7 @@ export async function silentPrintArea(opts: { printer?: string; widthMm?: number
 // page size its dialog defaults to (usually A4/Letter) instead of the
 // receipt's actual roll width, which is what clips/cuts printed bills on a
 // thermal printer even though the on-screen preview looks correct.
-function applyPrintPageStyle(widthMm: number, marginMm: number) {
+function applyPrintPageStyle(widthMm: number, marginMm: number, fontFamily: string) {
   if (typeof document === 'undefined') return;
   let style = document.getElementById('ticket-print-style') as HTMLStyleElement | null;
   if (!style) {
@@ -233,7 +328,7 @@ function applyPrintPageStyle(widthMm: number, marginMm: number) {
   const contentWidth = Math.max(widthMm - marginMm * 2, 20);
   style.textContent = `@media print {
     @page { size: ${widthMm}mm auto; margin: 0; }
-    body.print-receipt #print-area { width: ${contentWidth}mm !important; margin: 0 auto !important; padding: 0 !important; }
+    body.print-receipt #print-area { width: ${contentWidth}mm !important; margin: 0 auto !important; padding: 0 !important; font-family: ${sanitizeFontFamily(fontFamily)} !important; }
   }`;
 }
 
@@ -243,9 +338,9 @@ function applyPrintPageStyle(widthMm: number, marginMm: number) {
 // default page size). Centralizing this means every caller (POS, Day-End
 // Z-report, Sales Report reprint) gets identical sizing/margin behavior
 // instead of each hand-rolling its own silentPrintArea + window.print pair.
-export async function printReceiptNow(opts: { printer?: string; widthMm: number; marginMm: number; fontSize: number }): Promise<void> {
+export async function printReceiptNow(opts: { printer?: string; widthMm: number; marginMm: number; fontSize: number; fontFamily: string }): Promise<void> {
   if (await silentPrintArea(opts)) return;
-  applyPrintPageStyle(opts.widthMm, opts.marginMm);
+  applyPrintPageStyle(opts.widthMm, opts.marginMm, opts.fontFamily);
   document.body.classList.add('print-receipt');
   window.print();
   document.body.classList.remove('print-receipt');
@@ -267,19 +362,31 @@ export function kotMetaPairs(opts: {
   ticketNo: number;
   orderType: string;
   table?: string | null;
+  waiter?: string | null;
   guestCount?: number | null;
   unsynced?: boolean;
 }): [string, string][] {
   const t = opts.template;
   const now = new Date();
+  const valueOf = (id: string): string | null => {
+    switch (id) {
+      case 'time': return ticketTime(now);
+      case 'orderType': return opts.orderType.replace('_', ' ');
+      case 'table': return opts.table || null;
+      case 'guestCount': return opts.guestCount ? String(opts.guestCount) : null;
+      case 'waiter': return opts.waiter || null;
+      default: return null;
+    }
+  };
   const pairs: [string, string][] = [
     [`${opts.station === 'BAR' ? 'BOT' : 'KOT'} No`, kotDocNo(opts.station, opts.ticketNo, opts.unsynced)],
     ['Date', ticketDate(now)],
   ];
-  if (t.showTime) pairs.push(['Time', ticketTime(now)]);
-  if (t.showOrderType) pairs.push(['Order Type', opts.orderType.replace('_', ' ')]);
-  if (t.showTable && opts.table) pairs.push(['Table No', opts.table]);
-  if (t.showGuests && opts.guestCount) pairs.push(['Guest Count', String(opts.guestCount)]);
+  for (const line of [...t.metaLines].sort((a, b) => a.order - b.order)) {
+    if (!line.enabled) continue;
+    const value = valueOf(line.id);
+    if (value) pairs.push([line.label, value]);
+  }
   return pairs;
 }
 
@@ -330,11 +437,10 @@ export function kotTicketHtml(opts: {
       `<div class="row"><span>${esc(l1)}: <b>${esc(v1)}</b></span>${pair ? `<span>${esc(pair[0])}: <b>${esc(pair[1])}</b></span>` : ''}</div>`,
     );
   }
-  const orderTakenBy = t.showWaiter && opts.waiter ? `<div class="row"><span>Order Taken By: <b>${esc(opts.waiter)}</b></span></div>` : '';
   const w = Math.max(t.paperWidthMm - t.marginMm * 2, 20);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
-    body { font-family: ui-monospace, Menlo, monospace; font-size: ${t.fontSize}px; font-weight: ${t.boldTotals ? 600 : 400}; color: #000;
+    body { font-family: ${sanitizeFontFamily(t.fontFamily)}; font-size: ${t.fontSize}px; font-weight: ${t.boldTotals ? 600 : 400}; color: #000;
            width: ${w}mm; margin: 0 auto; padding: 4px 2px; }
     .ttl { text-align: center; font-weight: 800; font-size: ${t.fontSize + 6}px; margin-bottom: 4px; }
     .ord { font-weight: 700; }
@@ -352,7 +458,6 @@ export function kotTicketHtml(opts: {
     <div class="ord">Order #${opts.orderNumber}</div>
     <div class="meta">
       ${metaRows.join('')}
-      ${orderTakenBy}
     </div>
     <table><thead><tr><th class="qty">Qty</th><th>Item</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="foot">— fire to station —</div>

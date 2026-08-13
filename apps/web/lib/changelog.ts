@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.5.0';
+export const APP_VERSION = '2.5.1';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,13 @@ export const APP_VERSION = '2.5.0';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.5.1', date: '2026-08-13',
+    changes: [
+      'Settings → Printing: choose a font for the bill and KOT/BOT tickets (monospace, Arial, system sans-serif, Verdana, Tahoma, Georgia, Courier New)',
+      'Every line on the bill\'s order-info block (Time/Table/Guest Count/Cashier/Waiter/Customer) and totals block (Sub Total/Discount/Service Charge/VAT) can now be individually shown, hidden, renamed, and reordered — same for the KOT/BOT order-info block',
+    ],
+  },
   {
     version: '2.5.0', date: '2026-08-12',
     changes: [

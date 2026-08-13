@@ -12,10 +12,12 @@ import {
   isDesktopShell,
   ticketDate,
   ticketTime,
+  FONT_OPTIONS,
   type BillTemplate,
   type KotTemplate,
   type DesktopPrinter,
   type PrinterPrefs,
+  type TemplateLine,
 } from '@/lib/printing';
 import Spinner from '@/components/Spinner';
 
@@ -25,6 +27,85 @@ const SAMPLE_ITEMS = [
   { name: 'Chicken Momo', qty: 1, cents: 45000, mods: '', notes: '' },
   { name: 'Chocolate Cake', qty: 1, cents: 55000, mods: '', notes: 'birthday candle' },
 ];
+
+// Placeholder values for the live preview — same "id → value" resolution the
+// real Receipt.tsx/kotMetaPairs use, just fed made-up sample data instead of
+// a real order, so reordering/relabeling/toggling a line is visible
+// immediately without needing to ring up a real order first.
+const BILL_SAMPLE_VALUE: Record<string, string> = {
+  time: ticketTime(new Date()),
+  table: 'T-04',
+  guestCount: '4',
+  cashier: 'Sita Sharma',
+  waiter: 'Ramesh',
+  customer: 'Ram Kumar (98012...)',
+};
+const KOT_SAMPLE_VALUE: Record<string, string> = {
+  time: ticketTime(new Date()),
+  orderType: 'Dine-In',
+  table: 'T-04',
+  guestCount: '4',
+  waiter: 'Captain Ramesh',
+};
+function previewTotalsRow(
+  line: TemplateLine,
+  subtotalCents: number,
+  vatCents: number,
+  vatRate: number,
+): { label: string; value: string } | null {
+  switch (line.id) {
+    case 'subtotal': return { label: line.label, value: formatMoney(subtotalCents) };
+    case 'discount': return { label: `${line.label} (Staff 10%)`, value: `-${formatMoney(5000)}` };
+    case 'serviceCharge': return { label: `${line.label} (10%)`, value: formatMoney(Math.round(subtotalCents * 0.1)) };
+    case 'netBeforeTax': return { label: line.label, value: formatMoney(subtotalCents) };
+    case 'vat': return { label: `${line.label} (${Math.round(vatRate * 100)}%)`, value: formatMoney(vatCents) };
+    default: return null;
+  }
+}
+
+// Shared editor for a TemplateLine[] section (bill meta lines, bill totals
+// lines, KOT meta lines) — an enabled toggle, an editable label, and ↑/↓
+// buttons to reorder. Every line on the ticket is customizable through
+// exactly this one control, in every section it appears.
+function LineListEditor({ lines, onChange }: { lines: TemplateLine[]; onChange: (lines: TemplateLine[]) => void }) {
+  const sorted = [...lines].sort((a, b) => a.order - b.order);
+  function setLine(id: string, patch: Partial<TemplateLine>) {
+    onChange(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+  function move(id: string, dir: -1 | 1) {
+    const idx = sorted.findIndex((l) => l.id === id);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx];
+    const b = sorted[swapIdx];
+    onChange(lines.map((l) => (l.id === a.id ? { ...l, order: b.order } : l.id === b.id ? { ...l, order: a.order } : l)));
+  }
+  return (
+    <div className="space-y-1.5">
+      {sorted.map((line, i) => (
+        <div key={line.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 dark:border-slate-600">
+          <div className="flex flex-col leading-none">
+            <button type="button" onClick={() => move(line.id, -1)} disabled={i === 0}
+              className="px-1 text-slate-400 hover:text-slate-700 disabled:opacity-25 dark:hover:text-slate-200" aria-label={`Move ${line.label} up`}>▲</button>
+            <button type="button" onClick={() => move(line.id, 1)} disabled={i === sorted.length - 1}
+              className="px-1 text-slate-400 hover:text-slate-700 disabled:opacity-25 dark:hover:text-slate-200" aria-label={`Move ${line.label} down`}>▼</button>
+          </div>
+          <button type="button" onClick={() => setLine(line.id, { enabled: !line.enabled })}
+            aria-label={`${line.enabled ? 'Hide' : 'Show'} ${line.label}`}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${line.enabled ? 'bg-brand-500' : 'bg-slate-300'}`}>
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${line.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </button>
+          <input
+            className="input flex-1 py-1 text-sm"
+            value={line.label}
+            onChange={(e) => setLine(line.id, { label: e.target.value })}
+            aria-label={`Label for ${line.id}`}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function PrintingPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -114,6 +195,14 @@ export default function PrintingPage() {
 
   const subtotal = useMemo(() => SAMPLE_ITEMS.reduce((s, i) => s + i.cents * i.qty, 0), []);
   const vat = Math.round(subtotal * (settings?.vatRate ?? 0.13));
+  // Keeps the preview's Grand Total consistent with whichever sample rows
+  // are actually toggled on above it (same 10%/Rs 50 sample amounts used by
+  // previewTotalsRow) — the real printed bill always uses the real order's
+  // own totals, this is preview-only bookkeeping.
+  const previewGrandTotal = subtotal
+    - (bill?.totalsLines.some((l) => l.id === 'discount' && l.enabled) ? 5000 : 0)
+    + (bill?.totalsLines.some((l) => l.id === 'serviceCharge' && l.enabled) ? Math.round(subtotal * 0.1) : 0)
+    + vat;
 
   if (!bill || !kot) {
     return <div className="p-8 text-sm text-slate-400">{err ?? 'Loading…'}</div>;
@@ -202,13 +291,19 @@ export default function PrintingPage() {
               <input className="input" value={bill.headerText} onChange={(e) => setBill({ ...bill, headerText: e.target.value })} placeholder="e.g. Happy hour 4–6pm!" /></div>
             <div><label className="label">Footer line</label>
               <input className="input" value={bill.footerText} onChange={(e) => setBill({ ...bill, footerText: e.target.value })} /></div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><label className="label">Font size ({bill.fontSize}px)</label>
-                <input type="range" min={9} max={16} value={bill.fontSize} onChange={(e) => setBill({ ...bill, fontSize: Number(e.target.value) })} className="w-full" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Font</label>
+                <select className="input" value={bill.fontFamily} onChange={(e) => setBill({ ...bill, fontFamily: e.target.value })}>
+                  {FONT_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select></div>
               <div><label className="label">Paper width</label>
                 <select className="input" value={bill.paperWidthMm} onChange={(e) => setBill({ ...bill, paperWidthMm: Number(e.target.value) as 58 | 80 })}>
                   <option value={80}>80 mm</option><option value={58}>58 mm</option>
                 </select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Font size ({bill.fontSize}px)</label>
+                <input type="range" min={9} max={16} value={bill.fontSize} onChange={(e) => setBill({ ...bill, fontSize: Number(e.target.value) })} className="w-full" /></div>
               <div><label className="label">Margin ({bill.marginMm}mm)</label>
                 <input type="range" min={0} max={10} value={bill.marginMm} onChange={(e) => setBill({ ...bill, marginMm: Number(e.target.value) })} className="w-full" /></div>
             </div>
@@ -217,22 +312,24 @@ export default function PrintingPage() {
               <Toggle label="Address" on={bill.showAddress} onChange={(v) => setBill({ ...bill, showAddress: v })} />
               <Toggle label="Phone" on={bill.showPhone} onChange={(v) => setBill({ ...bill, showPhone: v })} />
               <Toggle label="PAN / Tax ID" on={bill.showTaxId} onChange={(v) => setBill({ ...bill, showTaxId: v })} />
-              <Toggle label="Table" on={bill.showTable} onChange={(v) => setBill({ ...bill, showTable: v })} />
-              <Toggle label="Waiter" on={bill.showWaiter} onChange={(v) => setBill({ ...bill, showWaiter: v })} />
-              <Toggle label="Guest count" on={bill.showGuests} onChange={(v) => setBill({ ...bill, showGuests: v })} />
-              <Toggle label="Cashier" on={bill.showCashier} onChange={(v) => setBill({ ...bill, showCashier: v })} />
-              <Toggle label="Customer" on={bill.showCustomer} onChange={(v) => setBill({ ...bill, showCustomer: v })} />
               <Toggle label="Item notes" on={bill.showItemNotes} onChange={(v) => setBill({ ...bill, showItemNotes: v })} />
               <Toggle label="Rate column" on={bill.showRate} onChange={(v) => setBill({ ...bill, showRate: v })} />
-              <Toggle label="VAT breakdown" on={bill.showVatBreakdown} onChange={(v) => setBill({ ...bill, showVatBreakdown: v })} />
               <Toggle label="Payment mode / Txn ID" on={bill.showPaymentMode} onChange={(v) => setBill({ ...bill, showPaymentMode: v })} />
               <Toggle label="WiFi password" on={bill.showWifi} onChange={(v) => setBill({ ...bill, showWifi: v })} />
+            </div>
+            <div className="pt-2">
+              <p className="label mb-1.5">Order info lines <span className="font-normal normal-case text-slate-400">— show/hide, rename, reorder (Bill No &amp; Date always print first)</span></p>
+              <LineListEditor lines={bill.metaLines} onChange={(metaLines) => setBill({ ...bill, metaLines })} />
+            </div>
+            <div className="pt-2">
+              <p className="label mb-1.5">Totals breakdown <span className="font-normal normal-case text-slate-400">— show/hide, rename, reorder (Grand Total always prints last)</span></p>
+              <LineListEditor lines={bill.totalsLines} onChange={(totalsLines) => setBill({ ...bill, totalsLines })} />
             </div>
           </div>
 
           {/* live preview */}
           <div className="flex items-start justify-center rounded-xl bg-slate-100 p-6 dark:bg-slate-900/60">
-            <div className="bg-white py-3 font-mono text-black shadow-md" style={{ width: bill.paperWidthMm === 80 ? 300 : 220, paddingLeft: 12 + bill.marginMm * 4, paddingRight: 12 + bill.marginMm * 4, fontSize: bill.fontSize, fontWeight: bill.boldTotals ? 500 : 400 }}>
+            <div className="bg-white py-3 text-black shadow-md" style={{ width: bill.paperWidthMm === 80 ? 300 : 220, paddingLeft: 12 + bill.marginMm * 4, paddingRight: 12 + bill.marginMm * 4, fontSize: bill.fontSize, fontWeight: bill.boldTotals ? 500 : 400, fontFamily: bill.fontFamily }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontWeight: 800, fontSize: bill.fontSize + 7 }}>{settings?.restaurantName || 'Your Restaurant'}</div>
                 {bill.showAddress && <div>{settings?.address || 'Street, City'}</div>}
@@ -243,16 +340,11 @@ export default function PrintingPage() {
               </div>
               <div style={{ borderTop: '2px dashed #000', borderBottom: '2px dashed #000', padding: '4px 0', marginTop: 5 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Bill No: <b>INV-89201</b></span><span>Date: <b>{ticketDate(new Date())}</b></span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Time: <b>{ticketTime(new Date())}</b></span>
-                  {bill.showTable && <span>Table No: <b>T-04</b></span>}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  {bill.showGuests && <span>Guest Count: <b>4</b></span>}
-                  {bill.showCashier && <span>Cashier: <b>Sita Sharma</b></span>}
-                </div>
-                {bill.showWaiter && <div>Waiter: <b>Ramesh</b></div>}
-                {bill.showCustomer && <div>Customer: Ram Kumar (98012...)</div>}
+                {[...bill.metaLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled).map((l) => (
+                  <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
+                    <span>{l.label}: <b>{BILL_SAMPLE_VALUE[l.id] ?? '—'}</b></span>
+                  </div>
+                ))}
               </div>
               <table style={{ width: '100%', marginTop: 5, borderCollapse: 'collapse' }}>
                 <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th style={{ width: '2em', textAlign: 'center' }}>Qty</th><th>Item</th>{bill.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}<th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
@@ -271,12 +363,16 @@ export default function PrintingPage() {
                 </tbody>
               </table>
               <div style={{ borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3 }}>
-                {bill.showVatBreakdown && (<>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sub Total</span><span>{formatMoney(subtotal)}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>VAT ({Math.round((settings?.vatRate ?? 0.13) * 100)}%)</span><span>{formatMoney(vat)}</span></div>
-                </>)}
+                {[...bill.totalsLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled)
+                  .map((l) => previewTotalsRow(l, subtotal, vat, settings?.vatRate ?? 0.13))
+                  .filter((row): row is { label: string; value: string } => row != null)
+                  .map((row) => (
+                    <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>{row.label}</span><span>{row.value}</span>
+                    </div>
+                  ))}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '1.15em', borderTop: '2px solid #000', marginTop: 3, paddingTop: 3 }}>
-                  <span>GRAND TOTAL</span><span>{formatMoney(subtotal + vat)}</span>
+                  <span>GRAND TOTAL</span><span>{formatMoney(previewGrandTotal)}</span>
                 </div>
               </div>
               {bill.showPaymentMode && (
@@ -300,41 +396,42 @@ export default function PrintingPage() {
               <input className="input" value={kot.kotTitle} onChange={(e) => setKot({ ...kot, kotTitle: e.target.value })} /></div>
             <div><label className="label">BOT title</label>
               <input className="input" value={kot.botTitle} onChange={(e) => setKot({ ...kot, botTitle: e.target.value })} /></div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><label className="label">Font size ({kot.fontSize}px)</label>
-                <input type="range" min={10} max={18} value={kot.fontSize} onChange={(e) => setKot({ ...kot, fontSize: Number(e.target.value) })} className="w-full" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Font</label>
+                <select className="input" value={kot.fontFamily} onChange={(e) => setKot({ ...kot, fontFamily: e.target.value })}>
+                  {FONT_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select></div>
               <div><label className="label">Paper width</label>
                 <select className="input" value={kot.paperWidthMm} onChange={(e) => setKot({ ...kot, paperWidthMm: Number(e.target.value) as 58 | 80 })}>
                   <option value={80}>80 mm</option><option value={58}>58 mm</option>
                 </select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Font size ({kot.fontSize}px)</label>
+                <input type="range" min={10} max={18} value={kot.fontSize} onChange={(e) => setKot({ ...kot, fontSize: Number(e.target.value) })} className="w-full" /></div>
               <div><label className="label">Margin ({kot.marginMm}mm)</label>
                 <input type="range" min={0} max={10} value={kot.marginMm} onChange={(e) => setKot({ ...kot, marginMm: Number(e.target.value) })} className="w-full" /></div>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-1">
               <Toggle label="Bold, larger print" on={kot.boldTotals} onChange={(v) => setKot({ ...kot, boldTotals: v })} />
-              <Toggle label="Order type" on={kot.showOrderType} onChange={(v) => setKot({ ...kot, showOrderType: v })} />
-              <Toggle label="Table" on={kot.showTable} onChange={(v) => setKot({ ...kot, showTable: v })} />
-              <Toggle label="Guest count" on={kot.showGuests} onChange={(v) => setKot({ ...kot, showGuests: v })} />
-              <Toggle label="Order taken by" on={kot.showWaiter} onChange={(v) => setKot({ ...kot, showWaiter: v })} />
-              <Toggle label="Time" on={kot.showTime} onChange={(v) => setKot({ ...kot, showTime: v })} />
               <Toggle label="Item notes" on={kot.showItemNotes} onChange={(v) => setKot({ ...kot, showItemNotes: v })} />
+            </div>
+            <div className="pt-2">
+              <p className="label mb-1.5">Order info lines <span className="font-normal normal-case text-slate-400">— show/hide, rename, reorder (KOT/BOT No &amp; Date always print first)</span></p>
+              <LineListEditor lines={kot.metaLines} onChange={(metaLines) => setKot({ ...kot, metaLines })} />
             </div>
           </div>
 
           <div className="flex items-start justify-center rounded-xl bg-slate-100 p-6 dark:bg-slate-900/60">
-            <div className="bg-white py-3 font-mono text-black shadow-md" style={{ width: kot.paperWidthMm === 80 ? 300 : 220, paddingLeft: 12 + kot.marginMm * 4, paddingRight: 12 + kot.marginMm * 4, fontSize: kot.fontSize, fontWeight: kot.boldTotals ? 600 : 400 }}>
+            <div className="bg-white py-3 text-black shadow-md" style={{ width: kot.paperWidthMm === 80 ? 300 : 220, paddingLeft: 12 + kot.marginMm * 4, paddingRight: 12 + kot.marginMm * 4, fontSize: kot.fontSize, fontWeight: kot.boldTotals ? 600 : 400, fontFamily: kot.fontFamily }}>
               <div style={{ textAlign: 'center', fontWeight: 800, fontSize: kot.fontSize + 6 }}>{kot.kotTitle}</div>
               <div style={{ borderTop: '2px dashed #000', borderBottom: '2px dashed #000', padding: '4px 0', marginTop: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>KOT No: <b>K-01042</b></span><span>Date: <b>{ticketDate(new Date())}</b></span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  {kot.showTime && <span>Time: <b>{ticketTime(new Date())}</b></span>}
-                  {kot.showOrderType && <span>Order Type: <b>Dine-In</b></span>}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  {kot.showTable && <span>Table No: <b>T-04</b></span>}
-                  {kot.showGuests && <span>Guest Count: <b>4</b></span>}
-                </div>
-                {kot.showWaiter && <div>Order Taken By: <b>Captain Ramesh</b></div>}
+                {[...kot.metaLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled).map((l) => (
+                  <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
+                    <span>{l.label}: <b>{KOT_SAMPLE_VALUE[l.id] ?? '—'}</b></span>
+                  </div>
+                ))}
               </div>
               <table style={{ width: '100%', marginTop: 4, borderCollapse: 'collapse' }}>
                 <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th style={{ width: '2em', textAlign: 'center' }}>Qty</th><th>Item</th></tr></thead>

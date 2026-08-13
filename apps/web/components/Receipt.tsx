@@ -8,6 +8,7 @@ import { formatMoney } from '@/lib/api';
 import { formatBs } from '@/lib/bs-date';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
 import { billTemplateOf, kotTemplateOf, kotMetaPairs, ticketDate, ticketTime } from '@/lib/printing';
+import type { TemplateLine } from '@/lib/printing';
 import type { Order, OrderItem, Settings } from '@/lib/types';
 
 export type ReceiptMode = 'BILL' | 'KOT' | 'BOT' | 'CANCEL';
@@ -46,16 +47,33 @@ export default function Receipt({
   const unsynced = order.number === 0;
   const docNo = order.fiscalInvoiceNo != null ? `INV-${order.fiscalInvoiceNo}` : unsynced ? 'PROVISIONAL' : `INV-${order.number}`;
 
+  // Resolves a bill metaLine's id to its live value for this order — mirrors
+  // kotMetaPairs' own per-id resolver (lib/printing.ts) so both templates'
+  // "every line customizable" behavior works the same way.
+  const billMetaValueOf = (id: string): string | null => {
+    switch (id) {
+      case 'time': return ticketTime(now);
+      case 'table': return order.table?.name || null;
+      case 'guestCount': return String(order.guestCount);
+      case 'cashier': return order.cashierName || null;
+      case 'waiter': return order.waiter?.name || null;
+      case 'customer': return order.customerName ? `${order.customerName}${order.customerPhone ? ` (${order.customerPhone})` : ''}` : null;
+      default: return null;
+    }
+  };
   // Two-column metadata grid: [label, value] pairs laid out two-per-row,
-  // e.g. "Bill No: INV-89201    Date: 28-Jul-2026".
+  // e.g. "Bill No: INV-89201    Date: 28-Jul-2026". Bill No/Date always
+  // print first, fixed — every other line's visibility/label/order comes
+  // from the template (Settings → Printing).
   const metaPairs: [string, string][] = isBill
     ? [
-        ['Bill No', docNo],
-        ['Date', ticketDate(now)],
-        ['Time', ticketTime(now)],
-        ...(bt.showTable && order.table ? [['Table No', order.table.name] as [string, string]] : []),
-        ...(bt.showGuests ? [['Guest Count', String(order.guestCount)] as [string, string]] : []),
-        ...(bt.showCashier && order.cashierName ? [['Cashier', order.cashierName] as [string, string]] : []),
+        ['Bill No', docNo] as [string, string],
+        ['Date', ticketDate(now)] as [string, string],
+        ...[...bt.metaLines]
+          .sort((a, b) => a.order - b.order)
+          .filter((l) => l.enabled)
+          .map((l): [string, string | null] => [l.label, billMetaValueOf(l.id)])
+          .filter((pair): pair is [string, string] => pair[1] != null),
       ]
     // Shared with kotTicketHtml (lib/printing.ts) — the exact same function
     // builds the auto-printed KOT/BOT's meta grid, so a manually-printed
@@ -69,13 +87,13 @@ export default function Receipt({
         ticketNo: (mode === 'BOT' ? order.botNo : order.kotNo) ?? order.number,
         orderType: order.type,
         table: order.table?.name,
+        waiter: order.waiter?.name,
         guestCount: order.guestCount,
         unsynced,
       });
   const metaRows: [string, string][][] = [];
   for (let i = 0; i < metaPairs.length; i += 2) metaRows.push([metaPairs[i], metaPairs[i + 1]].filter(Boolean) as [string, string][]);
 
-  const orderTakenByName = isBill ? null : (kt.showWaiter && order.waiter?.name) || null;
   // total − VAT is the correct pre-VAT base in both pricing modes: when menu
   // prices are VAT-exclusive this equals subtotal−discount+service (VAT was
   // added on top, so subtracting it back out returns exactly that); when
@@ -87,7 +105,7 @@ export default function Receipt({
   const netBeforeTax = order.totalCents - order.taxCents;
 
   return (
-    <div id="print-area" style={{ fontSize: fs, fontWeight: bold ? 500 : 400 }}>
+    <div id="print-area" style={{ fontSize: fs, fontWeight: bold ? 500 : 400, fontFamily: isBill ? bt.fontFamily : kt.fontFamily }}>
       <div style={{ textAlign: 'center', marginBottom: 8 }}>
         {isBill ? (
           <>
@@ -126,11 +144,6 @@ export default function Receipt({
             ))}
           </div>
         ))}
-        {orderTakenByName && <div style={{ padding: '1px 0' }}>Order Taken By: <b>{orderTakenByName}</b></div>}
-        {isBill && bt.showWaiter && order.waiter && <div style={{ padding: '1px 0' }}>Waiter: <b>{order.waiter.name}</b></div>}
-        {isBill && bt.showCustomer && order.customerName && (
-          <div style={{ padding: '1px 0' }}>Customer: {order.customerName}{order.customerPhone ? ` (${order.customerPhone})` : ''}</div>
-        )}
         {isBill && <div style={{ fontSize: sub, marginTop: 2 }}>BS {formatBs(now)}</div>}
       </div>
 
@@ -168,21 +181,12 @@ export default function Receipt({
 
       {isBill && (
         <div style={{ borderTop: '2px dashed #000', marginTop: 6, paddingTop: 4 }}>
-          {bt.showVatBreakdown && (
-            <>
-              <Row label="Sub Total" value={formatMoney(order.subtotalCents)} />
-              {order.discountCents > 0 && (
-                <Row label={order.discountLabel ? `Discount (${order.discountLabel})` : 'Discount'} value={`-${formatMoney(order.discountCents)}`} />
-              )}
-              {order.serviceChargeCents > 0 && (
-                <Row label={`Service charge (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`} value={formatMoney(order.serviceChargeCents)} />
-              )}
-              {settings?.pricesIncludeVat && (
-                <Row label="Net Amount Before Tax" value={formatMoney(netBeforeTax)} />
-              )}
-              <Row label={`VAT (${Math.round((settings?.vatRate ?? 0.13) * 100)}%)`} value={formatMoney(order.taxCents)} />
-            </>
-          )}
+          {[...bt.totalsLines]
+            .sort((a, b) => a.order - b.order)
+            .filter((l) => l.enabled)
+            .map((l) => totalsRowFor(l, order, settings, netBeforeTax))
+            .filter((row): row is { label: string; value: string } => row != null)
+            .map((row) => <Row key={row.label} label={row.label} value={row.value} />)}
           <div style={{ borderTop: '2px solid #000', marginTop: 4, paddingTop: 4 }}>
             <Row label="GRAND TOTAL" value={formatMoney(order.totalCents)} bold big />
           </div>
@@ -218,4 +222,34 @@ function Row({ label, value, bold, big }: { label: string; value: string; bold?:
       <span>{value}</span>
     </div>
   );
+}
+
+// Resolves a totalsLine's id to its live label/value for this order — each
+// money row only appears when its underlying amount actually applies (a
+// zero discount/service charge stays hidden even if the line is enabled),
+// same gating as before this became template-driven. Grand Total is not
+// part of this list — it's always rendered fixed, last.
+function totalsRowFor(
+  line: TemplateLine,
+  order: Order,
+  settings: Settings | null,
+  netBeforeTax: number,
+): { label: string; value: string } | null {
+  switch (line.id) {
+    case 'subtotal':
+      return { label: line.label, value: formatMoney(order.subtotalCents) };
+    case 'discount':
+      if (order.discountCents <= 0) return null;
+      return { label: order.discountLabel ? `${line.label} (${order.discountLabel})` : line.label, value: `-${formatMoney(order.discountCents)}` };
+    case 'serviceCharge':
+      if (order.serviceChargeCents <= 0) return null;
+      return { label: `${line.label} (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`, value: formatMoney(order.serviceChargeCents) };
+    case 'netBeforeTax':
+      if (!settings?.pricesIncludeVat) return null;
+      return { label: line.label, value: formatMoney(netBeforeTax) };
+    case 'vat':
+      return { label: `${line.label} (${Math.round((settings?.vatRate ?? 0.13) * 100)}%)`, value: formatMoney(order.taxCents) };
+    default:
+      return null;
+  }
 }
