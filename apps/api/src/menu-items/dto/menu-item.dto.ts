@@ -71,6 +71,12 @@ export class CreateMenuItemDto {
   @IsString()
   printerName?: string | null;
 
+  // Nepali government commodity classification code, shown on the bill's
+  // optional HS Code column (Settings → Printing).
+  @IsOptional()
+  @IsString()
+  hsCode?: string | null;
+
   // Optional list of ModifierGroup ids to attach.
   @IsOptional()
   @IsArray()
@@ -141,6 +147,10 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsString()
   printerName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  hsCode?: string | null;
 
   @IsOptional()
   @IsArray()

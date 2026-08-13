@@ -37,6 +37,7 @@ const orderInclude = {
   payments: true,
   table: { select: { id: true, name: true, area: true } },
   waiter: { select: { id: true, name: true } },
+  terminal: { select: { id: true, name: true } },
 };
 
 @Injectable()
@@ -100,7 +101,7 @@ export class OrdersService {
           const v = variantById.get(l.variantId);
           if (!v || v.menuItemId !== mi.id)
             throw new BadRequestException('Invalid variant for this item');
-          return { ...base, menuItemId: mi.id, nameSnapshot: `${mi.name} (${v.name})`, unitPriceCents: v.priceCents, station: mi.station };
+          return { ...base, menuItemId: mi.id, nameSnapshot: `${mi.name} (${v.name})`, unitPriceCents: v.priceCents, station: mi.station, hsCodeSnapshot: mi.hsCode };
         }
         // Otherwise price comes from the DB (authoritative) at the correct tier.
         return {
@@ -109,6 +110,7 @@ export class OrdersService {
           nameSnapshot: mi.name,
           unitPriceCents: this.tierPrice(mi, type),
           station: mi.station, // KOT/BOT/Billing routing snapshot
+          hsCodeSnapshot: mi.hsCode,
         };
       }
       // Open item: custom name + price, not linked to the menu. Station is
@@ -120,6 +122,7 @@ export class OrdersService {
         menuItemId: null,
         nameSnapshot: l.name,
         unitPriceCents: l.unitPriceCents,
+        hsCodeSnapshot: null,
         station: (((l as any).station ?? 'BILLING') as any),
       };
     });
@@ -427,6 +430,7 @@ export class OrdersService {
             menuItemId: item.menuItemId,
             nameSnapshot: item.nameSnapshot,
             unitPriceCents: item.unitPriceCents,
+            hsCodeSnapshot: item.hsCodeSnapshot,
             quantity: qty,
             modifiers: (item.modifiers ?? []) as any,
             notes: item.notes,
@@ -686,7 +690,10 @@ export class OrdersService {
           giftCardId = await this.giftCards.redeem(tx, p.giftCardCode, p.amountCents, id);
         }
         await tx.payment.create({
-          data: { orderId: id, method: p.method, amountCents: p.amountCents, giftCardId, gatewayRef: p.gatewayRef },
+          data: {
+            orderId: id, method: p.method, amountCents: p.amountCents, giftCardId, gatewayRef: p.gatewayRef,
+            receivedCents: p.receivedCents ?? p.amountCents,
+          },
         });
       }
       const updated = await tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
@@ -998,7 +1005,7 @@ export class OrdersService {
           return tx.orderItem.create({
             data: {
               orderId: id, menuItemId: it.menuItemId, nameSnapshot: it.nameSnapshot,
-              unitPriceCents: it.unitPriceCents, quantity: want,
+              unitPriceCents: it.unitPriceCents, hsCodeSnapshot: it.hsCodeSnapshot, quantity: want,
               modifiers: (it.modifiers ?? []) as any, notes: it.notes,
               station: it.station, kotStatus: it.kotStatus, kotPrintedAt: it.kotPrintedAt,
             },

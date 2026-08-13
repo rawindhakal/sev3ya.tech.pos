@@ -74,6 +74,14 @@ export interface BillTemplate {
   showRate: boolean;        // per-unit rate column in the item table
   showPaymentMode: boolean; // payment method + gateway/txn ref, once paid
   showWifi: boolean;
+  showCurrencySymbol: boolean; // false = plain numbers, no "Rs" prefix
+  // 'grid' = today's two-per-row pairing; 'list' = one line per row.
+  metaLayout: 'grid' | 'list';
+  showHsCode: boolean;         // adds an HS Code column to the item table
+  showAmountInWords: boolean;  // "In Words: One Thousand Fifteen Only", after Grand Total
+  showReceivedChange: boolean; // Received Amount / Change, when a cash tender overpaid
+  showSignatureLines: boolean; // blank Cashier / Customer signature lines at the bottom
+  boxedPaymentMode: boolean;   // draws a border around the Payment Mode section
 }
 
 export interface KotTemplate {
@@ -97,6 +105,13 @@ const DEFAULT_BILL_META_LINES: TemplateLine[] = [
   { id: 'cashier', enabled: true, label: 'Cashier', order: 3 },
   { id: 'waiter', enabled: true, label: 'Waiter', order: 4 },
   { id: 'customer', enabled: true, label: 'Customer', order: 5 },
+  { id: 'area', enabled: false, label: 'Area', order: 6 },
+  { id: 'fiscalYear', enabled: false, label: 'Fiscal Year', order: 7 },
+  { id: 'terminal', enabled: false, label: 'Service Provider', order: 8 },
+  // Was a hardcoded, always-on line ("BS {date}") before this became
+  // customizable — defaults enabled so nothing disappears from an existing
+  // tenant's bill.
+  { id: 'nepaliDate', enabled: true, label: 'Nepali Date', order: 9 },
 ];
 const DEFAULT_BILL_TOTALS_LINES: TemplateLine[] = [
   { id: 'subtotal', enabled: true, label: 'Sub Total', order: 0 },
@@ -131,6 +146,13 @@ export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
   showRate: true,
   showPaymentMode: true,
   showWifi: true,
+  showCurrencySymbol: true,
+  metaLayout: 'grid',
+  showHsCode: false,
+  showAmountInWords: false,
+  showReceivedChange: false,
+  showSignatureLines: false,
+  boxedPaymentMode: false,
 };
 
 export const DEFAULT_KOT_TEMPLATE: KotTemplate = {
@@ -157,10 +179,24 @@ interface LegacyKotFields {
   showGuests?: boolean; showTime?: boolean;
 }
 
+// Ensures every id in `defaults` exists in `lines`, appending any missing
+// ones (in their own default enabled/label, ordered after whatever's
+// already there) — so a template saved before a given line id existed
+// still picks it up on the next read instead of silently missing it
+// forever. Cheap no-op once nothing's missing. General-purpose: this keeps
+// working the same way for any future new line id, not just this deploy's.
+function withMissingLines(lines: TemplateLine[], defaults: TemplateLine[]): TemplateLine[] {
+  const have = new Set(lines.map((l) => l.id));
+  const missing = defaults.filter((d) => !have.has(d.id));
+  if (!missing.length) return lines;
+  const maxOrder = lines.reduce((m, l) => Math.max(m, l.order), -1);
+  return [...lines, ...missing.map((d, i) => ({ ...d, order: maxOrder + 1 + i }))];
+}
+
 export const billTemplateOf = (s: Settings | null | undefined): BillTemplate => {
   const saved = ((s?.billTemplate as (Partial<BillTemplate> & LegacyBillFields)) ?? {});
   const hasLegacyMetaFields = 'showTable' in saved || 'showWaiter' in saved || 'showGuests' in saved || 'showCustomer' in saved || 'showCashier' in saved;
-  const metaLines = saved.metaLines ?? (hasLegacyMetaFields
+  const metaLinesBase = saved.metaLines ?? (hasLegacyMetaFields
     ? DEFAULT_BILL_META_LINES.map((l) => ({
         ...l,
         enabled:
@@ -172,6 +208,7 @@ export const billTemplateOf = (s: Settings | null | undefined): BillTemplate => 
           : l.enabled, // 'time' had no prior toggle — stays enabled
       }))
     : DEFAULT_BILL_META_LINES);
+  const metaLines = withMissingLines(metaLinesBase, DEFAULT_BILL_META_LINES);
   const totalsLines = saved.totalsLines ?? ('showVatBreakdown' in saved
     ? DEFAULT_BILL_TOTALS_LINES.map((l) => ({ ...l, enabled: saved.showVatBreakdown ?? l.enabled }))
     : DEFAULT_BILL_TOTALS_LINES);
@@ -181,7 +218,7 @@ export const billTemplateOf = (s: Settings | null | undefined): BillTemplate => 
 export const kotTemplateOf = (s: Settings | null | undefined): KotTemplate => {
   const saved = ((s?.kotTemplate as (Partial<KotTemplate> & LegacyKotFields)) ?? {});
   const hasLegacyMetaFields = 'showOrderType' in saved || 'showTable' in saved || 'showWaiter' in saved || 'showGuests' in saved || 'showTime' in saved;
-  const metaLines = saved.metaLines ?? (hasLegacyMetaFields
+  const metaLinesBase = saved.metaLines ?? (hasLegacyMetaFields
     ? DEFAULT_KOT_META_LINES.map((l) => ({
         ...l,
         enabled:
@@ -193,6 +230,7 @@ export const kotTemplateOf = (s: Settings | null | undefined): KotTemplate => {
           : l.enabled,
       }))
     : DEFAULT_KOT_META_LINES);
+  const metaLines = withMissingLines(metaLinesBase, DEFAULT_KOT_META_LINES);
   return { ...DEFAULT_KOT_TEMPLATE, ...saved, metaLines };
 };
 

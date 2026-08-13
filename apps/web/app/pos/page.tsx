@@ -1300,7 +1300,7 @@ export default function PosPage() {
     }
   }
 
-  async function confirmPayment(payments: { method: PaymentMethod; amountCents: number; giftCardCode?: string }[]) {
+  async function confirmPayment(payments: { method: PaymentMethod; amountCents: number; receivedCents?: number; giftCardCode?: string }[]) {
     if (!order) return;
     setBusy(true);
     try {
@@ -1323,7 +1323,7 @@ export default function PosPage() {
         const paidOrder: Order = {
           ...order,
           status: 'PAID',
-          payments: payments.map((p, i) => ({ id: `local-${i}`, method: p.method, amountCents: p.amountCents, giftCardId: null, gatewayRef: null })),
+          payments: payments.map((p, i) => ({ id: `local-${i}`, method: p.method, amountCents: p.amountCents, receivedCents: p.receivedCents ?? p.amountCents, giftCardId: null, gatewayRef: null })),
         };
         setPayOpen(false);
         flash('Order settled offline ✓ — will sync when back online');

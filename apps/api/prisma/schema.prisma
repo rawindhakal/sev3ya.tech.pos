@@ -50,6 +50,11 @@ model MenuItem {
   isAvailable        Boolean     @default(true)
   imageUrl           String?
 
+  // Nepali government commodity classification code, printed on the bill
+  // when Settings → Printing's "HS Code column" is enabled. Optional —
+  // most tenants leave this blank.
+  hsCode String?
+
   // Overrides both the station default AND Category.printerName — e.g. two
   // kitchen printers (K1/K2), route this one dish to K1 specifically. Null
   // falls back to Category.printerName, then the till's station default.
@@ -674,6 +679,10 @@ model OrderItem {
   nameSnapshot   String
   unitPriceCents Int
   quantity       Int    @default(1)
+  // Snapshot of the menu item's hsCode at time of ordering (same reasoning
+  // as nameSnapshot/unitPriceCents) — a printed/reprinted bill always shows
+  // the code that was true when sold, not whatever the menu says now.
+  hsCodeSnapshot String?
 
   // Selected modifiers stored as JSON snapshot: [{name, priceCents}]
   modifiers     Json?
@@ -728,6 +737,11 @@ model Payment {
   // integration (not just a manual "received via X" tag) — the provider's
   // transaction reference, for reconciliation.
   gatewayRef  String?
+  // Raw amount the cashier typed/received for this tender, before capping
+  // to what's actually owed — e.g. a cash tender where the customer handed
+  // over more than the bill. Null/equal to amountCents means no change was
+  // due. Powers the bill's optional Received/Change lines.
+  receivedCents Int?
   createdAt   DateTime      @default(now())
 
   @@index([orderId])

@@ -17,6 +17,7 @@ type ItemForm = {
   station: string;
   categoryId: string;
   printerName: string;
+  hsCode: string;
   isAvailable: boolean;
   variants: { name: string; price: string }[];
   isCombo: boolean;
@@ -32,6 +33,7 @@ const emptyForm: ItemForm = {
   station: 'BILLING',
   categoryId: '',
   printerName: '',
+  hsCode: '',
   isAvailable: true,
   variants: [],
   isCombo: false,
@@ -109,6 +111,7 @@ export default function MenuPage() {
       station: item.station ?? 'BILLING',
       categoryId: item.categoryId,
       printerName: item.printerName ?? '',
+      hsCode: item.hsCode ?? '',
       isAvailable: item.isAvailable,
       variants: (item.variants ?? []).map((v) => ({ name: v.name, price: (v.priceCents / 100).toString() })),
       isCombo: !!item.isCombo,
@@ -132,6 +135,7 @@ export default function MenuPage() {
         station: form.station,
         categoryId: form.categoryId,
         printerName: form.printerName.trim() || null,
+        hsCode: form.hsCode.trim() || null,
         isAvailable: form.isAvailable,
         variants: form.variants.filter((v) => v.name.trim()).map((v, i) => ({ name: v.name.trim(), priceCents: dollarsToCents(parseFloat(v.price || '0')), sortOrder: i })),
         isCombo: form.isCombo,
@@ -547,6 +551,19 @@ export default function MenuPage() {
               </p>
             </div>
           )}
+          <div>
+            <label className="label">HS Code (optional)</label>
+            <input
+              className="input"
+              value={form.hsCode}
+              onChange={(e) => setForm({ ...form, hsCode: e.target.value })}
+              placeholder="e.g. 2106.90"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              Nepali government commodity classification code — shown on the bill when Settings → Printing's
+              &quot;HS Code column&quot; is enabled. Leave blank if you don&apos;t use one.
+            </p>
+          </div>
           <div>
             <label className="label">Portions / variants (optional)</label>
             <p className="mb-2 text-xs text-slate-400">e.g. Whiskey → 30ml, 60ml. A variant&apos;s price replaces the base price when ordered.</p>

@@ -23,7 +23,7 @@ export default function PaymentPanel({
   totalCents: number;
   busy: boolean;
   onCancel: () => void;
-  onConfirm: (payments: { method: PaymentMethod; amountCents: number; giftCardCode?: string }[]) => void;
+  onConfirm: (payments: { method: PaymentMethod; amountCents: number; receivedCents?: number; giftCardCode?: string }[]) => void;
 }) {
   const [lines, setLines] = useState<TenderLine[]>([
     { method: 'CASH', amount: (totalCents / 100).toFixed(2) },
@@ -60,13 +60,17 @@ export default function PaymentPanel({
 
   function confirm() {
     if (lines.some((l) => l.method === 'GIFTCARD' && !l.giftCardCode?.trim())) return;
-    // Cap cash overpayment to the exact due (change is returned physically).
+    // Cap cash overpayment to the exact due (change is returned physically),
+    // but keep the raw typed amount too (receivedCents) — otherwise a cash
+    // overpayment has no record at all once capped, and the printed bill
+    // has nothing to show for Received Amount / Change.
     let left = totalCents;
     const payments = lines
       .map((l) => {
-        const c = Math.min(toCents(l.amount), Math.max(0, left));
+        const typed = toCents(l.amount);
+        const c = Math.min(typed, Math.max(0, left));
         left -= c;
-        return { method: l.method, amountCents: c, giftCardCode: l.method === 'GIFTCARD' ? l.giftCardCode?.trim().toUpperCase() : undefined };
+        return { method: l.method, amountCents: c, receivedCents: typed, giftCardCode: l.method === 'GIFTCARD' ? l.giftCardCode?.trim().toUpperCase() : undefined };
       })
       .filter((p) => p.amountCents > 0);
     // Ensure rounding never leaves the bill short.

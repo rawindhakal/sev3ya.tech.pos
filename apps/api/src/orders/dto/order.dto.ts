@@ -101,6 +101,10 @@ export class PaymentLineDto {
   // Real gateway transaction reference when method = ESEWA/KHALTI/FONEPAY
   // and paid via the live gateway integration (not a manual tag).
   @IsOptional() @IsString() gatewayRef?: string;
+  // Raw amount the cashier typed for this tender, before capping to what's
+  // actually owed (e.g. cash handed over exceeding the bill) — omitted or
+  // equal to amountCents means no change was due.
+  @IsOptional() @IsInt() @Min(0) receivedCents?: number;
 }
 
 export class PayDto {

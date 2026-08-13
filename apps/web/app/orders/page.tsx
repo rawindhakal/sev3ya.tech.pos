@@ -61,7 +61,7 @@ export default function OrdersPage() {
     }
   }
 
-  async function pay(payments: { method: PaymentMethod; amountCents: number }[]) {
+  async function pay(payments: { method: PaymentMethod; amountCents: number; receivedCents?: number }[]) {
     if (!payFor) return;
     setBusy(payFor.id);
     try {

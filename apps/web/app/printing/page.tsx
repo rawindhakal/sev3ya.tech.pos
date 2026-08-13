@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { api, formatMoney } from '@/lib/api';
+import { api, formatMoney, formatMoneyPlain, formatMoneyRounded } from '@/lib/api';
 import type { Settings } from '@/lib/types';
 import { notify } from '@/lib/dialog';
+import { amountInWords } from '@/lib/number-to-words';
 import {
   billTemplateOf,
   kotTemplateOf,
@@ -39,7 +40,12 @@ const BILL_SAMPLE_VALUE: Record<string, string> = {
   cashier: 'Sita Sharma',
   waiter: 'Ramesh',
   customer: 'Ram Kumar (98012...)',
+  area: 'Ground floor',
+  fiscalYear: '2083/084',
+  terminal: 'Till 1',
+  nepaliDate: ticketDate(new Date()),
 };
+const SAMPLE_HS_CODE = '2106.90';
 const KOT_SAMPLE_VALUE: Record<string, string> = {
   time: ticketTime(new Date()),
   orderType: 'Dine-In',
@@ -52,15 +58,24 @@ function previewTotalsRow(
   subtotalCents: number,
   vatCents: number,
   vatRate: number,
+  money: (cents: number) => string,
 ): { label: string; value: string } | null {
   switch (line.id) {
-    case 'subtotal': return { label: line.label, value: formatMoney(subtotalCents) };
-    case 'discount': return { label: `${line.label} (Staff 10%)`, value: `-${formatMoney(5000)}` };
-    case 'serviceCharge': return { label: `${line.label} (10%)`, value: formatMoney(Math.round(subtotalCents * 0.1)) };
-    case 'netBeforeTax': return { label: line.label, value: formatMoney(subtotalCents) };
-    case 'vat': return { label: `${line.label} (${Math.round(vatRate * 100)}%)`, value: formatMoney(vatCents) };
+    case 'subtotal': return { label: line.label, value: money(subtotalCents) };
+    case 'discount': return { label: `${line.label} (Staff 10%)`, value: `-${money(5000)}` };
+    case 'serviceCharge': return { label: `${line.label} (10%)`, value: money(Math.round(subtotalCents * 0.1)) };
+    case 'netBeforeTax': return { label: line.label, value: money(subtotalCents) };
+    case 'vat': return { label: `${line.label} (${Math.round(vatRate * 100)}%)`, value: money(vatCents) };
     default: return null;
   }
+}
+// Pairs [label, value] rows two-per-row (grid) or flat one-per-row (list) —
+// mirrors Receipt.tsx's own grid/list rendering exactly, so the preview
+// never lies about what the real bill will look like.
+function pairMetaRows(pairs: [string, string][]): [string, string][][] {
+  const rows: [string, string][][] = [];
+  for (let i = 0; i < pairs.length; i += 2) rows.push([pairs[i], pairs[i + 1]].filter(Boolean) as [string, string][]);
+  return rows;
 }
 
 // Shared editor for a TemplateLine[] section (bill meta lines, bill totals
@@ -208,6 +223,19 @@ export default function PrintingPage() {
     return <div className="p-8 text-sm text-slate-400">{err ?? 'Loading…'}</div>;
   }
 
+  // Preview-only: respects the "Currency symbol" toggle exactly like the
+  // real bill does (Receipt.tsx's own `money` helper).
+  const money = bill.showCurrencySymbol ? formatMoney : formatMoneyPlain;
+  const previewMetaPairs: [string, string][] = [
+    ['Bill No', 'INV-89201'],
+    ['Date', ticketDate(new Date())],
+    ...[...bill.metaLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled).map((l): [string, string] => [l.label, BILL_SAMPLE_VALUE[l.id] ?? '—']),
+  ];
+  // A fabricated cash overpayment (customer handed over Rs 1000 extra),
+  // only for demonstrating the Received & Change toggle — has no bearing on
+  // the (also fabricated) Grand Total above it.
+  const previewReceived = previewGrandTotal + 100000;
+
   const PrinterSelect = ({ label, value, onChange, role }: { label: string; value?: string; onChange: (v: string) => void; role: 'kot' | 'bot' | 'bill' }) => (
     <div>
       <label className="label">{label}</label>
@@ -307,14 +335,27 @@ export default function PrintingPage() {
               <div><label className="label">Margin ({bill.marginMm}mm)</label>
                 <input type="range" min={0} max={10} value={bill.marginMm} onChange={(e) => setBill({ ...bill, marginMm: Number(e.target.value) })} className="w-full" /></div>
             </div>
+            <div>
+              <label className="label">Order info layout</label>
+              <select className="input" value={bill.metaLayout} onChange={(e) => setBill({ ...bill, metaLayout: e.target.value as 'grid' | 'list' })}>
+                <option value="grid">Grid — two per row (compact)</option>
+                <option value="list">List — one per row</option>
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-2 pt-1">
               <Toggle label="Bold, larger print" on={bill.boldTotals} onChange={(v) => setBill({ ...bill, boldTotals: v })} />
+              <Toggle label="Currency symbol" on={bill.showCurrencySymbol} onChange={(v) => setBill({ ...bill, showCurrencySymbol: v })} />
               <Toggle label="Address" on={bill.showAddress} onChange={(v) => setBill({ ...bill, showAddress: v })} />
               <Toggle label="Phone" on={bill.showPhone} onChange={(v) => setBill({ ...bill, showPhone: v })} />
               <Toggle label="PAN / Tax ID" on={bill.showTaxId} onChange={(v) => setBill({ ...bill, showTaxId: v })} />
               <Toggle label="Item notes" on={bill.showItemNotes} onChange={(v) => setBill({ ...bill, showItemNotes: v })} />
               <Toggle label="Rate column" on={bill.showRate} onChange={(v) => setBill({ ...bill, showRate: v })} />
+              <Toggle label="HS Code column" on={bill.showHsCode} onChange={(v) => setBill({ ...bill, showHsCode: v })} />
               <Toggle label="Payment mode / Txn ID" on={bill.showPaymentMode} onChange={(v) => setBill({ ...bill, showPaymentMode: v })} />
+              <Toggle label="Boxed payment mode" on={bill.boxedPaymentMode} onChange={(v) => setBill({ ...bill, boxedPaymentMode: v })} />
+              <Toggle label="Received & Change" on={bill.showReceivedChange} onChange={(v) => setBill({ ...bill, showReceivedChange: v })} />
+              <Toggle label="Amount in words" on={bill.showAmountInWords} onChange={(v) => setBill({ ...bill, showAmountInWords: v })} />
+              <Toggle label="Signature lines" on={bill.showSignatureLines} onChange={(v) => setBill({ ...bill, showSignatureLines: v })} />
               <Toggle label="WiFi password" on={bill.showWifi} onChange={(v) => setBill({ ...bill, showWifi: v })} />
             </div>
             <div className="pt-2">
@@ -339,15 +380,20 @@ export default function PrintingPage() {
                 {bill.headerText && <div style={{ marginTop: 3 }}>{bill.headerText}</div>}
               </div>
               <div style={{ borderTop: '2px dashed #000', borderBottom: '2px dashed #000', padding: '4px 0', marginTop: 5 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Bill No: <b>INV-89201</b></span><span>Date: <b>{ticketDate(new Date())}</b></span></div>
-                {[...bill.metaLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled).map((l) => (
-                  <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
-                    <span>{l.label}: <b>{BILL_SAMPLE_VALUE[l.id] ?? '—'}</b></span>
-                  </div>
-                ))}
+                {bill.metaLayout === 'list'
+                  ? previewMetaPairs.map(([label, value]) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
+                        <span>{label}: <b>{value}</b></span>
+                      </div>
+                    ))
+                  : pairMetaRows(previewMetaPairs).map((pair, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '1px 0' }}>
+                        {pair.map(([label, value]) => <span key={label}>{label}: <b>{value}</b></span>)}
+                      </div>
+                    ))}
               </div>
               <table style={{ width: '100%', marginTop: 5, borderCollapse: 'collapse' }}>
-                <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th style={{ width: '2em', textAlign: 'center' }}>Qty</th><th>Item</th>{bill.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}<th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
+                <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th style={{ width: '2em', textAlign: 'center' }}>Qty</th><th>Item</th>{bill.showHsCode && <th>HS Code</th>}{bill.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}<th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
                 <tbody>
                   {SAMPLE_ITEMS.map((i) => (
                     <tr key={i.name} style={{ verticalAlign: 'top' }}>
@@ -356,15 +402,16 @@ export default function PrintingPage() {
                         {i.mods && <div style={{ fontSize: Math.max(bill.fontSize - 3, 9), fontWeight: 400 }}>+ {i.mods}</div>}
                         {bill.showItemNotes && i.notes && <div style={{ fontSize: Math.max(bill.fontSize - 3, 9), fontStyle: 'italic', fontWeight: 400 }}>» {i.notes}</div>}
                       </td>
+                      {bill.showHsCode && <td>{SAMPLE_HS_CODE}</td>}
                       {bill.showRate && <td style={{ textAlign: 'right' }}>{(i.cents / 100).toFixed(2)}</td>}
-                      <td style={{ textAlign: 'right' }}>{formatMoney(i.cents * i.qty)}</td>
+                      <td style={{ textAlign: 'right' }}>{money(i.cents * i.qty)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <div style={{ borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3 }}>
                 {[...bill.totalsLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled)
-                  .map((l) => previewTotalsRow(l, subtotal, vat, settings?.vatRate ?? 0.13))
+                  .map((l) => previewTotalsRow(l, subtotal, vat, settings?.vatRate ?? 0.13, money))
                   .filter((row): row is { label: string; value: string } => row != null)
                   .map((row) => (
                     <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -372,16 +419,40 @@ export default function PrintingPage() {
                     </div>
                   ))}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '1.15em', borderTop: '2px solid #000', marginTop: 3, paddingTop: 3 }}>
-                  <span>GRAND TOTAL</span><span>{formatMoney(previewGrandTotal)}</span>
+                  <span>GRAND TOTAL</span><span>{bill.showCurrencySymbol ? formatMoney(previewGrandTotal) : formatMoneyRounded(previewGrandTotal)}</span>
                 </div>
               </div>
+              {bill.showAmountInWords && (
+                <div style={{ marginTop: 4 }}>In Words: {amountInWords(previewGrandTotal)}</div>
+              )}
               {bill.showPaymentMode && (
-                <div style={{ borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3 }}>
+                <div style={{
+                  borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3,
+                  ...(bill.boxedPaymentMode ? { border: '1px solid #000', borderRadius: 3, padding: '4px 6px' } : {}),
+                }}>
                   Payment Mode: <b>Fonepay QR</b> (Txn ID: FP98213)
+                </div>
+              )}
+              {bill.showReceivedChange && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Received Amount</span><span>{money(previewReceived)}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Change</span><span>{money(previewReceived - previewGrandTotal)}</span></div>
                 </div>
               )}
               <div style={{ textAlign: 'center', marginTop: 8, fontWeight: 700 }}>{bill.footerText}</div>
               {bill.showWifi && <div style={{ textAlign: 'center', fontSize: Math.max(bill.fontSize - 2, 9), fontWeight: 400 }}>WiFi: {settings?.wifiPassword || 'cafe-wifi'}</div>}
+              {bill.showSignatureLines && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, fontSize: Math.max(bill.fontSize - 3, 9) }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ width: '7em', borderTop: '1px solid #000', marginBottom: 2 }} />
+                    Cashier
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ width: '7em', borderTop: '1px solid #000', marginBottom: 2 }} />
+                    Customer
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

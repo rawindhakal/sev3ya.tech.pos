@@ -4,9 +4,10 @@
 // is called (see #print-area rules in globals.css).
 // Modes: BILL (customer invoice), KOT (kitchen), BOT (bar), CANCEL (voided items).
 // Layout is driven by the editable templates under Settings → Printing.
-import { formatMoney } from '@/lib/api';
+import { formatMoney, formatMoneyPlain, formatMoneyRounded } from '@/lib/api';
 import { formatBs } from '@/lib/bs-date';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
+import { amountInWords } from '@/lib/number-to-words';
 import { billTemplateOf, kotTemplateOf, kotMetaPairs, ticketDate, ticketTime } from '@/lib/printing';
 import type { TemplateLine } from '@/lib/printing';
 import type { Order, OrderItem, Settings } from '@/lib/types';
@@ -46,6 +47,9 @@ export default function Receipt({
   // provisional placeholder instead of a misleading INV-0 / KOT-00000.
   const unsynced = order.number === 0;
   const docNo = order.fiscalInvoiceNo != null ? `INV-${order.fiscalInvoiceNo}` : unsynced ? 'PROVISIONAL' : `INV-${order.number}`;
+  // Bill amounts respect the "Currency symbol" toggle; KOT/BOT never show
+  // money at all so this only matters in the isBill branches below.
+  const money = bt.showCurrencySymbol ? formatMoney : formatMoneyPlain;
 
   // Resolves a bill metaLine's id to its live value for this order — mirrors
   // kotMetaPairs' own per-id resolver (lib/printing.ts) so both templates'
@@ -58,6 +62,10 @@ export default function Receipt({
       case 'cashier': return order.cashierName || null;
       case 'waiter': return order.waiter?.name || null;
       case 'customer': return order.customerName ? `${order.customerName}${order.customerPhone ? ` (${order.customerPhone})` : ''}` : null;
+      case 'area': return order.table?.area || null;
+      case 'fiscalYear': return order.fiscalYear || null;
+      case 'terminal': return order.terminal?.name || null;
+      case 'nepaliDate': return formatBs(now);
       default: return null;
     }
   };
@@ -103,6 +111,12 @@ export default function Receipt({
   // (matching what the customer was actually shown per item), and this line
   // is the one place VAT-inclusive pricing gets "unwound" for the invoice.
   const netBeforeTax = order.totalCents - order.taxCents;
+  // Only meaningful for a cash tender the cashier over-typed on — most
+  // orders settle exactly, so this is 0 (and the Received/Change block
+  // stays hidden) the overwhelming majority of the time.
+  const totalReceivedCents = (order.payments ?? []).reduce((s, p) => s + (p.receivedCents ?? p.amountCents), 0);
+  const totalAppliedCents = (order.payments ?? []).reduce((s, p) => s + p.amountCents, 0);
+  const changeDueCents = totalReceivedCents - totalAppliedCents;
 
   return (
     <div id="print-area" style={{ fontSize: fs, fontWeight: bold ? 500 : 400, fontFamily: isBill ? bt.fontFamily : kt.fontFamily }}>
@@ -137,14 +151,19 @@ export default function Receipt({
             Order {unsynced ? 'OFFLINE' : `#${order.number}`}
           </div>
         )}
-        {metaRows.map((pair, idx) => (
-          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '1px 0' }}>
-            {pair.map(([label, value]) => (
-              <span key={label}>{label}: <b>{value}</b></span>
+        {isBill && bt.metaLayout === 'list'
+          ? metaPairs.map(([label, value]) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '1px 0' }}>
+                <span>{label}: <b>{value}</b></span>
+              </div>
+            ))
+          : metaRows.map((pair, idx) => (
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '1px 0' }}>
+                {pair.map(([label, value]) => (
+                  <span key={label}>{label}: <b>{value}</b></span>
+                ))}
+              </div>
             ))}
-          </div>
-        ))}
-        {isBill && <div style={{ fontSize: sub, marginTop: 2 }}>BS {formatBs(now)}</div>}
       </div>
 
       <table style={{ width: '100%', marginTop: 6, borderCollapse: 'collapse' }}>
@@ -152,6 +171,7 @@ export default function Receipt({
           <tr style={{ borderBottom: '2px solid #000' }}>
             <th style={{ textAlign: 'center', width: '2.2em' }}>Qty</th>
             <th style={{ textAlign: 'left' }}>Item</th>
+            {isBill && bt.showHsCode && <th style={{ textAlign: 'left' }}>HS Code</th>}
             {isBill && bt.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}
             {isBill && <th style={{ textAlign: 'right' }}>Amount</th>}
           </tr>
@@ -171,8 +191,9 @@ export default function Receipt({
                   {mods.length > 0 && <div style={{ fontSize: sub, fontWeight: 400 }}>+ {mods.map((m) => m.name).join(', ')}</div>}
                   {showNotes && it.notes && <div style={{ fontSize: sub, fontStyle: 'italic', fontWeight: 400 }}>» {it.notes}</div>}
                 </td>
+                {isBill && bt.showHsCode && <td style={{ textAlign: 'left' }}>{it.hsCodeSnapshot || '—'}</td>}
                 {isBill && bt.showRate && <td style={{ textAlign: 'right' }}>{(rate / 100).toFixed(2)}</td>}
-                {isBill && <td style={{ textAlign: 'right' }}>{formatMoney(lineTotal)}</td>}
+                {isBill && <td style={{ textAlign: 'right' }}>{money(lineTotal)}</td>}
               </tr>
             );
           })}
@@ -184,22 +205,36 @@ export default function Receipt({
           {[...bt.totalsLines]
             .sort((a, b) => a.order - b.order)
             .filter((l) => l.enabled)
-            .map((l) => totalsRowFor(l, order, settings, netBeforeTax))
+            .map((l) => totalsRowFor(l, order, settings, netBeforeTax, money))
             .filter((row): row is { label: string; value: string } => row != null)
             .map((row) => <Row key={row.label} label={row.label} value={row.value} />)}
           <div style={{ borderTop: '2px solid #000', marginTop: 4, paddingTop: 4 }}>
-            <Row label="GRAND TOTAL" value={formatMoney(order.totalCents)} bold big />
+            <Row label="GRAND TOTAL" value={bt.showCurrencySymbol ? formatMoney(order.totalCents) : formatMoneyRounded(order.totalCents)} bold big />
           </div>
         </div>
       )}
 
+      {isBill && bt.showAmountInWords && (
+        <div style={{ marginTop: 4 }}>In Words: {amountInWords(order.totalCents)}</div>
+      )}
+
       {isBill && bt.showPaymentMode && order.payments && order.payments.length > 0 && (
-        <div style={{ borderTop: '2px dashed #000', marginTop: 6, paddingTop: 4 }}>
+        <div style={{
+          borderTop: '2px dashed #000', marginTop: 6, paddingTop: 4,
+          ...(bt.boxedPaymentMode ? { border: '1px solid #000', borderRadius: 3, padding: '4px 6px' } : {}),
+        }}>
           {order.payments.map((p) => (
             <div key={p.id}>
-              Payment Mode: <b>{PAYMENT_METHOD_LABEL[p.method] ?? p.method}</b>{p.gatewayRef ? ` (Txn ID: ${p.gatewayRef})` : ''} — {formatMoney(p.amountCents)}
+              Payment Mode: <b>{PAYMENT_METHOD_LABEL[p.method] ?? p.method}</b>{p.gatewayRef ? ` (Txn ID: ${p.gatewayRef})` : ''} — {money(p.amountCents)}
             </div>
           ))}
+        </div>
+      )}
+
+      {isBill && bt.showReceivedChange && changeDueCents > 0 && (
+        <div style={{ marginTop: 4 }}>
+          <Row label="Received Amount" value={money(totalReceivedCents)} />
+          <Row label="Change" value={money(changeDueCents)} />
         </div>
       )}
 
@@ -210,6 +245,18 @@ export default function Receipt({
       </div>
       {isBill && bt.showWifi && settings?.wifiPassword && (
         <div style={{ textAlign: 'center', fontSize: sub, marginTop: 4, fontWeight: 400 }}>WiFi: {settings.wifiPassword}</div>
+      )}
+      {isBill && bt.showSignatureLines && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24, fontSize: sub }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: '9em', borderTop: '1px solid #000', marginBottom: 2 }} />
+            Cashier
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: '9em', borderTop: '1px solid #000', marginBottom: 2 }} />
+            Customer
+          </div>
+        </div>
       )}
     </div>
   );
@@ -234,21 +281,22 @@ function totalsRowFor(
   order: Order,
   settings: Settings | null,
   netBeforeTax: number,
+  money: (cents: number) => string,
 ): { label: string; value: string } | null {
   switch (line.id) {
     case 'subtotal':
-      return { label: line.label, value: formatMoney(order.subtotalCents) };
+      return { label: line.label, value: money(order.subtotalCents) };
     case 'discount':
       if (order.discountCents <= 0) return null;
-      return { label: order.discountLabel ? `${line.label} (${order.discountLabel})` : line.label, value: `-${formatMoney(order.discountCents)}` };
+      return { label: order.discountLabel ? `${line.label} (${order.discountLabel})` : line.label, value: `-${money(order.discountCents)}` };
     case 'serviceCharge':
       if (order.serviceChargeCents <= 0) return null;
-      return { label: `${line.label} (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`, value: formatMoney(order.serviceChargeCents) };
+      return { label: `${line.label} (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`, value: money(order.serviceChargeCents) };
     case 'netBeforeTax':
       if (!settings?.pricesIncludeVat) return null;
-      return { label: line.label, value: formatMoney(netBeforeTax) };
+      return { label: line.label, value: money(netBeforeTax) };
     case 'vat':
-      return { label: `${line.label} (${Math.round((settings?.vatRate ?? 0.13) * 100)}%)`, value: formatMoney(order.taxCents) };
+      return { label: `${line.label} (${Math.round((settings?.vatRate ?? 0.13) * 100)}%)`, value: money(order.taxCents) };
     default:
       return null;
   }

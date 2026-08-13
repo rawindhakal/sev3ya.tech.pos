@@ -232,5 +232,20 @@ export const formatMoney = (cents: number) =>
     maximumFractionDigits: 2,
   })}`;
 
+// Same as formatMoney but with no currency symbol prefix — used on the bill
+// when Settings → Printing's "Currency symbol" toggle is off (some
+// tenants' prior POS receipts never showed one).
+export const formatMoneyPlain = (cents: number) =>
+  (cents / 100).toLocaleString(CURRENCY_LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+// Whole-rupee, no currency symbol, no decimals — matches the common Nepali
+// retail convention of rounding the final payable amount (paisa breakdown
+// stays precise in the lines above it, only the bottom-line total rounds).
+export const formatMoneyRounded = (cents: number) =>
+  Math.round(cents / 100).toLocaleString(CURRENCY_LOCALE);
+
 // Convert a major-unit amount (rupees) typed by staff into minor units (paisa).
 export const dollarsToCents = (major: number) => Math.round(major * 100);

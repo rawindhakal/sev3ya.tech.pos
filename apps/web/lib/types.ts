@@ -48,6 +48,7 @@ export interface MenuItem {
   isAvailable: boolean;
   imageUrl?: string | null;
   printerName?: string | null;
+  hsCode?: string | null;
   categoryId: string;
   category?: { id: string; name: string };
   modifierGroups?: ModifierGroupRef[];
@@ -194,6 +195,7 @@ export interface OrderItem {
   menuItemId?: string | null;
   nameSnapshot: string;
   unitPriceCents: number;
+  hsCodeSnapshot?: string | null;
   quantity: number;
   discountCents?: number;
   modifiers?: CartModifier[] | null;
@@ -211,6 +213,7 @@ export interface Payment {
   id: string;
   method: PaymentMethod;
   amountCents: number;
+  receivedCents?: number | null;
   giftCardId?: string | null;
   gatewayRef?: string | null;
 }
@@ -250,6 +253,7 @@ export interface Order {
   payments: Payment[];
   table?: { id: string; name: string; area?: string | null } | null;
   waiter?: { id: string; name: string } | null;
+  terminal?: { id: string; name: string } | null;
   createdAt: string;
 }
 

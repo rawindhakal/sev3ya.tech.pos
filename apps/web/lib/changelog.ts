@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.5.2';
+export const APP_VERSION = '2.6.0';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,14 @@ export const APP_VERSION = '2.5.2';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.6.0', date: '2026-08-13',
+    changes: [
+      'New Settings → Printing options: HS Code column on the item table (per-item, editable in Menu), "Amount in Words" line under Grand Total, Received Amount / Change lines for cash overpayment, Cashier/Customer signature lines, a boxed Payment Mode section, a plain-numbers currency style, and a one-line-per-row order-info layout',
+      'New customizable order-info lines: Area, Fiscal Year, and Service Provider (till name) — plus the Nepali date line is now reorderable/relabelable like every other line instead of being fixed',
+      'HS Code is snapshotted onto each order item at the time of sale, so a reprinted bill always shows the code that applied then, even if the menu item\'s code changes later',
+    ],
+  },
   {
     version: '2.5.2', date: '2026-08-13',
     changes: [
