@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.5.1';
+export const APP_VERSION = '2.5.2';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,12 @@ export const APP_VERSION = '2.5.1';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.5.2', date: '2026-08-13',
+    changes: [
+      'Fixed Dashboard charts showing the wrong hour/day for orders paid overnight — hourly and day-of-week bucketing was computed in server (UTC) time instead of Nepal time, shifting an order paid at 12:30 AM onto the previous day\'s 6 PM slot',
+    ],
+  },
   {
     version: '2.5.1', date: '2026-08-13',
     changes: [
