@@ -65,19 +65,25 @@ export class AnalyticsService {
     // reference it unqualified.
     const outletSql = outletId ? Prisma.sql`AND o."outletId" = ${outletId}` : Prisma.empty;
     const outletSqlUnqualified = outletId ? Prisma.sql`AND "outletId" = ${outletId}` : Prisma.empty;
-    // Postgres's EXTRACT()/date_trunc() convert a timestamptz using the DB
-    // session's own timezone setting, not a fixed one — which is Etc/UTC in
-    // production (confirmed via `SHOW timezone`) but can differ on a dev
-    // machine (e.g. Asia/Kathmandu, if that's the OS's own zone), silently
-    // masking the bug in local testing. Every hour/day-of-week/day bucket
-    // below explicitly converts via this fragment first so bucketing is
-    // deterministically Nepal-local regardless of session timezone — the
-    // same reasoning as this file's nepalStartOfToday/nepalStartOfDate/
-    // nepalEndOfDate helpers, just applied inside a GROUP BY instead of a
-    // WHERE bound. Without it, an order paid at 12:30 AM Nepal time (still
-    // "yesterday evening" in UTC) lands in the wrong day's bucket, and every
-    // hourly bar is shifted by the fixed 5h45m offset.
-    const NPT_TZ = Prisma.sql`AT TIME ZONE 'Asia/Kathmandu'`;
+    // Every DateTime column in this schema (paidAt, createdAt, updatedAt,
+    // etc.) is Prisma's default `timestamp without time zone` — no
+    // @db.Timestamptz anywhere. Prisma always reads/writes DateTime as UTC
+    // regardless of column type, so the naive digits actually stored are UTC
+    // clock digits, not Nepal ones (confirmed directly: order paidAt
+    // '11:21:49' on the DB is 11:21:49 UTC, not 11:21:49 Nepal). Because the
+    // column carries no tz tag, EXTRACT()/date_trunc() never do any
+    // conversion at all — they just read the literal (UTC) digits, so the
+    // dashboard's hour-of-day/day-of-week/day buckets need an explicit
+    // +5:45 shift first to land on Nepal wall-clock digits. (`AT TIME ZONE
+    // 'zone'` looks like the obvious fix but is wrong for a naive column —
+    // it does the *reverse* operation, "interpret these digits as already
+    // being local time in zone, and give me the corresponding instant" —
+    // confirmed by direct testing, it subtracts the offset instead of
+    // adding it.) A plain interval add has no DST ambiguity to worry about
+    // either, matching this file's nepalStartOfToday/nepalStartOfDate/
+    // nepalEndOfDate helpers' own "Nepal has no DST" reasoning — just
+    // applied inside a GROUP BY instead of a WHERE bound.
+    const NPT_SHIFT = Prisma.sql`+ INTERVAL '5 hours 45 minutes'`;
 
     const [
       todaysOrders,
@@ -131,7 +137,7 @@ export class AnalyticsService {
       // Daily sales across the selected range (line graph).
       this.prisma.$queryRaw<{ day: Date; cents: bigint; orders: bigint }[]>(
         Prisma.sql`
-          SELECT date_trunc('day', "paidAt" ${NPT_TZ}) AS day,
+          SELECT date_trunc('day', "paidAt" ${NPT_SHIFT}) AS day,
                  SUM("totalCents") AS cents,
                  COUNT(*) AS orders
           FROM orders
@@ -223,7 +229,7 @@ export class AnalyticsService {
       // the revenue side of Labor vs Sales #6).
       this.prisma.$queryRaw<{ hour: number; revenue: bigint; orders: bigint }[]>(
         Prisma.sql`
-          SELECT EXTRACT(HOUR FROM "paidAt" ${NPT_TZ})::int AS hour, SUM("totalCents") AS revenue, COUNT(*) AS orders
+          SELECT EXTRACT(HOUR FROM "paidAt" ${NPT_SHIFT})::int AS hour, SUM("totalCents") AS revenue, COUNT(*) AS orders
           FROM orders WHERE status = 'PAID' AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}
           GROUP BY 1 ORDER BY 1`,
       ),
@@ -255,7 +261,7 @@ export class AnalyticsService {
       // Discounts by day (#8, left half).
       this.prisma.$queryRaw<{ day: Date; discount: bigint; comps: bigint }[]>(
         Prisma.sql`
-          SELECT date_trunc('day', "paidAt" ${NPT_TZ}) AS day, SUM("discountCents") AS discount,
+          SELECT date_trunc('day', "paidAt" ${NPT_SHIFT}) AS day, SUM("discountCents") AS discount,
                  COUNT(*) FILTER (WHERE "isComplimentary") AS comps
           FROM orders
           WHERE status = 'PAID' AND "discountCents" > 0
@@ -266,7 +272,7 @@ export class AnalyticsService {
       // they were cancelled (paidAt is never set for these).
       this.prisma.$queryRaw<{ day: Date; voids: bigint; voidedcents: bigint }[]>(
         Prisma.sql`
-          SELECT date_trunc('day', "updatedAt" ${NPT_TZ}) AS day, COUNT(*) AS voids, SUM("totalCents") AS voidedcents
+          SELECT date_trunc('day', "updatedAt" ${NPT_SHIFT}) AS day, COUNT(*) AS voids, SUM("totalCents") AS voidedcents
           FROM orders
           WHERE status = 'CANCELLED'
             AND "updatedAt" >= ${rangeStart} AND "updatedAt" <= ${rangeEnd} ${outletSqlUnqualified}
@@ -276,7 +282,7 @@ export class AnalyticsService {
       // actually passed through the KDS "ready" step.
       this.prisma.$queryRaw<{ day: Date; avg_seconds: number | null; tickets: bigint }[]>(
         Prisma.sql`
-          SELECT date_trunc('day', oi."readyAt" ${NPT_TZ}) AS day,
+          SELECT date_trunc('day', oi."readyAt" ${NPT_SHIFT}) AS day,
                  AVG(EXTRACT(EPOCH FROM (oi."readyAt" - o."kotFiredAt"))) AS avg_seconds,
                  COUNT(*) AS tickets
           FROM order_items oi
@@ -301,7 +307,7 @@ export class AnalyticsService {
       // Day-of-week × hour transaction heatmap (#11). dow: 0=Sunday.
       this.prisma.$queryRaw<{ dow: number; hour: number; revenue: bigint; orders: bigint }[]>(
         Prisma.sql`
-          SELECT EXTRACT(DOW FROM "paidAt" ${NPT_TZ})::int AS dow, EXTRACT(HOUR FROM "paidAt" ${NPT_TZ})::int AS hour,
+          SELECT EXTRACT(DOW FROM "paidAt" ${NPT_SHIFT})::int AS dow, EXTRACT(HOUR FROM "paidAt" ${NPT_SHIFT})::int AS hour,
                  SUM("totalCents") AS revenue, COUNT(*) AS orders
           FROM orders WHERE status = 'PAID' AND "paidAt" >= ${rangeStart} AND "paidAt" <= ${rangeEnd} ${outletSqlUnqualified}
           GROUP BY 1, 2`,
@@ -318,7 +324,7 @@ export class AnalyticsService {
             FROM orders WHERE status = 'PAID' AND "customerId" IS NOT NULL
             GROUP BY "customerId"
           )
-          SELECT date_trunc('day', o."paidAt" ${NPT_TZ}) AS day,
+          SELECT date_trunc('day', o."paidAt" ${NPT_SHIFT}) AS day,
                  CASE WHEN o."paidAt" = fv.first_paid_at THEN 'new' ELSE 'returning' END AS bucket,
                  COUNT(*) AS orders
           FROM orders o JOIN first_visit fv ON fv."customerId" = o."customerId"
@@ -336,7 +342,7 @@ export class AnalyticsService {
       // Payment methods over time (#14) — day × method.
       this.prisma.$queryRaw<{ day: Date; method: string; amount: bigint }[]>(
         Prisma.sql`
-          SELECT date_trunc('day', p."createdAt" ${NPT_TZ}) AS day, p.method AS method, SUM(p."amountCents") AS amount
+          SELECT date_trunc('day', p."createdAt" ${NPT_SHIFT}) AS day, p.method AS method, SUM(p."amountCents") AS amount
           FROM payments p JOIN orders o ON o.id = p."orderId"
           WHERE p."createdAt" >= ${rangeStart} AND p."createdAt" <= ${rangeEnd} ${outletSql}
           GROUP BY 1, 2 ORDER BY 1`,
