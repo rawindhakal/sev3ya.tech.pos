@@ -23,6 +23,7 @@ import {
 import { PurchasingService } from './purchasing.service';
 import { PermissionGuard } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
+import { RequireFeature } from '../common/feature.decorator';
 
 class SupplierDto {
   @IsString() @IsNotEmpty() name: string;
@@ -53,6 +54,7 @@ class SupplierPaymentDto {
   @IsOptional() @IsString() note?: string;
 }
 
+@RequireFeature('purchasing')
 @Controller()
 export class PurchasingController {
   constructor(private readonly purchasing: PurchasingService) {}

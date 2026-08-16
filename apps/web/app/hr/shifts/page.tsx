@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import type { Employee, Outlet, RosterEntry, ShiftTemplate } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { confirmDialog, notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 type AttSummaryDay = { date: string; firstIn: string; lastOut: string; hours: number };
 type AttSummary = { employeeId: string; days: AttSummaryDay[] }[];
@@ -29,7 +30,7 @@ function fmtHm(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function HrShiftsPage() {
+function HrShiftsPage() {
   const [tab, setTab] = useState<Tab>('Weekly Roster');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [outlets, setOutlets] = useState<Outlet[]>([]);
@@ -255,5 +256,14 @@ export default function HrShiftsPage() {
         </form>
       </Modal>
     </div>
+  );
+}
+
+
+export default function HrShiftsPageGated() {
+  return (
+    <FeatureGate feature="hrm">
+      <HrShiftsPage />
+    </FeatureGate>
   );
 }

@@ -6,7 +6,9 @@ import { CreateWorkflowRuleDto, UpdateWorkflowRuleDto } from './dto/workflow-rul
 import { PermissionGuard, CurrentEmployee } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
+import { RequireFeature } from '../common/feature.decorator';
 
+@RequireFeature('finance')
 @Controller('accounting')
 export class AccountingController {
   constructor(

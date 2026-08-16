@@ -5,6 +5,7 @@ import { downloadCsv, toCsv } from '@/lib/csv';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import Modal from '@/components/Modal';
 import { confirmDialog, notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 interface PnL {
   grossSalesCents: number; vatCollectedCents: number; serviceChargeCents: number; discountsCents: number;
@@ -19,7 +20,7 @@ interface AP { rows: { number: number; supplier: string; amountCents: number; ag
 const CATS = ['RENT', 'UTILITIES', 'SALARY', 'MARKETING', 'MAINTENANCE', 'SUPPLIES', 'OTHER'];
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-export default function FinancePage() {
+function FinancePage() {
   const today = iso(new Date());
   const [from, setFrom] = useState(iso(new Date(Date.now() - 29 * 864e5)));
   const [to, setTo] = useState(today);
@@ -207,5 +208,14 @@ export default function FinancePage() {
         </form>
       </Modal>
     </div>
+  );
+}
+
+
+export default function FinancePageGated() {
+  return (
+    <FeatureGate feature="finance">
+      <FinancePage />
+    </FeatureGate>
   );
 }

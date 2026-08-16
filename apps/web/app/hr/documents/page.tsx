@@ -5,13 +5,14 @@ import { api } from '@/lib/api';
 import type { Employee, EmployeeDocument } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { confirmDialog, notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 const DOC_TYPES = ['CITIZENSHIP', 'PASSPORT', 'PAN', 'CONTRACT', 'CERTIFICATE', 'OTHER'];
 const EMPLOYMENT_TYPES = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'];
 
 const blankDoc = { type: 'OTHER', title: '', documentNumber: '', issueDate: '', expiryDate: '', url: '', notes: '' };
 
-export default function HrDocumentsPage() {
+function HrDocumentsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selected, setSelected] = useState('');
   const [docs, setDocs] = useState<EmployeeDocument[]>([]);
@@ -173,5 +174,14 @@ export default function HrDocumentsPage() {
         </form>
       </Modal>
     </div>
+  );
+}
+
+
+export default function HrDocumentsPageGated() {
+  return (
+    <FeatureGate feature="hrm">
+      <HrDocumentsPage />
+    </FeatureGate>
   );
 }

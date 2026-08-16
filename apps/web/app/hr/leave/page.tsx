@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import type { Employee, LeaveRequest, LeaveType } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 const TABS = ['Requests', 'This Month', 'Leave Types'] as const;
 type Tab = (typeof TABS)[number];
@@ -19,7 +20,7 @@ const STATUS_BADGE: Record<string, string> = {
 const blankType = { id: '', name: '', isPaid: true, defaultDaysPerYear: 0, color: '#6366f1' };
 const blankRequest = { employeeId: '', leaveTypeId: '', fromDate: '', toDate: '', days: '1', reason: '' };
 
-export default function HrLeavePage() {
+function HrLeavePage() {
   const [tab, setTab] = useState<Tab>('Requests');
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [types, setTypes] = useState<LeaveType[]>([]);
@@ -214,5 +215,14 @@ export default function HrLeavePage() {
         </form>
       </Modal>
     </div>
+  );
+}
+
+
+export default function HrLeavePageGated() {
+  return (
+    <FeatureGate feature="hrm">
+      <HrLeavePage />
+    </FeatureGate>
   );
 }

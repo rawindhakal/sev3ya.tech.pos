@@ -10,6 +10,7 @@ import {
 import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { ExpenseCategory, PaymentMethod } from '@prisma/client';
 import { FinanceService } from './finance.service';
+import { RequireFeature } from '../common/feature.decorator';
 
 class CreateExpenseDto {
   @IsEnum(ExpenseCategory) category: ExpenseCategory;
@@ -20,6 +21,7 @@ class CreateExpenseDto {
   @IsOptional() @IsEnum(PaymentMethod) method?: PaymentMethod;
 }
 
+@RequireFeature('finance')
 @Controller('finance')
 export class FinanceController {
   constructor(private readonly finance: FinanceService) {}

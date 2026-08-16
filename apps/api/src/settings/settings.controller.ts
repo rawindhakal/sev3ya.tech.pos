@@ -41,6 +41,8 @@ class UpdateSettingsDto {
   @IsOptional() @IsBoolean() featFinance?: boolean;
   @IsOptional() @IsBoolean() featKds?: boolean;
   @IsOptional() @IsBoolean() featSelfOrder?: boolean;
+  @IsOptional() @IsBoolean() featMarketing?: boolean;
+  @IsOptional() @IsBoolean() featHrm?: boolean;
   @IsOptional() @IsObject() billTemplate?: object;
   @IsOptional() @IsObject() kotTemplate?: object;
   @IsOptional() @IsBoolean() irdEnabled?: boolean;

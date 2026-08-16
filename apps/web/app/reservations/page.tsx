@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import type { Reservation, RestaurantTable } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 const STATUS_BADGE: Record<string, string> = {
   BOOKED: 'bg-indigo-100 text-indigo-700',
@@ -15,7 +16,7 @@ const STATUS_BADGE: Record<string, string> = {
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-export default function ReservationsPage() {
+function ReservationsPage() {
   const [date, setDate] = useState(todayISO());
   const [bookings, setBookings] = useState<Reservation[]>([]);
   const [waitlist, setWaitlist] = useState<Reservation[]>([]);
@@ -202,5 +203,14 @@ export default function ReservationsPage() {
         </form>
       </Modal>
     </div>
+  );
+}
+
+
+export default function ReservationsPageGated() {
+  return (
+    <FeatureGate feature="reservations">
+      <ReservationsPage />
+    </FeatureGate>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import type { Employee, PerformanceNote } from '@/lib/types';
 import { confirmDialog, notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 const TYPE_BADGE: Record<string, string> = {
   NOTE: 'bg-slate-100 text-slate-600',
@@ -11,7 +12,7 @@ const TYPE_BADGE: Record<string, string> = {
   COMMENDATION: 'bg-emerald-100 text-emerald-700',
 };
 
-export default function HrPerformancePage() {
+function HrPerformancePage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selected, setSelected] = useState('');
   const [notes, setNotes] = useState<PerformanceNote[]>([]);
@@ -101,5 +102,14 @@ export default function HrPerformancePage() {
         </>
       )}
     </div>
+  );
+}
+
+
+export default function HrPerformancePageGated() {
+  return (
+    <FeatureGate feature="hrm">
+      <HrPerformancePage />
+    </FeatureGate>
   );
 }

@@ -6,6 +6,11 @@ import { securityHeaders } from './common/security-headers.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // Behind nginx (single reverse-proxy hop) — without this, ThrottlerGuard
+  // and any IP-based logic see every request as coming from nginx's local
+  // address instead of the real client, collapsing all callers into one
+  // shared rate-limit bucket.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(securityHeaders);
 
   // ZKTeco ADMS devices POST attendance data as Content-Type: text/plain,

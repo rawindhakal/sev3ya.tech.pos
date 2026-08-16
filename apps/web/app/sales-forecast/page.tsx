@@ -5,6 +5,7 @@ import { api, formatMoney } from '@/lib/api';
 import type { Outlet, SalesForecast } from '@/lib/types';
 import { formatBsLong } from '@/lib/bs-date';
 import LineChart from '@/components/LineChart';
+import FeatureGate from '@/components/FeatureGate';
 
 const TREND_BADGE: Record<string, string> = {
   up: 'bg-emerald-100 text-emerald-700',
@@ -13,7 +14,7 @@ const TREND_BADGE: Record<string, string> = {
 };
 const TREND_ARROW: Record<string, string> = { up: '↑', down: '↓', steady: '→' };
 
-export default function SalesForecastPage() {
+function SalesForecastPage() {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [outletId, setOutletId] = useState('');
   const [forecast, setForecast] = useState<SalesForecast | null>(null);
@@ -108,5 +109,14 @@ export default function SalesForecastPage() {
         </div>
       )}
     </div>
+  );
+}
+
+
+export default function SalesForecastPageGated() {
+  return (
+    <FeatureGate feature="finance">
+      <SalesForecastPage />
+    </FeatureGate>
   );
 }

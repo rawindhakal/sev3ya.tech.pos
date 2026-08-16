@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { CashDrawerState, CashDrawerSession } from '@/lib/types';
 import { promptDialog, notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
-export default function CashDrawerPage() {
+function CashDrawerPage() {
   const [state, setState] = useState<CashDrawerState | null>(null);
   const [history, setHistory] = useState<CashDrawerSession[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -246,5 +247,14 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="text-lg font-bold text-slate-900">{value}</div>
       <div className="text-xs text-slate-500">{label}</div>
     </div>
+  );
+}
+
+
+export default function CashDrawerPageGated() {
+  return (
+    <FeatureGate feature="finance">
+      <CashDrawerPage />
+    </FeatureGate>
   );
 }

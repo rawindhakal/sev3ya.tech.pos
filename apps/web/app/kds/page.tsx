@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { playDing } from '@/lib/sound';
 import { api } from '@/lib/api';
 import { notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 interface KdsItem {
   id: string;
@@ -48,7 +49,7 @@ function urgency(firedAt: string | null, nowMs: number) {
   return { label, ring: 'border-[#2C3E50] bg-white/5', head: 'bg-[#2C3E50]', flash: '' };
 }
 
-export default function KdsPage() {
+function KdsPage() {
   const [tickets, setTickets] = useState<KdsTicket[]>([]);
   const [now, setNow] = useState(Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -277,5 +278,14 @@ export default function KdsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+
+export default function KdsPageGated() {
+  return (
+    <FeatureGate feature="kds">
+      <KdsPage />
+    </FeatureGate>
   );
 }

@@ -3,7 +3,9 @@ import { AttendanceService } from './attendance.service';
 import { PermissionGuard, CurrentEmployee } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
+import { RequireFeature } from '../common/feature.decorator';
 
+@RequireFeature('hrm')
 @Controller('attendance')
 export class AttendanceController {
   constructor(private readonly att: AttendanceService) {}

@@ -6,6 +6,7 @@ import { downloadCsv, toCsv } from '@/lib/csv';
 import { formatBsLong } from '@/lib/bs-date';
 import { exportPdf } from '@/lib/pdf';
 import { notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 // ZKTeco fingerprint attendance + payroll — cloud push (ADMS) only. The
 // scanner (e.g. K40/ID and any other ADMS-capable ZKTeco model) connects out
@@ -19,7 +20,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 const hm = (v: string | Date) => new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const POLL_MS = 8000; // how often "live" tabs re-fetch, so incoming cloud punches show up without a manual reload
 
-export default function AttendancePage() {
+function AttendancePage() {
   const [tab, setTab] = useState<Tab>('Punch Log');
   const [from, setFrom] = useState(iso(new Date(Date.now() - 6 * 864e5)));
   const [to, setTo] = useState(iso(new Date()));
@@ -504,5 +505,14 @@ function CloudDevicesCard({ onRelink, busy }: { onRelink: () => void; busy: bool
         <button className="btn-ghost" onClick={onRelink} disabled={busy}>{busy ? 'Re-linking…' : '↻ Re-link punches'}</button>
       </div>
     </div>
+  );
+}
+
+
+export default function AttendancePageGated() {
+  return (
+    <FeatureGate feature="hrm">
+      <AttendancePage />
+    </FeatureGate>
   );
 }

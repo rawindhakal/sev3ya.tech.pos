@@ -6,6 +6,7 @@ import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { notify } from '@/lib/dialog';
 import type { Outlet } from '@/lib/types';
+import FeatureGate from '@/components/FeatureGate';
 
 interface Report {
   range: { from: string; to: string };
@@ -45,7 +46,7 @@ const CLASS_STYLE: Record<string, string> = {
   Dog: 'bg-slate-200 text-slate-500',
 };
 
-export default function ReportsPage() {
+function ReportsPage() {
   const today = iso(new Date());
   const [from, setFrom] = useState(iso(new Date(Date.now() - 6 * 864e5)));
   const [to, setTo] = useState(today);
@@ -381,5 +382,14 @@ function IrdSection({ from, to }: { from: string; to: string }) {
         </table>
       </div>
     </div>
+  );
+}
+
+
+export default function ReportsPageGated() {
+  return (
+    <FeatureGate feature="finance">
+      <ReportsPage />
+    </FeatureGate>
   );
 }

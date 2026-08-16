@@ -230,7 +230,7 @@ export class AccountingService {
   async balanceSheet(asOf?: string) {
     const upto = asOf ? nepalEndOfDate(asOf) : new Date();
     const window = { lte: upto };
-    const [cashIn, payIn, payOut, expenses, bankIn, bankSettle, cashSettleAgg, ar, inv, apPos, vat] = await Promise.all([
+    const [cashIn, payIn, payOut, expenses, bankIn, bankSettle, cashSettleAgg, ar, inv, apLines, apPayments, vat] = await Promise.all([
       this.prisma.payment.aggregate({ _sum: { amountCents: true }, where: { method: 'CASH', createdAt: window } }),
       this.prisma.cashMovement.aggregate({ _sum: { amountCents: true }, where: { type: 'PAY_IN', createdAt: window } }),
       this.prisma.cashMovement.aggregate({ _sum: { amountCents: true }, where: { type: 'PAY_OUT', createdAt: window } }),
@@ -240,7 +240,16 @@ export class AccountingService {
       this.prisma.creditLedgerEntry.aggregate({ _sum: { amountCents: true }, where: { type: 'PAYMENT', method: 'CASH', createdAt: window } }),
       this.prisma.customer.aggregate({ _sum: { creditBalanceCents: true }, _count: true, where: { creditBalanceCents: { gt: 0 } } }),
       this.prisma.ingredient.findMany({ select: { stockQty: true, costPerUnitCents: true } }),
-      this.prisma.purchaseOrder.findMany({ where: { status: 'RECEIVED', receivedAt: window }, include: { lines: true } }),
+      // Payables = value of goods actually received (not merely ordered), on
+      // POs that have received at least something — mirrors PurchasingService
+      // .vendorLedger(), which is the proven-correct per-supplier reference.
+      this.prisma.purchaseOrderLine.findMany({
+        where: { po: { status: { in: ['RECEIVED', 'PARTIAL'] }, receivedAt: window } },
+        select: { receivedQty: true, unitCostCents: true },
+      }),
+      // Net off what's already been paid to vendors as of this date — payables
+      // must reflect the outstanding balance, not the lifetime received value.
+      this.prisma.supplierPayment.aggregate({ _sum: { amountCents: true }, where: { createdAt: window } }),
       this.prisma.order.aggregate({ _sum: { taxCents: true }, where: { status: 'PAID', paidAt: window } }),
     ]);
     const n = (v: unknown) => Number(v ?? 0);
@@ -249,7 +258,8 @@ export class AccountingService {
     const bankBalance = n(bankIn._sum.amountCents) + n(bankSettle._sum.amountCents);
     const receivables = n(ar._sum.creditBalanceCents);
     const inventory = Math.round(inv.reduce((s, i) => s + i.stockQty * i.costPerUnitCents, 0));
-    const payables = apPos.reduce((s, p) => s + p.lines.reduce((x, l) => x + Math.round(l.quantity * l.unitCostCents), 0), 0);
+    const receivedValueCents = apLines.reduce((s, l) => s + Math.round(l.receivedQty * l.unitCostCents), 0);
+    const payables = Math.max(0, receivedValueCents - n(apPayments._sum.amountCents));
     const vatPayable = n(vat._sum.taxCents);
     const totalAssets = cashInHand + bankBalance + receivables + inventory;
     const totalLiabilities = payables + vatPayable;

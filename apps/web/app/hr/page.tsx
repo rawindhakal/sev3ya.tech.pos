@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Outlet } from '@/lib/types';
 import { formatBsLong } from '@/lib/bs-date';
+import FeatureGate from '@/components/FeatureGate';
 
 interface Overview {
   headcount: number;
@@ -12,7 +13,7 @@ interface Overview {
   expiringDocuments: { id: string; employeeName: string; title: string; type: string; expiryDate: string | null; isExpired: boolean }[];
 }
 
-export default function HrOverviewPage() {
+function HrOverviewPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outlets, setOutlets] = useState<Outlet[]>([]);
@@ -80,5 +81,14 @@ export default function HrOverviewPage() {
         <Link href="/hr/documents" className="mt-3 inline-block text-sm text-brand-600 underline">Manage documents →</Link>
       </div>
     </div>
+  );
+}
+
+
+export default function HrOverviewPageGated() {
+  return (
+    <FeatureGate feature="hrm">
+      <HrOverviewPage />
+    </FeatureGate>
   );
 }

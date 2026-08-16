@@ -9,7 +9,23 @@ import { Reflector } from '@nestjs/core';
 import { TokenPayload, verifyToken } from './token';
 import { tenantContext } from './tenant-context';
 import { IS_PUBLIC_KEY } from './public.decorator';
+import { REQUIRE_FEATURE_KEY, FeatureKey } from './feature.decorator';
+import { PrismaService } from '../prisma/prisma.service';
 import type { PermissionKey } from './permissions';
+
+// Maps each gateable FeatureKey to its CafeSetting column — same set the
+// `/settings` response builds from (settings.service.ts).
+const FEATURE_COLUMN: Record<FeatureKey, string> = {
+  reservations: 'featReservations',
+  inventory: 'featInventory',
+  purchasing: 'featPurchasing',
+  roastery: 'featRoastery',
+  crm: 'featCrm',
+  finance: 'featFinance',
+  kds: 'featKds',
+  marketing: 'featMarketing',
+  hrm: 'featHrm',
+};
 
 // Verifies the bearer token AND that it was minted for the tenant (or lack
 // of one — the platform console) currently being served. Without this check,
@@ -82,9 +98,12 @@ export class SoftAuthGuard implements CanActivate {
 // all with zero token — the single biggest data-leak risk in this app.
 @Injectable()
 export class DefaultAuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  canActivate(ctx: ExecutionContext): boolean {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       ctx.getHandler(),
       ctx.getClass(),
@@ -92,6 +111,22 @@ export class DefaultAuthGuard implements CanActivate {
     if (isPublic) return true;
     const req = ctx.switchToHttp().getRequest();
     authenticateStrict(req);
+
+    const feature = this.reflector.getAllAndOverride<FeatureKey | undefined>(REQUIRE_FEATURE_KEY, [
+      ctx.getHandler(),
+      ctx.getClass(),
+    ]);
+    if (feature) {
+      const column = FEATURE_COLUMN[feature];
+      // 'singleton' matches CafeSetting's fixed id (see settings.service.ts).
+      const setting = await (this.prisma as any).cafeSetting.findUnique({
+        where: { id: 'singleton' },
+        select: { [column]: true },
+      });
+      if (setting && setting[column] === false) {
+        throw new ForbiddenException('This module is disabled — enable it in Settings');
+      }
+    }
     return true;
   }
 }

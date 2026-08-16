@@ -6,11 +6,13 @@ import { PayrollAdjustmentsService } from './payroll-adjustments.service';
 import { PermissionGuard, CurrentEmployee, CurrentOutlet } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
+import { RequireFeature } from '../common/feature.decorator';
 
 // All HR-admin surfaces (records/documents/performance, leave, shifts,
 // payroll-adjustments) live behind one broad hr.manage permission — this is
 // HR-admin territory, not a per-feature ACL, same granularity as
 // accounting.manage.
+@RequireFeature('hrm')
 @Controller('hr')
 @UseGuards(new PermissionGuard(PERMISSIONS.HR_MANAGE))
 export class HrController {

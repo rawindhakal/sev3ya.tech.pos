@@ -298,6 +298,8 @@ export interface Features {
   finance: boolean;
   kds: boolean;
   selfOrder: boolean;
+  marketing: boolean;
+  hrm: boolean;
 }
 
 export interface Settings {

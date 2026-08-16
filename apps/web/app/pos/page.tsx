@@ -284,15 +284,18 @@ export default function PosPage() {
 
   async function doLogin(restaurantCode: string, user: string, pass: string, isAutoLogin = false) {
     if (!user.trim() || !pass) return setPinErr('Enter your username and password');
+    const previousTenant = tenantSlug();
     try {
       setTenantSlug(restaurantCode);
       const e = await api.post<Employee & { token?: string }>('/employees/login', { username: user.trim(), password: pass });
       if (desktop && !e.permissions?.includes('pos.tillSignIn')) {
+        setTenantSlug(previousTenant);
         setPassword('');
         if (isAutoLogin) await window.cakezakeDesktop?.clearCreds?.();
         return setPinErr('This till is for cashiers only — managers and admins should sign in from the back office.');
       }
       if (e.portal === 'WAITER_ONLY') {
+        setTenantSlug(previousTenant);
         setPassword('');
         return setPinErr('Waiters use the Waiter Panel — the POS terminal is for cashiers and managers.');
       }
@@ -310,6 +313,7 @@ export default function PosPage() {
     } catch {
       // A saved (Remember me) login can go stale after a password change —
       // clear it instead of silently failing on every future app launch.
+      setTenantSlug(previousTenant);
       if (isAutoLogin) await window.cakezakeDesktop?.clearCreds?.();
       setPinErr(isAutoLogin ? '' : 'Invalid username or password');
       setPassword('');

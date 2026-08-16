@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { PrepStation } from '@prisma/client';
 import { KdsService } from './kds.service';
+import { RequireFeature } from '../common/feature.decorator';
 
+@RequireFeature('kds')
 @Controller('kds')
 export class KdsController {
   constructor(private readonly kds: KdsService) {}

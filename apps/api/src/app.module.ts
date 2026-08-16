@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { IdempotencyInterceptor } from './common/idempotency.interceptor';
 import { DefaultAuthGuard } from './common/auth.guard';
 import { PrismaModule } from './prisma/prisma.module';
@@ -39,6 +40,12 @@ import { HrModule } from './hr/hr.module';
 
 @Module({
   imports: [
+    // Global per-IP request cap — defense-in-depth alongside the per-account
+    // login lockout (common/login-throttle.ts), which only stops repeated
+    // guesses against ONE username. This catches distributed guessing across
+    // many usernames, credential stuffing, and general API hammering. Stricter
+    // per-route limits (e.g. login) are set via @Throttle() at the handler.
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 300 }]),
     PrismaModule,
     CategoriesModule,
     MenuItemsModule,
@@ -76,6 +83,9 @@ import { HrModule } from './hr/hr.module';
   controllers: [HealthController],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    // Runs before auth so an over-limit caller is rejected cheaply, without
+    // doing token verification / DB work first.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Deny-by-default: every route requires a valid, tenant-bound staff
     // token unless explicitly marked @Public(). See common/auth.guard.ts.
     { provide: APP_GUARD, useClass: DefaultAuthGuard },

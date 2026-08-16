@@ -14,6 +14,7 @@ import { CrmService } from './crm.service';
 import { PermissionGuard, CurrentEmployee } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
 import { TokenPayload } from '../common/token';
+import { RequireFeature } from '../common/feature.decorator';
 
 class CreateCustomerDto {
   @IsOptional() @IsString() panNumber?: string;
@@ -38,6 +39,7 @@ class SettleCreditDto {
   @IsOptional() @IsString() note?: string;
 }
 
+@RequireFeature('crm')
 @Controller('customers')
 export class CrmController {
   constructor(private readonly crm: CrmService) {}

@@ -5,6 +5,7 @@ import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { MenuItem } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 interface Ingredient {
   id: string;
@@ -46,7 +47,7 @@ interface WarehouseStockLine {
   valuationCents: number;
 }
 
-export default function InventoryPage() {
+function InventoryPage() {
   const [tab, setTab] = useState<'stock' | 'recipes' | 'warehouses' | 'variance'>('stock');
   const [ings, setIngs] = useState<Ingredient[]>([]);
   const [val, setVal] = useState<Valuation | null>(null);
@@ -623,5 +624,14 @@ function StockVarianceTab() {
         </table>
       </div>
     </div>
+  );
+}
+
+
+export default function InventoryPageGated() {
+  return (
+    <FeatureGate feature="inventory">
+      <InventoryPage />
+    </FeatureGate>
   );
 }

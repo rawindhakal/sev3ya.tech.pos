@@ -14,8 +14,9 @@ export default function Login({ onLogin, onBack }: { onLogin: (e: Employee) => v
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    setTenantSlug(restaurant);
     if (!username.trim() || !password) return setErr('Enter your username and password');
+    const previousTenant = tenantSlug();
+    setTenantSlug(restaurant);
     setBusy(true);
     setErr('');
     try {
@@ -27,6 +28,7 @@ export default function Login({ onLogin, onBack }: { onLogin: (e: Employee) => v
       if (e.token) localStorage.setItem('cakezake-token', e.token);
       onLogin(e);
     } catch {
+      setTenantSlug(previousTenant);
       setErr('Invalid username or password');
       setPassword('');
     } finally {

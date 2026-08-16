@@ -59,7 +59,7 @@ const NAV: NavNode[] = [
   { label: 'Reservations', icon: '📅', href: '/reservations', feature: 'reservations' },
   { label: 'Customers', icon: '🧑‍🤝‍🧑', href: '/customers', feature: 'crm' },
   {
-    label: 'Marketing', icon: '🎟️',
+    label: 'Marketing', icon: '🎟️', feature: 'marketing',
     children: [
       { href: '/coupons', label: 'Coupons' },
       { href: '/gift-cards', label: 'Gift Cards' },
@@ -100,7 +100,7 @@ const NAV: NavNode[] = [
     ],
   },
   {
-    label: 'HRM', icon: '🗂️',
+    label: 'HRM', icon: '🗂️', feature: 'hrm',
     children: [
       { href: '/hr', label: 'Overview' },
       { href: '/attendance', label: 'Attendance & Payroll' },

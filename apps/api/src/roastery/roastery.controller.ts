@@ -9,6 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { RoasteryService } from './roastery.service';
+import { RequireFeature } from '../common/feature.decorator';
 
 class CreateGreenDto {
   @IsString() @IsNotEmpty() name: string;
@@ -39,6 +40,7 @@ class CupDto {
   @IsOptional() @IsString() notes?: string;
 }
 
+@RequireFeature('roastery')
 @Controller('roastery')
 export class RoasteryController {
   constructor(private readonly roastery: RoasteryService) {}

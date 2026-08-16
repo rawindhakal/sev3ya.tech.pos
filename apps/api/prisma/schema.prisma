@@ -892,6 +892,8 @@ model CafeSetting {
   featFinance      Boolean @default(true)
   featKds          Boolean @default(true)
   featSelfOrder    Boolean @default(true)
+  featMarketing    Boolean @default(true)
+  featHrm          Boolean @default(true)
 
   updatedAt DateTime @updatedAt
 

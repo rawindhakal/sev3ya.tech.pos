@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import type { OrderFeedback } from '@/lib/types';
 import { notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 const STARS = (n: number) => '★'.repeat(n) + '☆'.repeat(5 - n);
 
-export default function FeedbackPage() {
+function FeedbackPage() {
   const [rows, setRows] = useState<OrderFeedback[]>([]);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
@@ -78,5 +79,14 @@ export default function FeedbackPage() {
         )}
       </div>
     </div>
+  );
+}
+
+
+export default function FeedbackPageGated() {
+  return (
+    <FeatureGate feature="marketing">
+      <FeedbackPage />
+    </FeatureGate>
   );
 }

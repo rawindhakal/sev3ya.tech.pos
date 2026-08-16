@@ -6,6 +6,7 @@ import type { Customer, CreditLedgerEntry, PaymentMethod } from '@/lib/types';
 import Modal from '@/components/Modal';
 import ManagerAuth from '@/components/ManagerAuth';
 import { confirmDialog } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 const SETTLE_METHODS: PaymentMethod[] = ['CASH', 'FONEPAY', 'BANK', 'ESEWA', 'KHALTI', 'CARD'];
 
@@ -25,7 +26,7 @@ const SEG: Record<string, string> = {
 
 interface Stats { total: number; totalPoints: number; lifetimeValueCents: number; segments: Record<string, number>; tiers: Record<string, number> }
 
-export default function CustomersPage() {
+function CustomersPage() {
   const [rows, setRows] = useState<Customer[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [search, setSearch] = useState('');
@@ -287,5 +288,14 @@ export default function CustomersPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+
+export default function CustomersPageGated() {
+  return (
+    <FeatureGate feature="crm">
+      <CustomersPage />
+    </FeatureGate>
   );
 }

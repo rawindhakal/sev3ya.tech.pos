@@ -5,6 +5,7 @@ import { api, formatMoney } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { exportPdf } from '@/lib/pdf';
 import { adToBs, formatBsLong } from '@/lib/bs-date';
+import FeatureGate from '@/components/FeatureGate';
 
 // MIS & statutory reports (RestroX-style): a grouped report picker on the left,
 // and one generic renderer — every report arrives in the same
@@ -58,7 +59,7 @@ const GROUPS: { group: string; reports: Def[] }[] = [
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const currentFy = () => { const b = adToBs(new Date()); return b.month >= 4 ? b.year : b.year - 1; };
 
-export default function MisPage() {
+function MisPage() {
   const [def, setDef] = useState<Def>(GROUPS[2].reports[0]); // Daily Sales Summary
   const [from, setFrom] = useState(iso(new Date(Date.now() - 29 * 864e5)));
   const [to, setTo] = useState(iso(new Date()));
@@ -197,5 +198,14 @@ export default function MisPage() {
         {report?.note && <p className="mt-3 text-xs text-slate-400">{report.note}</p>}
       </main>
     </div>
+  );
+}
+
+
+export default function MisPageGated() {
+  return (
+    <FeatureGate feature="finance">
+      <MisPage />
+    </FeatureGate>
   );
 }

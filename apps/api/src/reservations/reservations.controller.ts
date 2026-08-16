@@ -17,6 +17,7 @@ import {
   Min,
 } from 'class-validator';
 import { ReservationsService } from './reservations.service';
+import { RequireFeature } from '../common/feature.decorator';
 
 class CreateReservationDto {
   @IsString() @IsNotEmpty() customerName: string;
@@ -35,6 +36,7 @@ class UpdateReservationDto {
   @IsOptional() @IsInt() @Min(1) partySize?: number;
 }
 
+@RequireFeature('reservations')
 @Controller('reservations')
 export class ReservationsController {
   constructor(private readonly reservations: ReservationsService) {}

@@ -16,6 +16,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
 import { EmployeesService } from './employees.service';
 import { Public } from '../common/public.decorator';
 import { PermissionGuard } from '../common/auth.guard';
@@ -54,7 +55,12 @@ export class EmployeesController {
     return this.employees.findAll();
   }
 
+  // Complements the per-account lockout in common/login-throttle.ts (which
+  // only stops repeated guesses against ONE username) — this caps attempts
+  // per IP regardless of which username is being tried, catching distributed
+  // guessing/credential stuffing across many accounts.
   @Public()
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.employees.login(dto);

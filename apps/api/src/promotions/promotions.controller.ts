@@ -5,6 +5,7 @@ import { PromotionsService } from './promotions.service';
 import { PermissionGuard } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
 import { Public } from '../common/public.decorator';
+import { RequireFeature } from '../common/feature.decorator';
 
 class CreateCouponDto {
   @IsString() @IsNotEmpty() code: string;
@@ -32,6 +33,7 @@ class PreviewCouponDto {
   @IsOptional() @IsString() customerId?: string;
 }
 
+@RequireFeature('marketing')
 @Controller('promotions/coupons')
 export class PromotionsController {
   constructor(private readonly promotions: PromotionsService) {}

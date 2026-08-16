@@ -6,6 +6,7 @@ import { downloadCsv, toCsv, exportObjects } from '@/lib/csv';
 import { formatBsLong } from '@/lib/bs-date';
 import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
 import type { Outlet } from '@/lib/types';
+import FeatureGate from '@/components/FeatureGate';
 
 // Accounting books (Tally / Busy-style), derived live from POS operations:
 // Day Book · Sales Book · Purchase Register · Cash Book · Bank Book ·
@@ -31,7 +32,7 @@ interface Account {
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-export default function AccountingPage() {
+function AccountingPage() {
   const [tab, setTab] = useState<Tab>('Day Book');
   const [from, setFrom] = useState(iso(new Date(Date.now() - 6 * 864e5)));
   const [to, setTo] = useState(iso(new Date()));
@@ -771,5 +772,14 @@ function TrialTab({ from, to }: { from: string; to: string }) {
       </div>
       <p className="text-xs text-slate-400">{data.note}</p>
     </div>
+  );
+}
+
+
+export default function AccountingPageGated() {
+  return (
+    <FeatureGate feature="finance">
+      <AccountingPage />
+    </FeatureGate>
   );
 }

@@ -71,6 +71,8 @@ export class SettingsService {
         finance: s.featFinance,
         kds: s.featKds,
         selfOrder: s.featSelfOrder,
+        marketing: s.featMarketing,
+        hrm: s.featHrm,
       },
     };
   }
@@ -247,6 +249,8 @@ export class SettingsService {
     featFinance?: boolean;
     featKds?: boolean;
     featSelfOrder?: boolean;
+    featMarketing?: boolean;
+    featHrm?: boolean;
     billTemplate?: object;
     kotTemplate?: object;
     irdEnabled?: boolean;

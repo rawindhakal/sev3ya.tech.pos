@@ -16,6 +16,8 @@ const FEATURES: { key: keyof Features; col: string; label: string }[] = [
   { key: 'finance', col: 'featFinance', label: 'Finance & P&L' },
   { key: 'kds', col: 'featKds', label: 'Kitchen display (KDS)' },
   { key: 'selfOrder', col: 'featSelfOrder', label: 'QR self-ordering (table QR codes)' },
+  { key: 'marketing', col: 'featMarketing', label: 'Marketing (coupons, gift cards, feedback)' },
+  { key: 'hrm', col: 'featHrm', label: 'HRM (attendance, leave, shifts, documents)' },
 ];
 
 // Danger zone: what a reset can clear, and whether it's checked by default.

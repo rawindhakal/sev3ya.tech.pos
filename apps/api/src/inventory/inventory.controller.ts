@@ -22,6 +22,7 @@ import { StockMovementType } from '@prisma/client';
 import { InventoryService } from './inventory.service';
 import { PermissionGuard } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
+import { RequireFeature } from '../common/feature.decorator';
 
 class CreateIngredientDto {
   @IsString() @IsNotEmpty() name: string;
@@ -70,6 +71,7 @@ class TransferDto {
   @IsOptional() @IsString() reason?: string;
 }
 
+@RequireFeature('inventory')
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventory: InventoryService) {}

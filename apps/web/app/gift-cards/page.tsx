@@ -5,8 +5,9 @@ import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { GiftCard, GiftCardTransaction } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
-export default function GiftCardsPage() {
+function GiftCardsPage() {
   const [cards, setCards] = useState<GiftCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ valueRs: '', issuedToName: '', issuedToPhone: '' });
@@ -153,5 +154,14 @@ export default function GiftCardsPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+
+export default function GiftCardsPageGated() {
+  return (
+    <FeatureGate feature="marketing">
+      <GiftCardsPage />
+    </FeatureGate>
   );
 }

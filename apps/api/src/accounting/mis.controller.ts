@@ -1,9 +1,11 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { MisService } from './mis.service';
 import { adToBs } from '../common/bs-date';
+import { RequireFeature } from '../common/feature.decorator';
 
 // MIS / statutory reports. One uniform response shape per report so the
 // frontend renders them all with a single generic table + CSV component.
+@RequireFeature('finance')
 @Controller('mis')
 export class MisController {
   constructor(private readonly mis: MisService) {}

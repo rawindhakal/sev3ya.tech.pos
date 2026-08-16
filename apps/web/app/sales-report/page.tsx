@@ -10,6 +10,7 @@ import type { Category, MenuItem, Order, Outlet, Settings } from '@/lib/types';
 import Modal from '@/components/Modal';
 import Receipt from '@/components/Receipt';
 import { billTemplateOf, getPrinterPrefs, printReceiptNow } from '@/lib/printing';
+import FeatureGate from '@/components/FeatureGate';
 
 // Filterable Sales Report: preset views (Detailed · By Item · By Category ·
 // By Payment · By Day · KOT · BOT · Cancelled Items), filters for date range /
@@ -49,7 +50,7 @@ const METHODS = ['CASH', 'FONEPAY', 'BANK', 'ESEWA', 'KHALTI', 'CARD', 'CREDIT',
 const TYPES = ['DINE_IN', 'TAKEAWAY', 'DELIVERY'];
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-export default function SalesReportPage() {
+function SalesReportPage() {
   const [preset, setPreset] = useState<(typeof PRESETS)[number]>(PRESETS[0]);
   const [from, setFrom] = useState(iso(new Date(Date.now() - 6 * 864e5)));
   const [to, setTo] = useState(iso(new Date()));
@@ -537,5 +538,14 @@ export default function SalesReportPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+
+export default function SalesReportPageGated() {
+  return (
+    <FeatureGate feature="finance">
+      <SalesReportPage />
+    </FeatureGate>
   );
 }

@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import type { Coupon } from '@/lib/types';
 import { confirmDialog, notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 const emptyForm = { code: '', type: 'PCT' as 'PCT' | 'RS', value: '', minOrderRs: '', maxUsesTotal: '', maxUsesPerCustomer: '', expiresAt: '' };
 
-export default function CouponsPage() {
+function CouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
@@ -149,5 +150,14 @@ export default function CouponsPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+
+export default function CouponsPageGated() {
+  return (
+    <FeatureGate feature="marketing">
+      <CouponsPage />
+    </FeatureGate>
   );
 }

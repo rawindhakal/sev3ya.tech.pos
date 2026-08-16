@@ -14,6 +14,7 @@ import { OrdersService } from './orders.service';
 import { PermissionGuard, SoftAuthGuard, CurrentEmployee, CurrentOutlet, CurrentTerminal } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
 import { Public } from '../common/public.decorator';
+import { RequireFeature } from '../common/feature.decorator';
 import type { TokenPayload } from '../common/token';
 import {
   AttachCustomerDto,
@@ -64,6 +65,7 @@ export class OrdersController {
 
   // Must stay before @Get(':id') — otherwise "feedback" would match :id.
   @Get('feedback/summary')
+  @RequireFeature('marketing')
   feedbackSummary(@Query('days') days?: string) {
     return this.orders.feedbackSummary(days ? parseInt(days, 10) : 30);
   }

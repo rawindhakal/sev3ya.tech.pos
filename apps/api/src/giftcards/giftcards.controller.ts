@@ -3,6 +3,7 @@ import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { GiftCardsService } from './giftcards.service';
 import { PermissionGuard } from '../common/auth.guard';
 import { PERMISSIONS } from '../common/permissions';
+import { RequireFeature } from '../common/feature.decorator';
 
 class IssueGiftCardDto {
   @IsInt() @Min(1) valueCents: number;
@@ -17,6 +18,7 @@ class SetActiveDto {
   @IsBoolean() isActive: boolean;
 }
 
+@RequireFeature('marketing')
 @Controller('giftcards')
 export class GiftCardsController {
   constructor(private readonly giftCards: GiftCardsService) {}

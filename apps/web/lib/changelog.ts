@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.6.0';
+export const APP_VERSION = '2.7.0';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,16 @@ export const APP_VERSION = '2.6.0';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.7.0', date: '2026-08-16',
+    changes: [
+      'Module toggles in Settings (Reservations, Inventory, Purchasing, Customers, Finance, KDS, and the new Marketing and HRM groups) now actually block page and API access when switched off, instead of only hiding the sidebar entry',
+      'Fixed a bug where a failed sign-in attempt (wrong restaurant code, wrong password) could leave the wrong restaurant "remembered" for the next sign-in attempt on that device',
+      'Fixed the Accounting Balance Sheet understating/misreporting Accounts Payable — partially-received purchase orders now count, using what was actually received rather than what was ordered, and payments already made to suppliers are now subtracted',
+      'Security: added rate limiting to defend against automated password-guessing, on top of the existing per-account lockout',
+      'Daily automated database backups now run on the server, in addition to the backups already taken before every deployment',
+    ],
+  },
   {
     version: '2.6.0', date: '2026-08-13',
     changes: [

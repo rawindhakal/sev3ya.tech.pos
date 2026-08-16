@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 interface FailedItem {
   id: string;
@@ -24,7 +25,7 @@ interface FailedItem {
   createdAt: string;
 }
 
-export default function SyncRecoveryPage() {
+function SyncRecoveryPage() {
   const [items, setItems] = useState<FailedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -143,5 +144,14 @@ export default function SyncRecoveryPage() {
         ))
       )}
     </div>
+  );
+}
+
+
+export default function SyncRecoveryPageGated() {
+  return (
+    <FeatureGate feature="finance">
+      <SyncRecoveryPage />
+    </FeatureGate>
   );
 }

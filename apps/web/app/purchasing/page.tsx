@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, formatMoney, dollarsToCents } from '@/lib/api';
 import Modal from '@/components/Modal';
 import { notify } from '@/lib/dialog';
+import FeatureGate from '@/components/FeatureGate';
 
 interface Supplier { id: string; name: string; contact?: string | null; address?: string | null; taxId?: string | null }
 interface Ingredient { id: string; name: string; unit: string; costPerUnitCents: number }
@@ -18,7 +19,7 @@ const STATUS: Record<string, string> = {
   CANCELLED: 'bg-red-100 text-red-600',
 };
 
-export default function PurchasingPage() {
+function PurchasingPage() {
   const [tab, setTab] = useState<'orders' | 'suppliers' | 'ledger'>('orders');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [ings, setIngs] = useState<Ingredient[]>([]);
@@ -391,5 +392,14 @@ function VendorLedgerTab() {
         )}
       </Modal>
     </div>
+  );
+}
+
+
+export default function PurchasingPageGated() {
+  return (
+    <FeatureGate feature="purchasing">
+      <PurchasingPage />
+    </FeatureGate>
   );
 }
