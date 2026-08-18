@@ -6,7 +6,7 @@ import type { Outlet, RestaurantTable } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { confirmDialog, promptDialog, notify } from '@/lib/dialog';
 
-const blankForm = { name: '', seats: '4', area: '', isVip: false };
+const blankForm = { name: '', number: '', seats: '4', area: '', isVip: false };
 
 export default function TablesAreasPage() {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
@@ -57,7 +57,7 @@ export default function TablesAreasPage() {
   }
   function openEdit(t: RestaurantTable) {
     setEditingId(t.id);
-    setForm({ name: t.name, seats: String(t.seats), area: t.area ?? '', isVip: !!t.isVip });
+    setForm({ name: t.name, number: t.number != null ? String(t.number) : '', seats: String(t.seats), area: t.area ?? '', isVip: !!t.isVip });
     setModal(true);
   }
   async function save(e: React.FormEvent) {
@@ -65,7 +65,13 @@ export default function TablesAreasPage() {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      const payload = { name: form.name.trim(), seats: Math.max(1, Number(form.seats) || 1), area: form.area.trim() || undefined, isVip: form.isVip };
+      const payload = {
+        name: form.name.trim(),
+        number: form.number.trim() ? Number(form.number) : undefined,
+        seats: Math.max(1, Number(form.seats) || 1),
+        area: form.area.trim() || undefined,
+        isVip: form.isVip,
+      };
       if (editingId) await api.patch(`/tables/${editingId}`, payload);
       else await api.post('/tables', payload);
       setModal(false);
@@ -208,9 +214,15 @@ export default function TablesAreasPage() {
 
       <Modal open={modal} title={editingId ? 'Edit table' : 'Add table'} onClose={() => setModal(false)}>
         <form onSubmit={save} className="space-y-4">
-          <div>
-            <label className="label">Name</label>
-            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. T7" required autoFocus />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Name</label>
+              <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. T7" required autoFocus />
+            </div>
+            <div>
+              <label className="label">Table No (optional)</label>
+              <input className="input" type="number" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} placeholder="e.g. 46" />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

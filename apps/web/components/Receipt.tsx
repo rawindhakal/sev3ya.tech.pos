@@ -8,7 +8,7 @@ import { formatMoney, formatMoneyPlain, formatMoneyRounded } from '@/lib/api';
 import { formatBs } from '@/lib/bs-date';
 import { PAYMENT_METHOD_LABEL } from '@/lib/constants';
 import { amountInWords } from '@/lib/number-to-words';
-import { billTemplateOf, kotTemplateOf, kotMetaPairs, ticketDate, ticketTime } from '@/lib/printing';
+import { billTemplateOf, kotTemplateOf, kotMetaPairs, ticketDate, ticketTime, ticketDateTime } from '@/lib/printing';
 import type { TemplateLine } from '@/lib/printing';
 import type { Order, OrderItem, Settings } from '@/lib/types';
 
@@ -58,6 +58,7 @@ export default function Receipt({
     switch (id) {
       case 'time': return ticketTime(now);
       case 'table': return order.table?.name || null;
+      case 'tableNo': return order.table?.number != null ? String(order.table.number) : null;
       case 'guestCount': return String(order.guestCount);
       case 'cashier': return order.cashierName || null;
       case 'waiter': return order.waiter?.name || null;
@@ -66,6 +67,11 @@ export default function Receipt({
       case 'fiscalYear': return order.fiscalYear || null;
       case 'terminal': return order.terminal?.name || null;
       case 'nepaliDate': return formatBs(now);
+      case 'panNo': return settings?.taxId || null;
+      // Same underlying timestamp as 'time'/'date' — the reference format
+      // shows these as two identically-valued lines rather than one.
+      case 'transactionDate': return ticketDateTime(now);
+      case 'invoiceIssueDate': return ticketDateTime(now);
       default: return null;
     }
   };
@@ -95,6 +101,9 @@ export default function Receipt({
         ticketNo: (mode === 'BOT' ? order.botNo : order.kotNo) ?? order.number,
         orderType: order.type,
         table: order.table?.name,
+        tableNo: order.table?.number,
+        area: order.table?.area,
+        terminal: order.terminal?.name,
         waiter: order.waiter?.name,
         guestCount: order.guestCount,
         unsynced,
@@ -169,9 +178,9 @@ export default function Receipt({
       <table style={{ width: '100%', marginTop: 6, borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #000' }}>
-            <th style={{ textAlign: 'center', width: '2.2em' }}>Qty</th>
             <th style={{ textAlign: 'left' }}>Item</th>
             {isBill && bt.showHsCode && <th style={{ textAlign: 'left' }}>HS Code</th>}
+            <th style={{ textAlign: 'center', width: '2.2em' }}>Qty</th>
             {isBill && bt.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}
             {isBill && <th style={{ textAlign: 'right' }}>Amount</th>}
           </tr>
@@ -185,13 +194,13 @@ export default function Receipt({
             const showNotes = isBill ? bt.showItemNotes : kt.showItemNotes;
             return (
               <tr key={it.id} style={{ verticalAlign: 'top' }}>
-                <td style={{ textAlign: 'center', fontWeight: 800, padding: '3px 0' }}>{it.quantity}</td>
                 <td style={{ textAlign: 'left', fontWeight: bold ? 700 : 500, padding: '3px 0' }}>
                   {mode === 'CANCEL' ? '❌ ' : ''}{it.nameSnapshot}
                   {mods.length > 0 && <div style={{ fontSize: sub, fontWeight: 400 }}>+ {mods.map((m) => m.name).join(', ')}</div>}
                   {showNotes && it.notes && <div style={{ fontSize: sub, fontStyle: 'italic', fontWeight: 400 }}>» {it.notes}</div>}
                 </td>
                 {isBill && bt.showHsCode && <td style={{ textAlign: 'left' }}>{it.hsCodeSnapshot || '—'}</td>}
+                <td style={{ textAlign: 'center', fontWeight: 800, padding: '3px 0' }}>{it.quantity}</td>
                 {isBill && bt.showRate && <td style={{ textAlign: 'right' }}>{(rate / 100).toFixed(2)}</td>}
                 {isBill && <td style={{ textAlign: 'right' }}>{money(lineTotal)}</td>}
               </tr>
@@ -200,7 +209,33 @@ export default function Receipt({
         </tbody>
       </table>
 
-      {isBill && (
+      {isBill && bt.paymentModeSideBySide ? (
+        <div style={{ borderTop: '2px dashed #000', marginTop: 6, paddingTop: 4, display: 'flex', gap: 10 }}>
+          <div style={{
+            flex: '1 1 45%', alignSelf: 'flex-start',
+            ...(bt.boxedPaymentMode ? { border: '1px solid #000', borderRadius: 3, padding: '4px 6px' } : {}),
+          }}>
+            {bt.showPaymentMode && order.payments && order.payments.length > 0 && (
+              <>
+                <div style={{ fontWeight: 700 }}>Mode Of Payment</div>
+                {order.payments.map((p) => (
+                  <div key={p.id}>
+                    {PAYMENT_METHOD_LABEL[p.method] ?? p.method}{p.gatewayRef ? ` (Txn ID: ${p.gatewayRef})` : ''} — {money(p.amountCents)}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+          <div style={{ flex: '1 1 55%' }}>
+            {[...bt.totalsLines]
+              .sort((a, b) => a.order - b.order)
+              .filter((l) => l.enabled)
+              .map((l) => totalsRowFor(l, order, settings, netBeforeTax, money))
+              .filter((row): row is { label: string; value: string } => row != null)
+              .map((row) => <Row key={row.label} label={row.label} value={row.value} />)}
+          </div>
+        </div>
+      ) : (
         <div style={{ borderTop: '2px dashed #000', marginTop: 6, paddingTop: 4 }}>
           {[...bt.totalsLines]
             .sort((a, b) => a.order - b.order)
@@ -214,11 +249,7 @@ export default function Receipt({
         </div>
       )}
 
-      {isBill && bt.showAmountInWords && (
-        <div style={{ marginTop: 4 }}>In Words: {amountInWords(order.totalCents)}</div>
-      )}
-
-      {isBill && bt.showPaymentMode && order.payments && order.payments.length > 0 && (
+      {isBill && !bt.paymentModeSideBySide && bt.showPaymentMode && order.payments && order.payments.length > 0 && (
         <div style={{
           borderTop: '2px dashed #000', marginTop: 6, paddingTop: 4,
           ...(bt.boxedPaymentMode ? { border: '1px solid #000', borderRadius: 3, padding: '4px 6px' } : {}),
@@ -229,6 +260,16 @@ export default function Receipt({
             </div>
           ))}
         </div>
+      )}
+
+      {isBill && bt.paymentModeSideBySide && (
+        <div style={{ borderTop: '2px solid #000', marginTop: 4, paddingTop: 4 }}>
+          <Row label="GRAND TOTAL" value={bt.showCurrencySymbol ? formatMoney(order.totalCents) : formatMoneyRounded(order.totalCents)} bold big />
+        </div>
+      )}
+
+      {isBill && bt.showAmountInWords && (
+        <div style={{ marginTop: 4 }}>In Words: {amountInWords(order.totalCents)}</div>
       )}
 
       {isBill && bt.showReceivedChange && changeDueCents > 0 && (
@@ -294,6 +335,13 @@ function totalsRowFor(
       return { label: `${line.label} (${Math.round((settings?.serviceChargeRate ?? 0) * 100)}%)`, value: money(order.serviceChargeCents) };
     case 'netBeforeTax':
       if (!settings?.pricesIncludeVat) return null;
+      return { label: line.label, value: money(netBeforeTax) };
+    // 'total' and 'taxableAmt' are both the post-discount/service, pre-tax
+    // base (same figure as netBeforeTax) — shown as separate lines to match
+    // a reference invoice format where they're distinct rows, unlike
+    // netBeforeTax above which only appears for VAT-inclusive pricing.
+    case 'total':
+    case 'taxableAmt':
       return { label: line.label, value: money(netBeforeTax) };
     case 'vat':
       return { label: `${line.label} (${Math.round((settings?.vatRate ?? 0.13) * 100)}%)`, value: money(order.taxCents) };

@@ -58,7 +58,7 @@ export class TablesService {
     return Object.entries(areas).map(([area, tables]) => ({ area, tables }));
   }
 
-  async create(data: { name: string; seats?: number; area?: string; isVip?: boolean; outletId?: string }) {
+  async create(data: { name: string; number?: number; seats?: number; area?: string; isVip?: boolean; outletId?: string }) {
     return this.prisma.restaurantTable.create({
       data: { ...data, outletId: data.outletId ?? (await this.outlets.defaultOutletId()) },
     });
@@ -81,6 +81,7 @@ export class TablesService {
     id: string,
     data: {
       name?: string;
+      number?: number;
       seats?: number;
       area?: string;
       status?: TableStatus;

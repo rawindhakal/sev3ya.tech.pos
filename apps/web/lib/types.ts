@@ -160,6 +160,7 @@ export interface Employee {
 export interface RestaurantTable {
   id: string;
   name: string;
+  number?: number | null;
   seats: number;
   area?: string | null;
   status: TableStatus;
@@ -251,7 +252,7 @@ export interface Order {
   botNo?: number | null;
   items: OrderItem[];
   payments: Payment[];
-  table?: { id: string; name: string; area?: string | null } | null;
+  table?: { id: string; name: string; area?: string | null; number?: number | null } | null;
   waiter?: { id: string; name: string } | null;
   terminal?: { id: string; name: string } | null;
   createdAt: string;

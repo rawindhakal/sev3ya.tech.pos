@@ -82,6 +82,7 @@ export interface BillTemplate {
   showReceivedChange: boolean; // Received Amount / Change, when a cash tender overpaid
   showSignatureLines: boolean; // blank Cashier / Customer signature lines at the bottom
   boxedPaymentMode: boolean;   // draws a border around the Payment Mode section
+  paymentModeSideBySide: boolean; // Payment Mode box to the left, totals stacked to the right, instead of stacked vertically
 }
 
 export interface KotTemplate {
@@ -99,33 +100,45 @@ export interface KotTemplate {
 }
 
 const DEFAULT_BILL_META_LINES: TemplateLine[] = [
-  { id: 'time', enabled: true, label: 'Time', order: 0 },
-  { id: 'table', enabled: true, label: 'Table No', order: 1 },
-  { id: 'guestCount', enabled: true, label: 'Guest Count', order: 2 },
-  { id: 'cashier', enabled: true, label: 'Cashier', order: 3 },
-  { id: 'waiter', enabled: true, label: 'Waiter', order: 4 },
-  { id: 'customer', enabled: true, label: 'Customer', order: 5 },
-  { id: 'area', enabled: false, label: 'Area', order: 6 },
-  { id: 'fiscalYear', enabled: false, label: 'Fiscal Year', order: 7 },
-  { id: 'terminal', enabled: false, label: 'Service Provider', order: 8 },
+  { id: 'panNo', enabled: false, label: 'Pan No', order: 0 },
+  { id: 'time', enabled: true, label: 'Time', order: 1 },
+  // 'table' shows the table's NAME (e.g. "T1") — 'tableNo' below is the
+  // separate numeric Table No some tenants also track.
+  { id: 'table', enabled: true, label: 'Table Name', order: 2 },
+  { id: 'tableNo', enabled: false, label: 'Table No', order: 3 },
+  { id: 'guestCount', enabled: true, label: 'Guest Count', order: 4 },
+  { id: 'cashier', enabled: true, label: 'Cashier', order: 5 },
+  { id: 'waiter', enabled: true, label: 'Waiter', order: 6 },
+  { id: 'customer', enabled: true, label: 'Customer', order: 7 },
+  { id: 'area', enabled: false, label: 'Area', order: 8 },
+  { id: 'fiscalYear', enabled: false, label: 'Fiscal Year', order: 9 },
+  { id: 'terminal', enabled: false, label: 'Service Provider', order: 10 },
   // Was a hardcoded, always-on line ("BS {date}") before this became
   // customizable — defaults enabled so nothing disappears from an existing
   // tenant's bill.
-  { id: 'nepaliDate', enabled: true, label: 'Nepali Date', order: 9 },
+  { id: 'nepaliDate', enabled: true, label: 'Nepali Date', order: 11 },
+  { id: 'transactionDate', enabled: false, label: 'Transaction Date', order: 12 },
+  { id: 'invoiceIssueDate', enabled: false, label: 'Invoice Issue Date', order: 13 },
 ];
 const DEFAULT_BILL_TOTALS_LINES: TemplateLine[] = [
   { id: 'subtotal', enabled: true, label: 'Sub Total', order: 0 },
   { id: 'discount', enabled: true, label: 'Discount', order: 1 },
   { id: 'serviceCharge', enabled: true, label: 'Service charge', order: 2 },
-  { id: 'netBeforeTax', enabled: true, label: 'Net Amount Before Tax', order: 3 },
-  { id: 'vat', enabled: true, label: 'VAT', order: 4 },
+  { id: 'total', enabled: false, label: 'Total', order: 3 },
+  { id: 'netBeforeTax', enabled: true, label: 'Net Amount Before Tax', order: 4 },
+  { id: 'taxableAmt', enabled: false, label: 'Taxable AMT', order: 5 },
+  { id: 'vat', enabled: true, label: 'VAT', order: 6 },
 ];
 const DEFAULT_KOT_META_LINES: TemplateLine[] = [
   { id: 'time', enabled: true, label: 'Time', order: 0 },
   { id: 'orderType', enabled: true, label: 'Order Type', order: 1 },
-  { id: 'table', enabled: true, label: 'Table No', order: 2 },
-  { id: 'guestCount', enabled: true, label: 'Guest Count', order: 3 },
-  { id: 'waiter', enabled: true, label: 'Order Taken By', order: 4 },
+  { id: 'table', enabled: true, label: 'Table Name', order: 2 },
+  { id: 'tableNo', enabled: false, label: 'Table No', order: 3 },
+  { id: 'area', enabled: false, label: 'Table Area', order: 4 },
+  { id: 'guestCount', enabled: true, label: 'Guest Count', order: 5 },
+  { id: 'waiter', enabled: true, label: 'Order Taken By', order: 6 },
+  { id: 'userName', enabled: false, label: 'UserName', order: 7 },
+  { id: 'serviceProvider', enabled: false, label: 'Service Provider', order: 8 },
 ];
 
 export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
@@ -135,7 +148,7 @@ export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
   fontSize: 14,
   fontFamily: DEFAULT_FONT_FAMILY,
   paperWidthMm: 80,
-  marginMm: 3,
+  marginMm: 4,
   boldTotals: true,
   showAddress: true,
   showPhone: true,
@@ -153,6 +166,7 @@ export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
   showReceivedChange: false,
   showSignatureLines: false,
   boxedPaymentMode: false,
+  paymentModeSideBySide: false,
 };
 
 export const DEFAULT_KOT_TEMPLATE: KotTemplate = {
@@ -161,7 +175,7 @@ export const DEFAULT_KOT_TEMPLATE: KotTemplate = {
   fontSize: 15,
   fontFamily: DEFAULT_FONT_FAMILY,
   paperWidthMm: 80,
-  marginMm: 3,
+  marginMm: 4,
   boldTotals: true,
   metaLines: DEFAULT_KOT_META_LINES,
   showItemNotes: true,
@@ -279,6 +293,9 @@ export interface KotQueueItem {
   ticketNo: number;
   orderType: string;
   table: string | null;
+  tableNo?: number | null;
+  area?: string | null;
+  terminal?: string | null;
   waiter: string | null;
   guestCount?: number | null;
   name: string;
@@ -311,21 +328,34 @@ export const ticketDate = (d: Date) =>
   d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
 export const ticketTime = (d: Date) =>
   d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+// "08/11/2026 10:23:54 AM" — matches the Transaction Date / Invoice Issue
+// Date convention on the reference invoice format (Settings → Printing).
+export const ticketDateTime = (d: Date) => {
+  const date = d.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  return `${date} ${time}`;
+};
 
 // Silently print whatever is currently rendered in #print-area (Receipt /
 // DayReport) through the desktop shell — no printer dialog. The components use
 // inline styles, so the captured markup is self-contained. Returns false when
 // not in the desktop shell (caller falls back to window.print()).
-export async function silentPrintArea(opts: { printer?: string; widthMm?: number; marginMm?: number; fontSize?: number; fontFamily?: string }): Promise<boolean> {
+// `opts.widthMm` is the EXACT width to print, already net of margin (see
+// printReceiptNow) — not the full paper roll width. Declaring the printed
+// page as anything wider than the content and relying on the printer driver
+// to honor a custom page size *and* center a narrower div inside it exactly
+// is what caused real receipts to clip a few mm off both edges on physical
+// thermal printers; requesting exactly the width we want removes that
+// guesswork.
+export async function silentPrintArea(opts: { printer?: string; widthMm?: number; fontSize?: number; fontFamily?: string }): Promise<boolean> {
   if (typeof window === 'undefined' || !window.cakezakeDesktop?.printHtml) return false; // not the desktop shell — caller falls back to window.print()
   const el = document.getElementById('print-area');
   if (!el) return false;
-  const w = opts.widthMm ?? 80;
-  const m = opts.marginMm ?? 3;
+  const w = opts.widthMm ?? 72;
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
     body { font-family: ${sanitizeFontFamily(opts.fontFamily)}; color: #000; background: #fff;
-           width: ${Math.max(w - m * 2, 20)}mm; margin: 0 auto; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
+           width: 100%; margin: 0; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
     #print-area { display: block !important; }
     table { border-collapse: collapse; }
     th, td { padding: 1px 0; }
@@ -345,12 +375,15 @@ export async function silentPrintArea(opts: { printer?: string; widthMm?: number
 }
 
 // Injects/updates a page-scoped <style> tag declaring the physical paper size
-// and margin for the browser print dialog (window.print() fallback, used
-// outside the desktop shell). Without this the browser prints to whatever
-// page size its dialog defaults to (usually A4/Letter) instead of the
-// receipt's actual roll width, which is what clips/cuts printed bills on a
-// thermal printer even though the on-screen preview looks correct.
-function applyPrintPageStyle(widthMm: number, marginMm: number, fontFamily: string) {
+// for the browser print dialog (window.print() fallback, used outside the
+// desktop shell). Without this the browser prints to whatever page size its
+// dialog defaults to (usually A4/Letter) instead of the receipt's actual
+// roll width, which is what clips/cuts printed bills on a thermal printer
+// even though the on-screen preview looks correct. `widthMm` here is the
+// exact content width to print (already net of margin) — the page IS the
+// content, not a wider page with the content centered inside it (see
+// printReceiptNow for why that centering approach used to clip real prints).
+function applyPrintPageStyle(widthMm: number, fontFamily: string) {
   if (typeof document === 'undefined') return;
   let style = document.getElementById('ticket-print-style') as HTMLStyleElement | null;
   if (!style) {
@@ -358,15 +391,9 @@ function applyPrintPageStyle(widthMm: number, marginMm: number, fontFamily: stri
     style.id = 'ticket-print-style';
     document.head.appendChild(style);
   }
-  // @page margin is deliberately 0 — the "margin" a user configures is
-  // instead the blank space around #print-area's own (narrower) width,
-  // centered via margin:auto. This mirrors silentPrintArea's desktop
-  // approach exactly and avoids subtracting the margin twice (once at the
-  // @page level, once at the content level), which would double the gap.
-  const contentWidth = Math.max(widthMm - marginMm * 2, 20);
   style.textContent = `@media print {
     @page { size: ${widthMm}mm auto; margin: 0; }
-    body.print-receipt #print-area { width: ${contentWidth}mm !important; margin: 0 auto !important; padding: 0 !important; font-family: ${sanitizeFontFamily(fontFamily)} !important; }
+    body.print-receipt #print-area { width: 100% !important; margin: 0 !important; padding: 0 !important; font-family: ${sanitizeFontFamily(fontFamily)} !important; }
   }`;
 }
 
@@ -376,9 +403,21 @@ function applyPrintPageStyle(widthMm: number, marginMm: number, fontFamily: stri
 // default page size). Centralizing this means every caller (POS, Day-End
 // Z-report, Sales Report reprint) gets identical sizing/margin behavior
 // instead of each hand-rolling its own silentPrintArea + window.print pair.
+//
+// `widthMm`/`marginMm` here are the template's raw paper width and margin
+// (e.g. 80mm roll, 4mm margin) — this function does the one subtraction
+// (contentWidth = widthMm − marginMm×2) and both print paths below print
+// exactly that width, edge to edge, instead of declaring a full-roll-width
+// page and centering a narrower div inside it. The old centering approach
+// depended on the printer driver honoring a custom page size *and* actually
+// supporting zero hardware margins to land the centered content correctly —
+// many thermal printer drivers don't, silently clipping a few mm off both
+// edges even though the on-screen preview and browser print-preview looked
+// fine. Printing exactly the intended width removes that dependency.
 export async function printReceiptNow(opts: { printer?: string; widthMm: number; marginMm: number; fontSize: number; fontFamily: string }): Promise<void> {
-  if (await silentPrintArea(opts)) return;
-  applyPrintPageStyle(opts.widthMm, opts.marginMm, opts.fontFamily);
+  const contentWidth = Math.max(opts.widthMm - opts.marginMm * 2, 20);
+  if (await silentPrintArea({ printer: opts.printer, widthMm: contentWidth, fontSize: opts.fontSize, fontFamily: opts.fontFamily })) return;
+  applyPrintPageStyle(contentWidth, opts.fontFamily);
   document.body.classList.add('print-receipt');
   window.print();
   document.body.classList.remove('print-receipt');
@@ -400,6 +439,9 @@ export function kotMetaPairs(opts: {
   ticketNo: number;
   orderType: string;
   table?: string | null;
+  tableNo?: number | null;
+  area?: string | null;
+  terminal?: string | null;
   waiter?: string | null;
   guestCount?: number | null;
   unsynced?: boolean;
@@ -411,8 +453,16 @@ export function kotMetaPairs(opts: {
       case 'time': return ticketTime(now);
       case 'orderType': return opts.orderType.replace('_', ' ');
       case 'table': return opts.table || null;
+      case 'tableNo': return opts.tableNo != null ? String(opts.tableNo) : null;
+      case 'area': return opts.area || null;
       case 'guestCount': return opts.guestCount ? String(opts.guestCount) : null;
       case 'waiter': return opts.waiter || null;
+      // Reuses the waiter field — the best available "who's responsible for
+      // this ticket" proxy at KOT-fire time (order.cashierName isn't set
+      // until checkout). Kept as a separate line id so a tenant already
+      // showing "Waiter" isn't forced into a duplicate row.
+      case 'userName': return opts.waiter || null;
+      case 'serviceProvider': return opts.terminal || null;
       default: return null;
     }
   };
@@ -442,22 +492,27 @@ export function kotTicketHtml(opts: {
   ticketNo: number;
   orderType: string;
   table?: string | null;
+  tableNo?: number | null;
+  area?: string | null;
+  terminal?: string | null;
   waiter?: string | null;
   guestCount?: number | null;
   items: KotQueueItem[];
 }): string {
   const t = opts.template;
   const title = opts.station === 'BAR' ? t.botTitle : t.kotTitle;
+  // Item first, then Qty — matches the reference KOT format and reads more
+  // naturally for kitchen staff scanning down a list of dish names.
   const rows = opts.items
     .map(
       (i) => `
       <tr>
-        <td class="qty">${i.quantity}</td>
         <td class="nm">${esc(i.name)}${
           Array.isArray(i.modifiers) && i.modifiers.length
             ? `<div class="sub">+ ${esc(i.modifiers.map((m) => m.name).join(', '))}</div>`
             : ''
         }${t.showItemNotes && i.notes ? `<div class="sub it">» ${esc(i.notes)}</div>` : ''}</td>
+        <td class="qty">${i.quantity}</td>
       </tr>`,
     )
     .join('');
@@ -475,11 +530,14 @@ export function kotTicketHtml(opts: {
       `<div class="row"><span>${esc(l1)}: <b>${esc(v1)}</b></span>${pair ? `<span>${esc(pair[0])}: <b>${esc(pair[1])}</b></span>` : ''}</div>`,
     );
   }
+  // Same width the caller (AutoPrintAgent) must pass as the Electron page
+  // width — see the note on printReceiptNow: the page IS this content
+  // width, not the full roll width with this centered inside it.
   const w = Math.max(t.paperWidthMm - t.marginMm * 2, 20);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
     body { font-family: ${sanitizeFontFamily(t.fontFamily)}; font-size: ${t.fontSize}px; font-weight: ${t.boldTotals ? 600 : 400}; color: #000;
-           width: ${w}mm; margin: 0 auto; padding: 4px 2px; }
+           width: ${w}mm; margin: 0; padding: 4px 2px; }
     .ttl { text-align: center; font-weight: 800; font-size: ${t.fontSize + 6}px; margin-bottom: 4px; }
     .ord { font-weight: 700; }
     .meta { border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 4px 0; }
@@ -497,7 +555,7 @@ export function kotTicketHtml(opts: {
     <div class="meta">
       ${metaRows.join('')}
     </div>
-    <table><thead><tr><th class="qty">Qty</th><th>Item</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead><tr><th>Item</th><th class="qty">Qty</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="foot">— fire to station —</div>
   </body></html>`;
 }

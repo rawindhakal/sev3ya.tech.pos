@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.7.0';
+export const APP_VERSION = '2.8.0';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,17 @@ export const APP_VERSION = '2.7.0';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.8.0', date: '2026-08-18',
+    changes: [
+      'Fixed printed bills and KOTs being cut off on both edges on some thermal printers — the printed page is now sized to exactly the intended content width instead of a wider page with the content centered inside it',
+      'Bill and KOT item tables now list Item before Qty (previously Qty first)',
+      'New optional bill fields: Pan No, a numeric Table No (in addition to table name), Transaction Date / Invoice Issue Date, Total, and Taxable AMT — all off by default, enable them under Settings → Printing to match a specific invoice format',
+      'New optional KOT fields: Table Area, Table No, UserName, and Service Provider',
+      'New "Payment mode beside totals" layout option for the bill, placing the Mode of Payment box next to the totals instead of below them',
+      'Tables can now have an optional numeric Table No (Settings → Tables & Areas), separate from the table name',
+    ],
+  },
   {
     version: '2.7.0', date: '2026-08-16',
     changes: [

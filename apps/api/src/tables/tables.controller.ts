@@ -26,6 +26,7 @@ import { CurrentOutlet } from '../common/auth.guard';
 
 class CreateTableDto {
   @IsString() @IsNotEmpty() name: string;
+  @IsOptional() @IsInt() number?: number;
   @IsOptional() @IsInt() @Min(1) seats?: number;
   @IsOptional() @IsString() area?: string;
   @IsOptional() @IsBoolean() isVip?: boolean;
@@ -33,6 +34,7 @@ class CreateTableDto {
 
 class UpdateTableDto {
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
+  @IsOptional() @IsInt() number?: number;
   @IsOptional() @IsInt() @Min(1) seats?: number;
   @IsOptional() @IsString() area?: string;
   @IsOptional() @IsEnum(TableStatus) status?: TableStatus;

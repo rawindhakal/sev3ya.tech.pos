@@ -35,7 +35,7 @@ import {
 const orderInclude = {
   items: { orderBy: { createdAt: 'asc' as const } },
   payments: true,
-  table: { select: { id: true, name: true, area: true } },
+  table: { select: { id: true, name: true, area: true, number: true } },
   waiter: { select: { id: true, name: true } },
   terminal: { select: { id: true, name: true } },
 };
@@ -560,8 +560,9 @@ export class OrdersService {
           select: {
             id: true, number: true, type: true, notes: true, kotFiredAt: true, guestCount: true,
             kotNo: true, botNo: true,
-            table: { select: { name: true } },
+            table: { select: { name: true, area: true, number: true } },
             waiter: { select: { name: true } },
+            terminal: { select: { name: true } },
           },
         },
       },
@@ -581,6 +582,9 @@ export class OrdersService {
       ticketNo: (i.station === 'BAR' ? i.order.botNo : i.order.kotNo) ?? i.order.number,
       orderType: i.order.type,
       table: i.order.table?.name ?? null,
+      tableNo: i.order.table?.number ?? null,
+      area: i.order.table?.area ?? null,
+      terminal: i.order.terminal?.name ?? null,
       waiter: i.order.waiter?.name ?? null,
       guestCount: i.order.guestCount,
       name: i.nameSnapshot,

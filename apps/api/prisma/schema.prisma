@@ -154,6 +154,7 @@ enum TableStatus {
 model RestaurantTable {
   id           String        @id @default(cuid())
   name         String // e.g. "T1", "Patio 3"
+  number       Int? // separate numeric table number some tenants also track on bills/KOTs, distinct from name
   seats        Int           @default(4)
   area         String? // e.g. "Ground floor", "Patio"
   // Which physical location this table belongs to (multi-outlet, Phase 3) —

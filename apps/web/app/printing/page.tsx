@@ -13,6 +13,7 @@ import {
   isDesktopShell,
   ticketDate,
   ticketTime,
+  ticketDateTime,
   FONT_OPTIONS,
   type BillTemplate,
   type KotTemplate,
@@ -36,6 +37,7 @@ const SAMPLE_ITEMS = [
 const BILL_SAMPLE_VALUE: Record<string, string> = {
   time: ticketTime(new Date()),
   table: 'T-04',
+  tableNo: '46',
   guestCount: '4',
   cashier: 'Sita Sharma',
   waiter: 'Ramesh',
@@ -44,14 +46,21 @@ const BILL_SAMPLE_VALUE: Record<string, string> = {
   fiscalYear: '2083/084',
   terminal: 'Till 1',
   nepaliDate: ticketDate(new Date()),
+  panNo: '622389071',
+  transactionDate: ticketDateTime(new Date()),
+  invoiceIssueDate: ticketDateTime(new Date()),
 };
 const SAMPLE_HS_CODE = '2106.90';
 const KOT_SAMPLE_VALUE: Record<string, string> = {
   time: ticketTime(new Date()),
   orderType: 'Dine-In',
   table: 'T-04',
+  tableNo: '46',
+  area: 'Ground floor',
   guestCount: '4',
   waiter: 'Captain Ramesh',
+  userName: 'Captain Ramesh',
+  serviceProvider: 'Till 1',
 };
 function previewTotalsRow(
   line: TemplateLine,
@@ -65,6 +74,8 @@ function previewTotalsRow(
     case 'discount': return { label: `${line.label} (Staff 10%)`, value: `-${money(5000)}` };
     case 'serviceCharge': return { label: `${line.label} (10%)`, value: money(Math.round(subtotalCents * 0.1)) };
     case 'netBeforeTax': return { label: line.label, value: money(subtotalCents) };
+    case 'total':
+    case 'taxableAmt': return { label: line.label, value: money(subtotalCents) };
     case 'vat': return { label: `${line.label} (${Math.round(vatRate * 100)}%)`, value: money(vatCents) };
     default: return null;
   }
@@ -353,6 +364,7 @@ export default function PrintingPage() {
               <Toggle label="HS Code column" on={bill.showHsCode} onChange={(v) => setBill({ ...bill, showHsCode: v })} />
               <Toggle label="Payment mode / Txn ID" on={bill.showPaymentMode} onChange={(v) => setBill({ ...bill, showPaymentMode: v })} />
               <Toggle label="Boxed payment mode" on={bill.boxedPaymentMode} onChange={(v) => setBill({ ...bill, boxedPaymentMode: v })} />
+              <Toggle label="Payment mode beside totals" on={bill.paymentModeSideBySide} onChange={(v) => setBill({ ...bill, paymentModeSideBySide: v })} />
               <Toggle label="Received & Change" on={bill.showReceivedChange} onChange={(v) => setBill({ ...bill, showReceivedChange: v })} />
               <Toggle label="Amount in words" on={bill.showAmountInWords} onChange={(v) => setBill({ ...bill, showAmountInWords: v })} />
               <Toggle label="Signature lines" on={bill.showSignatureLines} onChange={(v) => setBill({ ...bill, showSignatureLines: v })} />
@@ -393,45 +405,76 @@ export default function PrintingPage() {
                     ))}
               </div>
               <table style={{ width: '100%', marginTop: 5, borderCollapse: 'collapse' }}>
-                <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th style={{ width: '2em', textAlign: 'center' }}>Qty</th><th>Item</th>{bill.showHsCode && <th>HS Code</th>}{bill.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}<th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
+                <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th>Item</th>{bill.showHsCode && <th>HS Code</th>}<th style={{ width: '2em', textAlign: 'center' }}>Qty</th>{bill.showRate && <th style={{ textAlign: 'right' }}>Rate</th>}<th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
                 <tbody>
                   {SAMPLE_ITEMS.map((i) => (
                     <tr key={i.name} style={{ verticalAlign: 'top' }}>
-                      <td style={{ textAlign: 'center', fontWeight: 800 }}>{i.qty}</td>
                       <td style={{ fontWeight: bill.boldTotals ? 700 : 500 }}>{i.name}
                         {i.mods && <div style={{ fontSize: Math.max(bill.fontSize - 3, 9), fontWeight: 400 }}>+ {i.mods}</div>}
                         {bill.showItemNotes && i.notes && <div style={{ fontSize: Math.max(bill.fontSize - 3, 9), fontStyle: 'italic', fontWeight: 400 }}>» {i.notes}</div>}
                       </td>
                       {bill.showHsCode && <td>{SAMPLE_HS_CODE}</td>}
+                      <td style={{ textAlign: 'center', fontWeight: 800 }}>{i.qty}</td>
                       {bill.showRate && <td style={{ textAlign: 'right' }}>{(i.cents / 100).toFixed(2)}</td>}
                       <td style={{ textAlign: 'right' }}>{money(i.cents * i.qty)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div style={{ borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3 }}>
-                {[...bill.totalsLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled)
-                  .map((l) => previewTotalsRow(l, subtotal, vat, settings?.vatRate ?? 0.13, money))
-                  .filter((row): row is { label: string; value: string } => row != null)
-                  .map((row) => (
-                    <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{row.label}</span><span>{row.value}</span>
-                    </div>
-                  ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '1.15em', borderTop: '2px solid #000', marginTop: 3, paddingTop: 3 }}>
-                  <span>GRAND TOTAL</span><span>{bill.showCurrencySymbol ? formatMoney(previewGrandTotal) : formatMoneyRounded(previewGrandTotal)}</span>
+              {bill.paymentModeSideBySide ? (
+                <div style={{ borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3, display: 'flex', gap: 8 }}>
+                  <div style={{
+                    flex: '1 1 45%', alignSelf: 'flex-start',
+                    ...(bill.boxedPaymentMode ? { border: '1px solid #000', borderRadius: 3, padding: '4px 6px' } : {}),
+                  }}>
+                    {bill.showPaymentMode && (
+                      <>
+                        <div style={{ fontWeight: 700 }}>Mode Of Payment</div>
+                        <div>Fonepay QR (Txn ID: FP98213)</div>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ flex: '1 1 55%' }}>
+                    {[...bill.totalsLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled)
+                      .map((l) => previewTotalsRow(l, subtotal, vat, settings?.vatRate ?? 0.13, money))
+                      .filter((row): row is { label: string; value: string } => row != null)
+                      .map((row) => (
+                        <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>{row.label}</span><span>{row.value}</span>
+                        </div>
+                      ))}
+                  </div>
                 </div>
-              </div>
-              {bill.showAmountInWords && (
-                <div style={{ marginTop: 4 }}>In Words: {amountInWords(previewGrandTotal)}</div>
+              ) : (
+                <div style={{ borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3 }}>
+                  {[...bill.totalsLines].sort((a, b) => a.order - b.order).filter((l) => l.enabled)
+                    .map((l) => previewTotalsRow(l, subtotal, vat, settings?.vatRate ?? 0.13, money))
+                    .filter((row): row is { label: string; value: string } => row != null)
+                    .map((row) => (
+                      <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{row.label}</span><span>{row.value}</span>
+                      </div>
+                    ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '1.15em', borderTop: '2px solid #000', marginTop: 3, paddingTop: 3 }}>
+                    <span>GRAND TOTAL</span><span>{bill.showCurrencySymbol ? formatMoney(previewGrandTotal) : formatMoneyRounded(previewGrandTotal)}</span>
+                  </div>
+                </div>
               )}
-              {bill.showPaymentMode && (
+              {!bill.paymentModeSideBySide && bill.showPaymentMode && (
                 <div style={{
                   borderTop: '2px dashed #000', marginTop: 5, paddingTop: 3,
                   ...(bill.boxedPaymentMode ? { border: '1px solid #000', borderRadius: 3, padding: '4px 6px' } : {}),
                 }}>
                   Payment Mode: <b>Fonepay QR</b> (Txn ID: FP98213)
                 </div>
+              )}
+              {bill.paymentModeSideBySide && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '1.15em', borderTop: '2px solid #000', marginTop: 3, paddingTop: 3 }}>
+                  <span>GRAND TOTAL</span><span>{bill.showCurrencySymbol ? formatMoney(previewGrandTotal) : formatMoneyRounded(previewGrandTotal)}</span>
+                </div>
+              )}
+              {bill.showAmountInWords && (
+                <div style={{ marginTop: 4 }}>In Words: {amountInWords(previewGrandTotal)}</div>
               )}
               {bill.showReceivedChange && (
                 <div style={{ marginTop: 4 }}>
@@ -505,14 +548,14 @@ export default function PrintingPage() {
                 ))}
               </div>
               <table style={{ width: '100%', marginTop: 4, borderCollapse: 'collapse' }}>
-                <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th style={{ width: '2em', textAlign: 'center' }}>Qty</th><th>Item</th></tr></thead>
+                <thead><tr style={{ borderBottom: '2px solid #000', textAlign: 'left' }}><th>Item</th><th style={{ width: '2em', textAlign: 'center' }}>Qty</th></tr></thead>
                 <tbody>
                   {SAMPLE_ITEMS.map((i) => (
                     <tr key={i.name} style={{ verticalAlign: 'top' }}>
-                      <td style={{ textAlign: 'center', fontWeight: 800 }}>{i.qty}</td>
                       <td style={{ fontWeight: kot.boldTotals ? 700 : 500 }}>{i.name}
                         {kot.showItemNotes && i.notes && <div style={{ fontSize: Math.max(kot.fontSize - 3, 9), fontStyle: 'italic', fontWeight: 400 }}>» {i.notes}</div>}
                       </td>
+                      <td style={{ textAlign: 'center', fontWeight: 800 }}>{i.qty}</td>
                     </tr>
                   ))}
                 </tbody>
