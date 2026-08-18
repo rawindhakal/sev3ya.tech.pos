@@ -76,6 +76,14 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // 'minimize' below actually hides the window (so it can be restored
+      // from the tray) rather than truly minimizing it — a hidden window is
+      // backgrounded more aggressively by Chromium, throttling setInterval
+      // timers (AutoPrintAgent's KOT-queue poll, the waiter-call/table
+      // polls) down to roughly once a minute or pausing them outright. That
+      // silently stalled auto-print until the till was reopened. Same fix
+      // already applied to the print worker window below.
+      backgroundThrottling: false,
     },
   });
 

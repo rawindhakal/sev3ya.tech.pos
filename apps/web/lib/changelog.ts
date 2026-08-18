@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.8.2';
+export const APP_VERSION = '2.8.3';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,12 @@ export const APP_VERSION = '2.8.2';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.8.3', date: '2026-08-18',
+    changes: [
+      'Settings → Printing: the bill and KOT margin is now 4 independent sliders (Top/Right/Bottom/Left) instead of one shared value, so a printer that clips more on one side can be compensated for exactly on that side.',
+    ],
+  },
   {
     version: '2.8.2', date: '2026-08-18',
     changes: [

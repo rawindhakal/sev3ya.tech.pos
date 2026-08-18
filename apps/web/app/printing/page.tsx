@@ -173,11 +173,12 @@ export default function PrintingPage() {
     setTesting(role);
     const label = role === 'bill' ? 'BILL PRINTER TEST' : role === 'bot' ? 'BOT PRINTER TEST' : 'KOT PRINTER TEST';
     const width = role === 'bill' ? bill.paperWidthMm : kot.paperWidthMm;
-    const margin = role === 'bill' ? bill.marginMm : kot.marginMm;
+    const t = role === 'bill' ? bill : kot;
     const html = `<!doctype html><html><head><meta charset="utf-8"><style>
       @page { margin: 0; }
       body { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #000;
-             width: ${Math.max(width - margin * 2, 20)}mm; margin: 0 auto; padding: 4px 2px; text-align: center; }
+             width: ${width}mm; margin: 0; box-sizing: border-box;
+             padding: ${t.marginTopMm}mm ${t.marginRightMm}mm ${t.marginBottomMm}mm ${t.marginLeftMm}mm; text-align: center; }
       .ttl { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
     </style></head><body>
       <div class="ttl">${label}</div>
@@ -340,11 +341,22 @@ export default function PrintingPage() {
                   <option value={80}>80 mm</option><option value={58}>58 mm</option>
                 </select></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Font size ({bill.fontSize}px)</label>
-                <input type="range" min={9} max={16} value={bill.fontSize} onChange={(e) => setBill({ ...bill, fontSize: Number(e.target.value) })} className="w-full" /></div>
-              <div><label className="label">Margin ({bill.marginMm}mm)</label>
-                <input type="range" min={0} max={10} value={bill.marginMm} onChange={(e) => setBill({ ...bill, marginMm: Number(e.target.value) })} className="w-full" /></div>
+            <div>
+              <label className="label">Font size ({bill.fontSize}px)</label>
+              <input type="range" min={9} max={16} value={bill.fontSize} onChange={(e) => setBill({ ...bill, fontSize: Number(e.target.value) })} className="w-full" />
+            </div>
+            <div>
+              <p className="label mb-1.5">Margins <span className="font-normal normal-case text-slate-400">— independent blank space per side; raise the side that's getting clipped</span></p>
+              <div className="grid grid-cols-4 gap-3">
+                <div><label className="label">Top ({bill.marginTopMm}mm)</label>
+                  <input type="range" min={0} max={15} value={bill.marginTopMm} onChange={(e) => setBill({ ...bill, marginTopMm: Number(e.target.value) })} className="w-full" /></div>
+                <div><label className="label">Right ({bill.marginRightMm}mm)</label>
+                  <input type="range" min={0} max={15} value={bill.marginRightMm} onChange={(e) => setBill({ ...bill, marginRightMm: Number(e.target.value) })} className="w-full" /></div>
+                <div><label className="label">Bottom ({bill.marginBottomMm}mm)</label>
+                  <input type="range" min={0} max={15} value={bill.marginBottomMm} onChange={(e) => setBill({ ...bill, marginBottomMm: Number(e.target.value) })} className="w-full" /></div>
+                <div><label className="label">Left ({bill.marginLeftMm}mm)</label>
+                  <input type="range" min={0} max={15} value={bill.marginLeftMm} onChange={(e) => setBill({ ...bill, marginLeftMm: Number(e.target.value) })} className="w-full" /></div>
+              </div>
             </div>
             <div>
               <label className="label">Order info layout</label>
@@ -382,7 +394,12 @@ export default function PrintingPage() {
 
           {/* live preview */}
           <div className="flex items-start justify-center rounded-xl bg-slate-100 p-6 dark:bg-slate-900/60">
-            <div className="bg-white py-3 text-black shadow-md" style={{ width: bill.paperWidthMm === 80 ? 300 : 220, paddingLeft: 12 + bill.marginMm * 4, paddingRight: 12 + bill.marginMm * 4, fontSize: bill.fontSize, fontWeight: bill.boldTotals ? 500 : 400, fontFamily: bill.fontFamily }}>
+            <div className="bg-white text-black shadow-md" style={{
+              width: bill.paperWidthMm === 80 ? 300 : 220,
+              paddingTop: 12 + bill.marginTopMm * 4, paddingRight: 12 + bill.marginRightMm * 4,
+              paddingBottom: 12 + bill.marginBottomMm * 4, paddingLeft: 12 + bill.marginLeftMm * 4,
+              fontSize: bill.fontSize, fontWeight: bill.boldTotals ? 500 : 400, fontFamily: bill.fontFamily,
+            }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontWeight: 800, fontSize: bill.fontSize + 7 }}>{settings?.restaurantName || 'Your Restaurant'}</div>
                 {bill.showAddress && <div>{settings?.address || 'Street, City'}</div>}
@@ -520,11 +537,22 @@ export default function PrintingPage() {
                   <option value={80}>80 mm</option><option value={58}>58 mm</option>
                 </select></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Font size ({kot.fontSize}px)</label>
-                <input type="range" min={10} max={18} value={kot.fontSize} onChange={(e) => setKot({ ...kot, fontSize: Number(e.target.value) })} className="w-full" /></div>
-              <div><label className="label">Margin ({kot.marginMm}mm)</label>
-                <input type="range" min={0} max={10} value={kot.marginMm} onChange={(e) => setKot({ ...kot, marginMm: Number(e.target.value) })} className="w-full" /></div>
+            <div>
+              <label className="label">Font size ({kot.fontSize}px)</label>
+              <input type="range" min={10} max={18} value={kot.fontSize} onChange={(e) => setKot({ ...kot, fontSize: Number(e.target.value) })} className="w-full" />
+            </div>
+            <div>
+              <p className="label mb-1.5">Margins <span className="font-normal normal-case text-slate-400">— independent blank space per side; raise the side that's getting clipped</span></p>
+              <div className="grid grid-cols-4 gap-3">
+                <div><label className="label">Top ({kot.marginTopMm}mm)</label>
+                  <input type="range" min={0} max={15} value={kot.marginTopMm} onChange={(e) => setKot({ ...kot, marginTopMm: Number(e.target.value) })} className="w-full" /></div>
+                <div><label className="label">Right ({kot.marginRightMm}mm)</label>
+                  <input type="range" min={0} max={15} value={kot.marginRightMm} onChange={(e) => setKot({ ...kot, marginRightMm: Number(e.target.value) })} className="w-full" /></div>
+                <div><label className="label">Bottom ({kot.marginBottomMm}mm)</label>
+                  <input type="range" min={0} max={15} value={kot.marginBottomMm} onChange={(e) => setKot({ ...kot, marginBottomMm: Number(e.target.value) })} className="w-full" /></div>
+                <div><label className="label">Left ({kot.marginLeftMm}mm)</label>
+                  <input type="range" min={0} max={15} value={kot.marginLeftMm} onChange={(e) => setKot({ ...kot, marginLeftMm: Number(e.target.value) })} className="w-full" /></div>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-1">
               <Toggle label="Bold, larger print" on={kot.boldTotals} onChange={(v) => setKot({ ...kot, boldTotals: v })} />
@@ -537,7 +565,12 @@ export default function PrintingPage() {
           </div>
 
           <div className="flex items-start justify-center rounded-xl bg-slate-100 p-6 dark:bg-slate-900/60">
-            <div className="bg-white py-3 text-black shadow-md" style={{ width: kot.paperWidthMm === 80 ? 300 : 220, paddingLeft: 12 + kot.marginMm * 4, paddingRight: 12 + kot.marginMm * 4, fontSize: kot.fontSize, fontWeight: kot.boldTotals ? 600 : 400, fontFamily: kot.fontFamily }}>
+            <div className="bg-white text-black shadow-md" style={{
+              width: kot.paperWidthMm === 80 ? 300 : 220,
+              paddingTop: 12 + kot.marginTopMm * 4, paddingRight: 12 + kot.marginRightMm * 4,
+              paddingBottom: 12 + kot.marginBottomMm * 4, paddingLeft: 12 + kot.marginLeftMm * 4,
+              fontSize: kot.fontSize, fontWeight: kot.boldTotals ? 600 : 400, fontFamily: kot.fontFamily,
+            }}>
               <div style={{ textAlign: 'center', fontWeight: 800, fontSize: kot.fontSize + 6 }}>{kot.kotTitle}</div>
               <div style={{ borderTop: '2px dashed #000', borderBottom: '2px dashed #000', padding: '4px 0', marginTop: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>KOT No: <b>K-01042</b></span><span>Date: <b>{ticketDate(new Date())}</b></span></div>

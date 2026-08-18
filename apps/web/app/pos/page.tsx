@@ -393,7 +393,11 @@ export default function PosPage() {
       setDayReport(rep);
       setTimeout(async () => {
         const tpl = billTemplateOf(settings);
-        await printReceiptNow({ printer: getPrinterPrefs().bill, widthMm: tpl.paperWidthMm, marginMm: tpl.marginMm, fontSize: tpl.fontSize, fontFamily: tpl.fontFamily });
+        await printReceiptNow({
+          printer: getPrinterPrefs().bill, widthMm: tpl.paperWidthMm,
+          marginTopMm: tpl.marginTopMm, marginRightMm: tpl.marginRightMm, marginBottomMm: tpl.marginBottomMm, marginLeftMm: tpl.marginLeftMm,
+          fontSize: tpl.fontSize, fontFamily: tpl.fontFamily,
+        });
         setTimeout(() => setDayReport(null), 300);
       }, 200);
       setDrawerOpen(false);
@@ -1110,7 +1114,11 @@ export default function PosPage() {
     const prefs = getPrinterPrefs();
     const tpl = m === 'BILL' ? billTemplateOf(settings) : kotTemplateOf(settings);
     const printer = printerOverride ?? (m === 'BILL' ? prefs.bill : m === 'BOT' ? prefs.bot || prefs.kot : prefs.kot);
-    await printReceiptNow({ printer, widthMm: tpl.paperWidthMm, marginMm: tpl.marginMm, fontSize: tpl.fontSize, fontFamily: tpl.fontFamily });
+    await printReceiptNow({
+      printer, widthMm: tpl.paperWidthMm,
+      marginTopMm: tpl.marginTopMm, marginRightMm: tpl.marginRightMm, marginBottomMm: tpl.marginBottomMm, marginLeftMm: tpl.marginLeftMm,
+      fontSize: tpl.fontSize, fontFamily: tpl.fontFamily,
+    });
     await new Promise((r) => setTimeout(r, 200));
   }
 

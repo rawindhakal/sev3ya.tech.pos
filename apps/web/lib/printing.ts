@@ -59,7 +59,14 @@ export interface BillTemplate {
   fontSize: number;         // base px
   fontFamily: string;
   paperWidthMm: 58 | 80;
-  marginMm: number;         // blank space left/right of the printed content, on top of paperWidthMm
+  // Independent blank space on each side of the printed content, inset
+  // within paperWidthMm (left/right) or added around the content block
+  // (top/bottom) — lets a tenant compensate for a printer that clips one
+  // side more than another, instead of one symmetric left/right value.
+  marginTopMm: number;
+  marginRightMm: number;
+  marginBottomMm: number;
+  marginLeftMm: number;
   boldTotals: boolean;      // bold + larger totals/header for legibility on thermal paper
   showAddress: boolean;
   showPhone: boolean;
@@ -91,7 +98,10 @@ export interface KotTemplate {
   fontSize: number;
   fontFamily: string;
   paperWidthMm: 58 | 80;
-  marginMm: number;         // blank space left/right of the printed content, on top of paperWidthMm
+  marginTopMm: number;
+  marginRightMm: number;
+  marginBottomMm: number;
+  marginLeftMm: number;
   boldTotals: boolean;
   // Order-info block (KOT/BOT No + Date always print first, fixed) — every
   // other row's visibility, label, and order is user-editable.
@@ -148,7 +158,10 @@ export const DEFAULT_BILL_TEMPLATE: BillTemplate = {
   fontSize: 14,
   fontFamily: DEFAULT_FONT_FAMILY,
   paperWidthMm: 80,
-  marginMm: 4,
+  marginTopMm: 2,
+  marginRightMm: 4,
+  marginBottomMm: 2,
+  marginLeftMm: 4,
   boldTotals: true,
   showAddress: true,
   showPhone: true,
@@ -175,7 +188,10 @@ export const DEFAULT_KOT_TEMPLATE: KotTemplate = {
   fontSize: 15,
   fontFamily: DEFAULT_FONT_FAMILY,
   paperWidthMm: 80,
-  marginMm: 4,
+  marginTopMm: 2,
+  marginRightMm: 4,
+  marginBottomMm: 2,
+  marginLeftMm: 4,
   boldTotals: true,
   metaLines: DEFAULT_KOT_META_LINES,
   showItemNotes: true,
@@ -187,10 +203,33 @@ export const DEFAULT_KOT_TEMPLATE: KotTemplate = {
 interface LegacyBillFields {
   showTable?: boolean; showWaiter?: boolean; showGuests?: boolean;
   showCustomer?: boolean; showCashier?: boolean; showVatBreakdown?: boolean;
+  marginMm?: number; // pre-4-side-margins shape (single left/right value)
 }
 interface LegacyKotFields {
   showOrderType?: boolean; showTable?: boolean; showWaiter?: boolean;
   showGuests?: boolean; showTime?: boolean;
+  marginMm?: number; // pre-4-side-margins shape (single left/right value)
+}
+
+// A tenant's existing marginMm becomes the starting point for all 4 new
+// sides (rather than resetting to the new default) — same number they were
+// already using, just now independently adjustable per side.
+function migrateMargins<T extends { marginMm?: number; marginTopMm?: number; marginRightMm?: number; marginBottomMm?: number; marginLeftMm?: number }>(
+  saved: T,
+  defaults: { marginTopMm: number; marginRightMm: number; marginBottomMm: number; marginLeftMm: number },
+) {
+  if (saved.marginTopMm != null || saved.marginRightMm != null || saved.marginBottomMm != null || saved.marginLeftMm != null) {
+    return {
+      marginTopMm: saved.marginTopMm ?? defaults.marginTopMm,
+      marginRightMm: saved.marginRightMm ?? defaults.marginRightMm,
+      marginBottomMm: saved.marginBottomMm ?? defaults.marginBottomMm,
+      marginLeftMm: saved.marginLeftMm ?? defaults.marginLeftMm,
+    };
+  }
+  if (saved.marginMm != null) {
+    return { marginTopMm: saved.marginMm, marginRightMm: saved.marginMm, marginBottomMm: saved.marginMm, marginLeftMm: saved.marginMm };
+  }
+  return defaults;
 }
 
 // Ensures every id in `defaults` exists in `lines`, appending any missing
@@ -226,7 +265,8 @@ export const billTemplateOf = (s: Settings | null | undefined): BillTemplate => 
   const totalsLines = saved.totalsLines ?? ('showVatBreakdown' in saved
     ? DEFAULT_BILL_TOTALS_LINES.map((l) => ({ ...l, enabled: saved.showVatBreakdown ?? l.enabled }))
     : DEFAULT_BILL_TOTALS_LINES);
-  return { ...DEFAULT_BILL_TEMPLATE, ...saved, metaLines, totalsLines };
+  const margins = migrateMargins(saved, DEFAULT_BILL_TEMPLATE);
+  return { ...DEFAULT_BILL_TEMPLATE, ...saved, metaLines, totalsLines, ...margins };
 };
 
 export const kotTemplateOf = (s: Settings | null | undefined): KotTemplate => {
@@ -245,7 +285,8 @@ export const kotTemplateOf = (s: Settings | null | undefined): KotTemplate => {
       }))
     : DEFAULT_KOT_META_LINES);
   const metaLines = withMissingLines(metaLinesBase, DEFAULT_KOT_META_LINES);
-  return { ...DEFAULT_KOT_TEMPLATE, ...saved, metaLines };
+  const margins = migrateMargins(saved, DEFAULT_KOT_TEMPLATE);
+  return { ...DEFAULT_KOT_TEMPLATE, ...saved, metaLines, ...margins };
 };
 
 // Restricts to characters that can legitimately appear in a CSS font-family
@@ -345,20 +386,30 @@ export const ticketDateTime = (d: Date) => {
 // content width instead of the full roll width, to fix real receipts
 // clipping a few mm off both edges. That produced BLANK prints on at least
 // one real printer/driver — worse than clipped — so it was reverted the
-// same day. Back to: declare the page at the FULL nominal roll width (what
-// the printer driver expects/validates against) and center a narrower div
-// inside it. If clipping recurs, the safer lever is raising marginMm via
-// Settings → Printing, not changing the declared page width.
-export async function silentPrintArea(opts: { printer?: string; widthMm?: number; marginMm?: number; fontSize?: number; fontFamily?: string }): Promise<boolean> {
+// same day. Still declares the page at the FULL nominal roll width (what
+// the printer driver expects/validates against) — each side's blank space
+// is now `padding` (box-sizing: border-box, so it insets the content
+// without changing the declared page width at all) instead of a narrower
+// centered div, so all 4 sides are independently adjustable via Settings →
+// Printing without touching the page-size mechanism that caused the blank
+// prints.
+export async function silentPrintArea(opts: {
+  printer?: string; widthMm?: number;
+  marginTopMm?: number; marginRightMm?: number; marginBottomMm?: number; marginLeftMm?: number;
+  fontSize?: number; fontFamily?: string;
+}): Promise<boolean> {
   if (typeof window === 'undefined' || !window.cakezakeDesktop?.printHtml) return false; // not the desktop shell — caller falls back to window.print()
   const el = document.getElementById('print-area');
   if (!el) return false;
   const w = opts.widthMm ?? 80;
-  const m = opts.marginMm ?? 3;
+  const top = opts.marginTopMm ?? 2;
+  const right = opts.marginRightMm ?? 4;
+  const bottom = opts.marginBottomMm ?? 2;
+  const left = opts.marginLeftMm ?? 4;
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
     body { font-family: ${sanitizeFontFamily(opts.fontFamily)}; color: #000; background: #fff;
-           width: ${Math.max(w - m * 2, 20)}mm; margin: 0 auto; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
+           width: ${w}mm; margin: 0; box-sizing: border-box; padding: ${top}mm ${right}mm ${bottom}mm ${left}mm; font-size: ${opts.fontSize ?? 12}px; }
     #print-area { display: block !important; }
     table { border-collapse: collapse; }
     th, td { padding: 1px 0; }
@@ -383,7 +434,11 @@ export async function silentPrintArea(opts: { printer?: string; widthMm?: number
 // page size its dialog defaults to (usually A4/Letter) instead of the
 // receipt's actual roll width, which is what clips/cuts printed bills on a
 // thermal printer even though the on-screen preview looks correct.
-function applyPrintPageStyle(widthMm: number, marginMm: number, fontFamily: string) {
+function applyPrintPageStyle(
+  widthMm: number,
+  marginTopMm: number, marginRightMm: number, marginBottomMm: number, marginLeftMm: number,
+  fontFamily: string,
+) {
   if (typeof document === 'undefined') return;
   let style = document.getElementById('ticket-print-style') as HTMLStyleElement | null;
   if (!style) {
@@ -391,15 +446,16 @@ function applyPrintPageStyle(widthMm: number, marginMm: number, fontFamily: stri
     style.id = 'ticket-print-style';
     document.head.appendChild(style);
   }
-  // @page margin is deliberately 0 — the "margin" a user configures is
-  // instead the blank space around #print-area's own (narrower) width,
-  // centered via margin:auto. This mirrors silentPrintArea's desktop
-  // approach exactly and avoids subtracting the margin twice (once at the
-  // @page level, once at the content level), which would double the gap.
-  const contentWidth = Math.max(widthMm - marginMm * 2, 20);
+  // @page margin stays 0 — the per-side blank space is `padding` on
+  // #print-area itself (box-sizing: border-box, so it insets the content
+  // within the declared page width rather than changing that width).
   style.textContent = `@media print {
     @page { size: ${widthMm}mm auto; margin: 0; }
-    body.print-receipt #print-area { width: ${contentWidth}mm !important; margin: 0 auto !important; padding: 0 !important; font-family: ${sanitizeFontFamily(fontFamily)} !important; }
+    body.print-receipt #print-area {
+      width: 100% !important; margin: 0 !important; box-sizing: border-box !important;
+      padding: ${marginTopMm}mm ${marginRightMm}mm ${marginBottomMm}mm ${marginLeftMm}mm !important;
+      font-family: ${sanitizeFontFamily(fontFamily)} !important;
+    }
   }`;
 }
 
@@ -409,9 +465,13 @@ function applyPrintPageStyle(widthMm: number, marginMm: number, fontFamily: stri
 // default page size). Centralizing this means every caller (POS, Day-End
 // Z-report, Sales Report reprint) gets identical sizing/margin behavior
 // instead of each hand-rolling its own silentPrintArea + window.print pair.
-export async function printReceiptNow(opts: { printer?: string; widthMm: number; marginMm: number; fontSize: number; fontFamily: string }): Promise<void> {
+export async function printReceiptNow(opts: {
+  printer?: string; widthMm: number;
+  marginTopMm: number; marginRightMm: number; marginBottomMm: number; marginLeftMm: number;
+  fontSize: number; fontFamily: string;
+}): Promise<void> {
   if (await silentPrintArea(opts)) return;
-  applyPrintPageStyle(opts.widthMm, opts.marginMm, opts.fontFamily);
+  applyPrintPageStyle(opts.widthMm, opts.marginTopMm, opts.marginRightMm, opts.marginBottomMm, opts.marginLeftMm, opts.fontFamily);
   document.body.classList.add('print-receipt');
   window.print();
   document.body.classList.remove('print-receipt');
@@ -524,11 +584,11 @@ export function kotTicketHtml(opts: {
       `<div class="row"><span>${esc(l1)}: <b>${esc(v1)}</b></span>${pair ? `<span>${esc(pair[0])}: <b>${esc(pair[1])}</b></span>` : ''}</div>`,
     );
   }
-  const w = Math.max(t.paperWidthMm - t.marginMm * 2, 20);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
     body { font-family: ${sanitizeFontFamily(t.fontFamily)}; font-size: ${t.fontSize}px; font-weight: ${t.boldTotals ? 600 : 400}; color: #000;
-           width: ${w}mm; margin: 0 auto; padding: 4px 2px; }
+           width: ${t.paperWidthMm}mm; margin: 0; box-sizing: border-box;
+           padding: ${t.marginTopMm}mm ${t.marginRightMm}mm ${t.marginBottomMm}mm ${t.marginLeftMm}mm; }
     .ttl { text-align: center; font-weight: 800; font-size: ${t.fontSize + 6}px; margin-bottom: 4px; }
     .ord { font-weight: 700; }
     .meta { border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 4px 0; }
