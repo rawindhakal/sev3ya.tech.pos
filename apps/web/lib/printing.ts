@@ -340,22 +340,25 @@ export const ticketDateTime = (d: Date) => {
 // DayReport) through the desktop shell — no printer dialog. The components use
 // inline styles, so the captured markup is self-contained. Returns false when
 // not in the desktop shell (caller falls back to window.print()).
-// `opts.widthMm` is the EXACT width to print, already net of margin (see
-// printReceiptNow) — not the full paper roll width. Declaring the printed
-// page as anything wider than the content and relying on the printer driver
-// to honor a custom page size *and* center a narrower div inside it exactly
-// is what caused real receipts to clip a few mm off both edges on physical
-// thermal printers; requesting exactly the width we want removes that
-// guesswork.
-export async function silentPrintArea(opts: { printer?: string; widthMm?: number; fontSize?: number; fontFamily?: string }): Promise<boolean> {
+//
+// v2.8.0 briefly declared the Electron page itself at the exact (narrower)
+// content width instead of the full roll width, to fix real receipts
+// clipping a few mm off both edges. That produced BLANK prints on at least
+// one real printer/driver — worse than clipped — so it was reverted the
+// same day. Back to: declare the page at the FULL nominal roll width (what
+// the printer driver expects/validates against) and center a narrower div
+// inside it. If clipping recurs, the safer lever is raising marginMm via
+// Settings → Printing, not changing the declared page width.
+export async function silentPrintArea(opts: { printer?: string; widthMm?: number; marginMm?: number; fontSize?: number; fontFamily?: string }): Promise<boolean> {
   if (typeof window === 'undefined' || !window.cakezakeDesktop?.printHtml) return false; // not the desktop shell — caller falls back to window.print()
   const el = document.getElementById('print-area');
   if (!el) return false;
-  const w = opts.widthMm ?? 72;
+  const w = opts.widthMm ?? 80;
+  const m = opts.marginMm ?? 3;
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
     body { font-family: ${sanitizeFontFamily(opts.fontFamily)}; color: #000; background: #fff;
-           width: 100%; margin: 0; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
+           width: ${Math.max(w - m * 2, 20)}mm; margin: 0 auto; padding: 4px 2px; font-size: ${opts.fontSize ?? 12}px; }
     #print-area { display: block !important; }
     table { border-collapse: collapse; }
     th, td { padding: 1px 0; }
@@ -375,15 +378,12 @@ export async function silentPrintArea(opts: { printer?: string; widthMm?: number
 }
 
 // Injects/updates a page-scoped <style> tag declaring the physical paper size
-// for the browser print dialog (window.print() fallback, used outside the
-// desktop shell). Without this the browser prints to whatever page size its
-// dialog defaults to (usually A4/Letter) instead of the receipt's actual
-// roll width, which is what clips/cuts printed bills on a thermal printer
-// even though the on-screen preview looks correct. `widthMm` here is the
-// exact content width to print (already net of margin) — the page IS the
-// content, not a wider page with the content centered inside it (see
-// printReceiptNow for why that centering approach used to clip real prints).
-function applyPrintPageStyle(widthMm: number, fontFamily: string) {
+// and margin for the browser print dialog (window.print() fallback, used
+// outside the desktop shell). Without this the browser prints to whatever
+// page size its dialog defaults to (usually A4/Letter) instead of the
+// receipt's actual roll width, which is what clips/cuts printed bills on a
+// thermal printer even though the on-screen preview looks correct.
+function applyPrintPageStyle(widthMm: number, marginMm: number, fontFamily: string) {
   if (typeof document === 'undefined') return;
   let style = document.getElementById('ticket-print-style') as HTMLStyleElement | null;
   if (!style) {
@@ -391,9 +391,15 @@ function applyPrintPageStyle(widthMm: number, fontFamily: string) {
     style.id = 'ticket-print-style';
     document.head.appendChild(style);
   }
+  // @page margin is deliberately 0 — the "margin" a user configures is
+  // instead the blank space around #print-area's own (narrower) width,
+  // centered via margin:auto. This mirrors silentPrintArea's desktop
+  // approach exactly and avoids subtracting the margin twice (once at the
+  // @page level, once at the content level), which would double the gap.
+  const contentWidth = Math.max(widthMm - marginMm * 2, 20);
   style.textContent = `@media print {
     @page { size: ${widthMm}mm auto; margin: 0; }
-    body.print-receipt #print-area { width: 100% !important; margin: 0 !important; padding: 0 !important; font-family: ${sanitizeFontFamily(fontFamily)} !important; }
+    body.print-receipt #print-area { width: ${contentWidth}mm !important; margin: 0 auto !important; padding: 0 !important; font-family: ${sanitizeFontFamily(fontFamily)} !important; }
   }`;
 }
 
@@ -403,21 +409,9 @@ function applyPrintPageStyle(widthMm: number, fontFamily: string) {
 // default page size). Centralizing this means every caller (POS, Day-End
 // Z-report, Sales Report reprint) gets identical sizing/margin behavior
 // instead of each hand-rolling its own silentPrintArea + window.print pair.
-//
-// `widthMm`/`marginMm` here are the template's raw paper width and margin
-// (e.g. 80mm roll, 4mm margin) — this function does the one subtraction
-// (contentWidth = widthMm − marginMm×2) and both print paths below print
-// exactly that width, edge to edge, instead of declaring a full-roll-width
-// page and centering a narrower div inside it. The old centering approach
-// depended on the printer driver honoring a custom page size *and* actually
-// supporting zero hardware margins to land the centered content correctly —
-// many thermal printer drivers don't, silently clipping a few mm off both
-// edges even though the on-screen preview and browser print-preview looked
-// fine. Printing exactly the intended width removes that dependency.
 export async function printReceiptNow(opts: { printer?: string; widthMm: number; marginMm: number; fontSize: number; fontFamily: string }): Promise<void> {
-  const contentWidth = Math.max(opts.widthMm - opts.marginMm * 2, 20);
-  if (await silentPrintArea({ printer: opts.printer, widthMm: contentWidth, fontSize: opts.fontSize, fontFamily: opts.fontFamily })) return;
-  applyPrintPageStyle(contentWidth, opts.fontFamily);
+  if (await silentPrintArea(opts)) return;
+  applyPrintPageStyle(opts.widthMm, opts.marginMm, opts.fontFamily);
   document.body.classList.add('print-receipt');
   window.print();
   document.body.classList.remove('print-receipt');
@@ -530,14 +524,11 @@ export function kotTicketHtml(opts: {
       `<div class="row"><span>${esc(l1)}: <b>${esc(v1)}</b></span>${pair ? `<span>${esc(pair[0])}: <b>${esc(pair[1])}</b></span>` : ''}</div>`,
     );
   }
-  // Same width the caller (AutoPrintAgent) must pass as the Electron page
-  // width — see the note on printReceiptNow: the page IS this content
-  // width, not the full roll width with this centered inside it.
   const w = Math.max(t.paperWidthMm - t.marginMm * 2, 20);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0; }
     body { font-family: ${sanitizeFontFamily(t.fontFamily)}; font-size: ${t.fontSize}px; font-weight: ${t.boldTotals ? 600 : 400}; color: #000;
-           width: ${w}mm; margin: 0; padding: 4px 2px; }
+           width: ${w}mm; margin: 0 auto; padding: 4px 2px; }
     .ttl { text-align: center; font-weight: 800; font-size: ${t.fontSize + 6}px; margin-bottom: 4px; }
     .ord { font-weight: 700; }
     .meta { border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 4px 0; }

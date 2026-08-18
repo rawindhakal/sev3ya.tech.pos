@@ -88,14 +88,10 @@ export default function AutoPrintAgent() {
             guestCount: first.guestCount,
             items,
           });
-          // Content width, not the full roll width — see printReceiptNow's
-          // comment in lib/printing.ts for why declaring a wider page and
-          // centering content inside it caused real clipping on thermal
-          // printers.
           const res = await window.cakezakeDesktop!.printHtml!({
             html,
             printerName: printer,
-            widthMm: Math.max(template.paperWidthMm - template.marginMm * 2, 20),
+            widthMm: template.paperWidthMm,
           });
           if (res?.ok) {
             printedIds.push(...items.map((i) => i.id));

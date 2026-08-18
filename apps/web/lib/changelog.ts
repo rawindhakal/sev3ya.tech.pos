@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.8.1';
+export const APP_VERSION = '2.8.2';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,12 @@ export const APP_VERSION = '2.8.1';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.8.2', date: '2026-08-18',
+    changes: [
+      'Reverted the v2.8.0 print-width change — it fixed clipped edges on some printers but caused completely blank prints on at least one real printer. Back to the previous (imperfect but working) sizing approach while a safer fix is investigated.',
+    ],
+  },
   {
     version: '2.8.1', date: '2026-08-18',
     changes: [
