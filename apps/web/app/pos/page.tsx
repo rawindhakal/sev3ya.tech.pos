@@ -193,9 +193,6 @@ export default function PosPage() {
   const [qrTable, setQrTable] = useState<{ table: RestaurantTable; url: string } | null>(null);
   const [waiterCalls, setWaiterCalls] = useState<{ id: string; table?: { name: string; area?: string | null }; createdAt: string }[]>([]);
   const [callsOpen, setCallsOpen] = useState(false);
-  const [pendingGuestOrders, setPendingGuestOrders] = useState<{ orderId: string; orderNumber: number; table: string | null; firedAt: string | null; items: { id: string; name: string; quantity: number }[] }[]>([]);
-  const [guestOrdersOpen, setGuestOrdersOpen] = useState(false);
-  const [ackBusy, setAckBusy] = useState<string | null>(null);
   const [gatewayQr, setGatewayQr] = useState<{ provider: string; label: string } | null>(null);
   const [tableForm, setTableForm] = useState({ name: '', seats: 4, area: '', isVip: false });
   const [transferOpen, setTransferOpen] = useState(false);
@@ -769,45 +766,24 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emp]);
 
-  // Guest self-orders (QR page) waiting for a staff acknowledge before
-  // they're eligible to print — same polling pattern as waiter calls above.
+  // The floor/table-selection grid was previously a one-shot fetch on
+  // entering DINE_IN mode — a table a guest just occupied via their own QR
+  // self-order (or that another till just seated/cleared) wouldn't show up
+  // until the cashier backed out and re-entered this screen. Poll it live
+  // instead, same 8s cadence as waiter calls, only while it's actually the
+  // screen being shown.
   useEffect(() => {
-    if (!emp) return;
-    const prevCount = { current: null as number | null };
+    if (!emp || order || mode !== 'DINE_IN') return;
     async function poll() {
       try {
-        const rows = await api.get<typeof pendingGuestOrders>('/orders/pending-guest-acks', { silent: true });
-        if (prevCount.current !== null && rows.length > prevCount.current) playDing();
-        prevCount.current = rows.length;
-        setPendingGuestOrders(rows);
+        setAreas(await api.get<TableArea[]>('/tables?groupBy=area', { silent: true }));
       } catch { /* offline */ }
     }
     poll();
     const iv = setInterval(poll, 8000);
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emp]);
-
-  // Acknowledges every pending item on a guest order, marks them as already
-  // printed for the silent auto-printer (so it never races the prompt
-  // below), then opens the same manual print flow POS uses for staff-fired
-  // KOTs — split by station and resolved printer.
-  async function acknowledgeGuestOrder(orderId: string) {
-    setAckBusy(orderId);
-    try {
-      const ackedItems = await api.post<OrderItem[]>(`/orders/${orderId}/acknowledge-guest-items`, {});
-      const ids = ackedItems.filter((i) => i.station === 'KITCHEN' || i.station === 'BAR').map((i) => i.id);
-      if (ids.length) api.post('/orders/kot-queue/printed', { itemIds: ids }).catch(() => {});
-      const fullOrder = await api.get<Order>(`/orders/${orderId}`);
-      await printByStationAndPrinter(fullOrder, ackedItems);
-      setPendingGuestOrders((prev) => prev.filter((o) => o.orderId !== orderId));
-      flash('Order acknowledged');
-    } catch (e) {
-      notify((e as Error).message, 'error');
-    } finally {
-      setAckBusy(null);
-    }
-  }
+  }, [emp, order, mode]);
 
   async function resumeActive(id: string) {
     setBusy(true);
@@ -1653,11 +1629,6 @@ export default function PosPage() {
               <BellIcon className="h-4 w-4" /> {waiterCalls.length}
             </button>
           )}
-          {pendingGuestOrders.length > 0 && (
-            <button onClick={() => setGuestOrdersOpen(true)} className="relative flex min-h-[36px] touch-manipulation items-center gap-1 rounded-md bg-[#2ECC71]/20 px-2.5 text-[#2ECC71] transition-transform hover:bg-[#2ECC71]/30 active:scale-95" title="Guest orders awaiting acknowledgement">
-              <BellIcon className="h-4 w-4" /> {pendingGuestOrders.length}
-            </button>
-          )}
           <span className="hidden text-[var(--pos-text-60)] tabular-nums lg:inline" title={now.toLocaleDateString()}>
             {formatBsLong(now)} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
@@ -1696,11 +1667,6 @@ export default function PosPage() {
             {waiterCalls.length > 0 && (
               <button onClick={() => { setMobileMenuOpen(false); setCallsOpen(true); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[#F39C12] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
                 <BellIcon className="h-4 w-4" /> Waiter calls ({waiterCalls.length})
-              </button>
-            )}
-            {pendingGuestOrders.length > 0 && (
-              <button onClick={() => { setMobileMenuOpen(false); setGuestOrdersOpen(true); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[#2ECC71] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
-                <BellIcon className="h-4 w-4" /> Guest orders ({pendingGuestOrders.length})
               </button>
             )}
             <button onClick={() => { setMobileMenuOpen(false); checkDrawer(); setCountRs(''); setDayEndOpen(true); }} className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-md px-2 text-left text-sm text-[#E74C3C] transition-transform hover:bg-[var(--pos-surface-hover)] active:scale-[0.98]">
@@ -2261,39 +2227,6 @@ export default function PosPage() {
             </div>
           ))}
           {waiterCalls.length === 0 && <p className="py-4 text-center text-sm text-slate-400">No pending calls.</p>}
-        </div>
-      </Modal>
-
-      {/* Guest self-orders (QR page) — no staff reviewed these yet, so they
-          don't auto-print; Acknowledge here opens the normal manual print
-          flow instead. */}
-      <Modal open={guestOrdersOpen} title="Guest orders — awaiting acknowledgement" onClose={() => setGuestOrdersOpen(false)}>
-        <div className="space-y-2">
-          {pendingGuestOrders.map((o) => (
-            <div key={o.orderId} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="font-semibold text-slate-800 dark:text-slate-100">
-                    {o.table ?? 'Table'} · Order #{o.orderNumber}
-                  </div>
-                  <div className="text-xs text-slate-400">{o.firedAt ? new Date(o.firedAt).toLocaleTimeString() : ''}</div>
-                </div>
-                <button
-                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                  disabled={ackBusy === o.orderId}
-                  onClick={() => acknowledgeGuestOrder(o.orderId)}
-                >
-                  {ackBusy === o.orderId ? 'Acknowledging…' : 'Acknowledge & Print'}
-                </button>
-              </div>
-              <ul className="mt-2 space-y-0.5 text-sm text-slate-600 dark:text-slate-300">
-                {o.items.map((it) => (
-                  <li key={it.id}>{it.quantity}× {it.name}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-          {pendingGuestOrders.length === 0 && <p className="py-4 text-center text-sm text-slate-400">No guest orders waiting.</p>}
         </div>
       </Modal>
 

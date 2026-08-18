@@ -1,5 +1,5 @@
 // App version + human changelog (shown under Settings → About & Changelog).
-export const APP_VERSION = '2.8.0';
+export const APP_VERSION = '2.8.1';
 
 // The desktop till shell (apps/desktop) versions independently of the web
 // platform above — bump this whenever apps/desktop/package.json's version
@@ -10,6 +10,13 @@ export const APP_VERSION = '2.8.0';
 export const DESKTOP_APP_VERSION = '0.2.1';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: '2.8.1', date: '2026-08-18',
+    changes: [
+      'QR table self-orders now print straight to the kitchen/bar automatically, without waiting for a staff member to acknowledge them at the POS first',
+      'Fixed the POS table-selection screen not showing a table as occupied after a guest placed a self-order until the cashier left and re-entered the screen — it now updates live',
+    ],
+  },
   {
     version: '2.8.0', date: '2026-08-18',
     changes: [

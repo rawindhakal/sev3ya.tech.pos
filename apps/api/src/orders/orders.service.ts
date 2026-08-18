@@ -548,11 +548,6 @@ export class OrdersService {
         kotPrintedAt: null,
         cancelledAt: null,
         station: { in: ['KITCHEN', 'BAR'] },
-        // Guest self-order items wait for a staff acknowledge (see
-        // pendingGuestAcks/acknowledgeGuestItems below) before they're
-        // eligible for silent auto-print — staff-fired items never set
-        // this flag, so their behavior is unchanged.
-        needsGuestAck: false,
         order: { status: { in: ['SENT_TO_KITCHEN', 'BILLED', 'OPEN'] } },
       },
       include: {
@@ -595,47 +590,6 @@ export class OrdersService {
       firedAt: i.order.kotFiredAt,
       printerName: i.printerName,
     }));
-  }
-
-  // ── Guest self-order acknowledgement ──────────────────
-  // Orders a guest fires themselves via the QR page (Order.source =
-  // SELF_ORDER) aren't reviewed by anyone before hitting the kitchen —
-  // unlike a POS/Waiter-Panel send, where a staff member is standing right
-  // there. These items sit here, invisible to the silent auto-print queue,
-  // until a waiter/cashier taps Acknowledge.
-  async pendingGuestAcks() {
-    const items = await this.prisma.orderItem.findMany({
-      where: { needsGuestAck: true, cancelledAt: null },
-      include: {
-        order: {
-          select: {
-            id: true, number: true, kotFiredAt: true,
-            table: { select: { name: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'asc' },
-      take: 100,
-    });
-    // Grouped by order — one card per pending guest order, not per item.
-    const byOrder = new Map<string, { orderId: string; orderNumber: number; table: string | null; firedAt: Date | null; items: { id: string; name: string; quantity: number }[] }>();
-    for (const i of items) {
-      const g = byOrder.get(i.orderId) ?? { orderId: i.orderId, orderNumber: i.order.number, table: i.order.table?.name ?? null, firedAt: i.order.kotFiredAt, items: [] };
-      g.items.push({ id: i.id, name: i.nameSnapshot, quantity: i.quantity });
-      byOrder.set(i.orderId, g);
-    }
-    return [...byOrder.values()];
-  }
-
-  // Clears the ack flag on the given items (or every pending item on the
-  // order, if none specified) and returns them print-ready (station +
-  // resolved printer), so the caller can immediately drive a print prompt.
-  async acknowledgeGuestItems(orderId: string, itemIds?: string[]) {
-    const where = { orderId, needsGuestAck: true, cancelledAt: null, ...(itemIds?.length ? { id: { in: itemIds } } : {}) };
-    const items = await this.prisma.orderItem.findMany({ where });
-    if (!items.length) throw new BadRequestException('No pending guest items to acknowledge on this order');
-    await this.prisma.orderItem.updateMany({ where, data: { needsGuestAck: false } });
-    return this.resolvePrinterNames(items.map((i) => ({ ...i, needsGuestAck: false })));
   }
 
   // Acknowledge that tickets for these items came out of the printer.

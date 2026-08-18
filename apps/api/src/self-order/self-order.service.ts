@@ -87,16 +87,9 @@ export class SelfOrderService {
       const updated = await this.orders.saveCart(order.id, { items: [...existingLines, ...items] });
       orderId = updated.id;
     }
-    const { order: updatedOrder, fired } = await this.orders.sendKot(orderId);
-    // No staff member has reviewed this yet — hold it out of the silent
-    // auto-print queue until a waiter/cashier acknowledges it (see
-    // orders.service.ts pendingGuestAcks/acknowledgeGuestItems). Orders
-    // fired by staff at the POS/Waiter Panel never set this flag, since
-    // someone already stood there and chose to send it.
-    await this.prisma.orderItem.updateMany({
-      where: { id: { in: fired.map((i) => i.id) } },
-      data: { needsGuestAck: true },
-    });
+    // Fires straight into the normal silent auto-print queue, same as a
+    // staff-fired KOT — no staff review/acknowledge step first.
+    const { order: updatedOrder } = await this.orders.sendKot(orderId);
     return updatedOrder;
   }
 

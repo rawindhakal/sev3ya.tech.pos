@@ -207,7 +207,6 @@ export interface OrderItem {
   cancelReason?: string | null;
   cancelledBy?: string | null;
   printerName?: string | null;
-  needsGuestAck?: boolean;
 }
 
 export interface Payment {
