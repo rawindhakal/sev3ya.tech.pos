@@ -7,7 +7,7 @@ export const APP_VERSION = '2.8.3';
 // build their filename from this constant) always point at the build that
 // was actually uploaded, instead of a stale hardcoded filename drifting out
 // of sync with what's really on the server.
-export const DESKTOP_APP_VERSION = '0.2.1';
+export const DESKTOP_APP_VERSION = '0.2.2';
 
 export const CHANGELOG: { version: string; date: string; changes: string[] }[] = [
   {
